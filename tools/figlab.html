@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Atelier des personnages</title>
+<link rel="icon" href="data:," />
+<style>html, body { margin: 0; height: 100%; overflow: hidden; background: #2a2620; } canvas { display: block; }
+#lbl { position: fixed; left: 10px; top: 8px; font: 13px/1.3 Georgia, serif; color: #f3e6c4; text-shadow: 0 1px 2px #000; }</style>
+</head>
+<body>
+<div id="lbl"></div>
+<script type="module">
+// Character workshop (dev tool, not in the build): the game's CaptainFigure characters side by side, posed by the
+// same animator as the duel, under a light close to the deck's. Used for critique rounds and iteration.
+//   /tools/figlab.html?view=line|duel|faces|profile|crowd&tod=day|dusk|night&outline=0
+//   window.__labReady turns true once the image is stable (captures: tools/figlab-shot.mjs).
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { CaptainFigure, LOOKS } from '/src/game/duel/figure.js';
+import { FencerAnimator, POSES } from '/src/game/duel/animator.js';
+import { portraitURL } from '/src/ui/port/portrait3d.js';
+import { PORTRAIT } from '/src/ui/port/art.js';
+
+const q = new URLSearchParams(location.search);
+const view = q.get('view') || 'line', tod = q.get('tod') || 'day', outline = q.get('outline') !== '0';
+const W = innerWidth, H = innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(W, H);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = tod === 'night' ? 0.9 : 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const pm = new THREE.PMREMGenerator(renderer);
+scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = tod === 'night' ? 0.25 : 0.55;
+const sky = { day: ['#9cc4dc', '#f2e2c0'], dusk: ['#5a6a8a', '#f0a868'], night: ['#0d1b33', '#2a3550'] }[tod];
+scene.background = new THREE.Color(sky[0]);
+scene.fog = new THREE.Fog(sky[1], 18, 60);
+const hemi = new THREE.HemisphereLight(sky[0], '#6a4a2a', tod === 'night' ? 0.5 : 1.0); scene.add(hemi);
+const sun = new THREE.DirectionalLight(tod === 'dusk' ? '#ffb070' : tod === 'night' ? '#8aa0d0' : '#fff0d8', tod === 'night' ? 1.2 : 2.6);
+sun.position.set(-6, tod === 'dusk' ? 4 : 9, 7); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048); const sc = sun.shadow.camera; sc.left = -8; sc.right = 8; sc.top = 8; sc.bottom = -8; sc.far = 40; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
+scene.add(sun);
+if (tod === 'night') { const lamp = new THREE.PointLight('#ffb060', 18, 12, 1.6); lamp.position.set(2.5, 2.6, 2.5); scene.add(lamp); }
+// deck-like floor
+const fc = document.createElement('canvas'); fc.width = fc.height = 256; const fx = fc.getContext('2d');
+for (let i = 0; i < 8; i++) { fx.fillStyle = `hsl(28, 45%, ${30 + (i * 37 % 9)}%)`; fx.fillRect(i * 32, 0, 31, 256); }
+const ft = new THREE.CanvasTexture(fc); ft.colorSpace = THREE.SRGBColorSpace; ft.wrapS = ft.wrapT = THREE.RepeatWrapping; ft.repeat.set(6, 6);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ map: ft, roughness: 0.85 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+
+const figs = [];
+function place(look, x, z, yaw, pose, opts = {}) {
+  // ?olall=1: thin ink outline (the one of the extras and the crowds) on every figure
+  if (q.get('olall') === '1' && !look.outline) look = { ...look, outline: true, outlineW: 0.0055, headScale: look.headScale || (look.dress ? 1.16 : undefined) };
+  const f = new CaptainFigure(look);
+  f.group.position.set(x, 0, z); f.group.rotation.y = yaw; scene.add(f.group);
+  const an = new FencerAnimator(f, { lefty: !!look.lefty });
+  figs.push({ f, an, pose, opts });
+  return f;
+}
+// fencing stance (stance 1) on a POSES key, settled over a second
+function settle({ f, an, pose, opts }) {
+  for (let i = 0; i < 40; i++) {
+    if (opts.fence) {
+      const P = POSES[pose], t = { hand: P.hand.clone(), dir: P.dir.clone(), edge: P.edge.clone() };
+      an.stance = 1; an.bodySnap = 12;
+      Object.assign(an.body, { lunge: opts.lunge || 0, crouch: opts.crouch ?? 0.2, twist: opts.twist ?? 0.12, lean: opts.lean ?? 0.1, side: 0, headYaw: 0.1, headPitch: 0, hipsDrop: 0, back: 0, kneel: 0, rise: 0, slide: 0 });
+      an.left.hand.set(0.34, 1.14, -0.22);
+      an._apply(t, 10, 1 / 30);
+    } else an.fromPose(pose, 1 / 30, opts);
+  }
+  if (opts.expr) f.setExpression(opts.expr, 1e3);
+}
+const D = { ...LOOKS.player, outline, headScale: 1.22, seed: 3 };
+const E = { ...LOOKS.spanish, outline, headScale: 1.22, seed: 9, lefty: true, blade: 'rapier' };
+const sailor = (i, extra = {}) => ({ sailor: true, sword: false, coat: ['#e9e1cc', '#7a2a22', '#3a4d6e', '#c8b48a'][i % 4], stripes: i % 3 === 1, shirt: '#e8dfc8', breeches: ['#c8b48a', '#6b5a44', '#3a3a44'][i % 3], hat: ['bandana', 'none', 'tricorn'][i % 3], bandana: '#8e1b1b', hatColor: '#2a221c', skin: ['#c98d62', '#a86e48', '#e0ab84', '#7a4a2c'][i % 4], beard: i % 2 === 0, moustache: true, seed: 100 + i, fists: true, vest: i % 3 === 2 ? '#5a3a24' : null, ...extra });
+
+let cam;
+if (view === 'duel') {
+  place(D, 0, 1.3, Math.PI, 'sHigh', { fence: true, lunge: 0.9, expr: 'attack' });
+  place(E, 0, -1.3, 0, 'pHigh', { fence: true, crouch: 0.3, expr: 'strain' });
+  cam = [[4.6, 1.7, 0.4], [0, 1.15, 0]];
+} else if (view === 'faces' || view === 'profile') {
+  const L = [D, E, { ...LOOKS.governor, seed: 4 }, { ...LOOKS.woman, seed: 5 }, { ...LOOKS.woman, hat: 'none', dress: '#2a4a7a', bodice: '#e8dcc0', hair: '#7a5a30', seed: 8 }, { ...LOOKS.pirate, seed: 6, outline }];
+  L.forEach((l, i) => place({ ...l, sword: false }, (i - 2.5) * 0.62, 0, view === 'profile' ? -Math.PI / 2 : 0, 'rest', { expr: i === 4 ? 'attack' : undefined }));
+  cam = view === 'profile' ? [[0, 1.66, 3.1], [0, 1.62, 0]] : [[0, 1.68, 3.0], [0, 1.6, 0]];
+} else if (view === 'hands') {
+  place(D, -0.45, 0, -0.5, 'guard', { fence: true });
+  place({ ...LOOKS.governor, seed: 4 }, 0.5, 0, -0.25, 'rest');
+  place(sailor(2), 1.25, -0.2, -0.4, 'cheer');
+  cam = [[0.25, 1.25, 2.3], [0.25, 1.05, 0]];
+} else if (view === 'fists') {
+  // close-up on the hands: the crowd's raised fists, the resting hands of the governor and of a lady
+  place(sailor(1), -0.55, 0, 0.25, 'cheer');
+  place({ ...LOOKS.governor, seed: 4 }, 0.15, 0.1, -0.2, 'rest');
+  place({ ...LOOKS.woman, hat: 'none', dress: '#2a4a7a', bodice: '#e8dcc0', seed: 8 }, 0.8, 0, -0.35, 'rest');
+  cam = [[0.15, 1.62, 2.9], [0.15, 1.38, 0]];
+} else if (view === 'expr') {
+  // expressions: top row a woman (resting smile, joy, neutral); bottom row a captain (fierce, attack, hurt)
+  const W = { ...LOOKS.woman, hat: 'none', dress: '#2a4a7a', bodice: '#e8dcc0', seed: 8, expr: 'smile' }, M = { ...LOOKS.pirate, seed: 6, sword: false, expr: 'fierce' };
+  [['smile', 'neutral'], ['smile', 'joy'], ['calm', 'neutral']].forEach(([e, x], i) => place({ ...W, expr: e }, (i - 1) * 0.55, 0, 0, 'rest', { expr: x }));
+  [['fierce', 'neutral'], ['fierce', 'attack'], ['fierce', 'hurt']].forEach(([e, x], i) => place({ ...M, expr: e }, (i - 1) * 0.55, -0.6, 0, 'rest', { expr: x }));
+  cam = [[0, 1.95, 3.4], [0, 1.72, 0]];
+} else if (view === 'crowd') {
+  for (let i = 0; i < 8; i++) place(sailor(i), (i - 3.5) * 0.85, -(i % 2) * 0.7, 0.2 * (i - 3.5) * -0.3, i % 3 ? 'cheer' : 'rest', { bob: 0 });
+  cam = [[0.5, 1.6, 5.6], [0, 1.1, 0]];
+} else {
+  place(D, -3.2, 0, 0.35, 'guard', { fence: true });
+  place(E, -1.9, 0, 0.1, 'sMid', { fence: true, lunge: 0.8 });
+  place({ ...LOOKS.governor, seed: 4 }, -0.6, 0, 0, 'rest');
+  place({ ...LOOKS.woman, seed: 5 }, 0.6, 0, 0, 'rest');
+  place({ ...LOOKS.guard, seed: 7 }, 1.8, 0, -0.1, 'rest');
+  place(sailor(0, { sword: false }), 3.0, 0, -0.3, 'cheer');
+  cam = [[0, 1.5, 6.4], [0, 1.0, 0]];
+}
+for (const f of figs) settle(f);
+if (view === 'portraits') {
+  // port speaker medallions rendered from the 3D figures (src/ui/port/portrait3d.js)
+  const roles = [['governor', 'spanish'], ['governor', 'english'], ['council', 'pirate'], ['tavern', 'french'], ['tavernw', 'dutch'], ['merchant', 'english'], ['shipyard', 'spanish'], ['bank', 'dutch'], ['guard', 'spanish']];
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;display:grid;grid-template-columns:repeat(5,1fr);gap:18px;padding:40px;background:#2a2620;align-content:start';
+  roles.forEach(([r, n], i) => { const d = document.createElement('div'); d.style.cssText = 'width:220px;height:220px'; d.innerHTML = PORTRAIT(r, 1000 + i * 77, { img: portraitURL({ renderer }, r, 1000 + i * 77, n) }); d.firstElementChild.style.cssText = 'width:100%;height:100%'; wrap.appendChild(d); });
+  document.body.appendChild(wrap);
+}
+const camera = new THREE.PerspectiveCamera(view === 'fists' ? 30 : view === 'faces' || view === 'profile' || view === 'hands' || view === 'expr' ? 24 : 40, W / H, 0.05, 200);
+camera.position.set(...cam[0]); camera.lookAt(...cam[1]);
+let tris = 0; scene.traverse(o => { if (o.isMesh && o.geometry) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
+document.getElementById('lbl').textContent = `${view} · ${tod} · ${figs.length} figures · ${Math.round(tris / 1000)} k triangles (avec contours)`;
+renderer.render(scene, camera);
+renderer.compile(scene, camera);
+let n = 0;
+(function loop() { renderer.render(scene, camera); if (++n === 3) { window.__labReady = true; window.__labInfo = { tris, figs: figs.length, calls: renderer.info.render.calls }; } requestAnimationFrame(loop); })();
+</script>
+</body>
+</html>

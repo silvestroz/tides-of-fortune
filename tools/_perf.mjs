@@ -1,0 +1,21 @@
+import { chromium } from 'playwright';
+import { BASE, PORT, launchOpts } from './_env.mjs';
+const q = process.argv[2] || '';
+const browser = await chromium.launch(launchOpts());
+const page = await browser.newPage({ viewport: { width: +(process.argv[3] || 1600), height: +(process.argv[4] || 900) } });
+page.on('pageerror', e => console.log('ERR', e.message));
+const t0 = Date.now();
+await page.goto(BASE + '?' + q, { timeout: 300000 });
+await page.waitForFunction(() => window.__ready || window.__error, null, { timeout: 400000, polling: 500 });
+console.log('ready s', (Date.now() - t0) / 1000);
+await page.evaluate(() => { __game.hud.menu.close(); __game.mode = 'sail'; __game.events.emit('state:change', { from: 'menu', to: 'sail' }); __game.cameraRig.follow(__game.player); });
+const r = await page.evaluate(() => new Promise(res => {
+  const g = __game, R = g.renderer; R.info.autoReset = false; let calls = 0, tris = 0; let js = 0, n = 0; const o = g.step.bind(g);
+  g.step = dt => { const t = performance.now(); o(dt); js += performance.now() - t; };
+  let rj = 0; const op = g.post.render.bind(g.post); g.post.render = dt => { R.info.reset(); const t = performance.now(); op(dt); rj += performance.now() - t; calls = R.info.render.calls; tris = R.info.render.triangles; };
+  const t0 = performance.now();
+  const f = () => { if (++n < 8) requestAnimationFrame(f); else { g.step = o; g.post.render = op; res({ msFrame: (performance.now() - t0) / n, stepMs: js / n, renderCallMs: rj / n, calls, tris, geoms: R.info.memory.geometries, tex: R.info.memory.textures, ships: g.ships.length, q: g.quality, progs: R.info.programs.length }); } };
+  requestAnimationFrame(f);
+}));
+console.log(JSON.stringify(r));
+await browser.close();

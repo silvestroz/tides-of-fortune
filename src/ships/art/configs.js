@@ -1,0 +1,128 @@
+// Per-type design parameters for the procedural ships. Fractions of length are measured with s in [0,1] bow -> stern.
+// Mast z is given as s (bow 0 .. stern 1). Heights in metres unless noted.
+
+export const SHIP_DESIGNS = {
+  sloop: {
+    fb: 1.98, bulH: 0.85, sheerF: 0.45, sheerA: 0.35, tumble: 0.03, sMax: 0.46,
+    bowRake: 0.14, sternRake: 0.05, transomW: 0.5, transomY: 0.25, counter: 0.25,
+    castles: { qd: null, poop: null, fc: null },
+    ports: [{ deck: 'main', y: 0.42, s0: 0.27, s1: 0.72, n: 4, size: 0.44 }],
+    masts: [{ s: 0.38, h: 1.038, rake: 0.05, rig: 'sloop', r: 0.22 }],
+    bowsprit: { len: 0.5, angle: 0.12 },
+    headsails: 2, spritsail: false,
+    stern: { windowRows: [2], lanterns: 1, gallery: false, quarterGalleries: false, crest: 0.6 },
+    head: 'scroll', boat: false, crew: 7, hullColor: '#a5703a',
+    wales: [0.95],
+    paintFrom: 0.97,
+  },
+  schooner: {
+    fb: 2.30, bulH: 0.9, sheerF: 0.5, sheerA: 0.4, tumble: 0.04, sMax: 0.45,
+    bowRake: 0.17, sternRake: 0.05, transomW: 0.52, transomY: 0.3, counter: 0.3,
+    castles: { qd: { s: 0.8, h: 0.55 }, poop: null, fc: null },
+    ports: [{ deck: 'main', y: 0.45, s0: 0.2, s1: 0.72, n: 5, size: 0.46 }],
+    masts: [
+      { s: 0.3, h: 0.880, rake: 0.1, rig: 'gaff', r: 0.24, topsail: 'square' },
+      { s: 0.6, h: 0.950, rake: 0.11, rig: 'gaff', r: 0.26, topsail: 'gaff' },
+    ],
+    bowsprit: { len: 0.45, angle: 0.13 },
+    headsails: 2, spritsail: false,
+    stern: { windowRows: [3], lanterns: 1, gallery: false, quarterGalleries: false, crest: 0.7 },
+    head: 'scroll', boat: false, crew: 9,
+    wales: [],
+    paintFrom: 1.07,
+  },
+  brig: {
+    fb: 2.86, bulH: 1.0, sheerF: 0.6, sheerA: 0.45, tumble: 0.1, sMax: 0.44,
+    bowRake: 0.15, sternRake: 0.05, transomW: 0.55, transomY: 0.45, counter: 0.45,
+    castles: { qd: { s: 0.76, h: 0.75 }, poop: null, fc: { s: 0.12, h: 0.6 } },
+    ports: [{ deck: 'main', y: 0.5, s0: 0.17, s1: 0.71, n: 7, size: 0.54 }],
+    masts: [
+      { s: 0.28, h: 0.862, rake: 0.04, rig: 'square', tiers: 3, r: 0.3, yard: 1.0 },
+      { s: 0.58, h: 0.924, rake: 0.06, rig: 'square', tiers: 3, r: 0.32, yard: 1.05, spanker: true },
+    ],
+    bowsprit: { len: 0.42, angle: 0.22 },
+    headsails: 2, spritsail: false,
+    stern: { windowRows: [4], lanterns: 1, gallery: false, quarterGalleries: false, crest: 0.9 },
+    head: 'figure', boat: true, crew: 12,
+    wales: [1.25],
+    paintFrom: 1.47,
+  },
+  merchantman: {
+    fb: 3.41, bulH: 1.0, sheerF: 0.75, sheerA: 0.8, tumble: 0.2, sMax: 0.42,
+    bowRake: 0.1, sternRake: 0.04, transomW: 0.36, transomY: 1.2, counter: 0.3,
+    castles: { qd: { s: 0.68, h: 1.1 }, poop: { s: 0.86, h: 0.9 }, fc: { s: 0.13, h: 0.9 } },
+    ports: [{ deck: 'main', y: -0.85, s0: 0.25, s1: 0.6, n: 4, size: 0.55 }],
+    masts: [
+      { s: 0.24, h: 0.704, rake: 0.02, rig: 'square', tiers: 2, r: 0.33, yard: 0.95 },
+      { s: 0.5, h: 0.810, rake: 0.03, rig: 'square', tiers: 2, r: 0.36, yard: 1.05 },
+      { s: 0.76, h: 0.528, rake: 0.04, rig: 'lateen', r: 0.24 },
+    ],
+    bowsprit: { len: 0.32, angle: 0.4 },
+    headsails: 1, spritsail: true,
+    stern: { windowRows: [3], lanterns: 1, gallery: false, quarterGalleries: true, crest: 1.0 },
+    head: 'figure', boat: true, crew: 10,
+    wales: [1.75],
+    paintFrom: 0.97,
+  },
+  frigate: {
+    fb: 4.77, bulH: 1.05, sheerF: 0.7, sheerA: 0.55, tumble: 0.17, sMax: 0.44,
+    bowRake: 0.14, sternRake: 0.04, transomW: 0.5, transomY: 1.0, counter: 0.6,
+    castles: { qd: { s: 0.66, h: 1.45 }, poop: { s: 0.87, h: 0.95 }, fc: { s: 0.17, h: 1.15 } },
+    ports: [
+      { deck: 'main', y: -1.1, s0: 0.13, s1: 0.65, n: 10, size: 0.7 },
+      { deck: 'qd', y: 0.55, s0: 0.71, s1: 0.85, n: 3, size: 0.52 },
+      { deck: 'fc', y: 0.5, s0: 0.1, s1: 0.1, n: 1, size: 0.5 },
+    ],
+    masts: [
+      { s: 0.22, h: 0.836, rake: 0.03, rig: 'square', tiers: 3, r: 0.4, yard: 1.0 },
+      { s: 0.48, h: 0.906, rake: 0.04, rig: 'square', tiers: 3, r: 0.44, yard: 1.08 },
+      { s: 0.74, h: 0.651, rake: 0.05, rig: 'square', tiers: 2, r: 0.32, yard: 0.75, spanker: true },
+    ],
+    bowsprit: { len: 0.32, angle: 0.33 },
+    headsails: 2, spritsail: true,
+    stern: { windowRows: [5, 5], lanterns: 3, gallery: true, quarterGalleries: true, crest: 1.3 },
+    head: 'lion', boat: true, crew: 16,
+    wales: [0.9, 1.33, 2.45],
+    paintFrom: 1.55,
+  },
+  galleon: {
+    fb: 5.23, bulH: 1.1, sheerF: 1.1, sheerA: 1.0, tumble: 0.22, sMax: 0.43,
+    bowRake: 0.12, sternRake: 0.035, transomW: 0.52, transomY: 1.3, counter: 0.4,
+    castles: { qd: { s: 0.56, h: 2.1 }, poop: { s: 0.79, h: 1.9 }, fc: { s: 0.2, h: 2.3 } },
+    ports: [
+      { deck: 'main', y: -1.5, s0: 0.17, s1: 0.62, n: 9, size: 0.72 },
+      { deck: 'main', y: 0.55, s0: 0.27, s1: 0.5, n: 4, size: 0.54 },
+      { deck: 'qd', y: 0.6, s0: 0.6, s1: 0.74, n: 3, size: 0.54 },
+      { deck: 'fc', y: 0.6, s0: 0.07, s1: 0.14, n: 2, size: 0.5 },
+    ],
+    masts: [
+      { s: 0.2, h: 0.686, rake: 0.0, rig: 'square', tiers: 3, r: 0.48, yard: 0.95 },
+      { s: 0.45, h: 0.792, rake: 0.01, rig: 'square', tiers: 3, r: 0.52, yard: 1.08 },
+      { s: 0.67, h: 0.528, rake: 0.02, rig: 'lateen', r: 0.32 },
+      { s: 0.86, h: 0.414, rake: 0.03, rig: 'lateen', r: 0.26 },
+    ],
+    bowsprit: { len: 0.3, angle: 0.5 },
+    headsails: 0, spritsail: true,
+    stern: { windowRows: [5, 4], lanterns: 3, gallery: true, quarterGalleries: true, crest: 1.6 },
+    head: 'beak', boat: true, crew: 18,
+    wales: [1.2, 2.4],
+    paintFrom: 1.42,
+  },
+};
+
+// Hull paint colours per faction (the "paint band" + castle panels). Faction identity colours from constants,
+// re-mixed to read well as aged paint on wood.
+export const FACTION_PAINT = {
+  english: '#b8302a',
+  spanish: '#d99a00',
+  french:  '#2f5ea8',
+  dutch:   '#2a56a0',
+  pirate:  '#1a1716',
+};
+export const FACTION_TRIM = {   // secondary colour (thin bands, transom panel ground)
+  english: '#c79a3a',
+  spanish: '#a8321e',
+  french:  '#d0a640',
+  dutch:   '#d9741e',
+  pirate:  '#121010',
+};

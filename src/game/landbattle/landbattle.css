@@ -1,0 +1,64 @@
+/* Town assaults: prompt, choice, land-battle interface. */
+.lb-prompt { position: absolute; left: 50%; bottom: 9.6em; transform: translateX(-50%); display: flex; gap: .6em; align-items: center;
+  padding: .35em 1em; border-radius: .3em; font-family: var(--txt); font-size: 1.05em; pointer-events: none;
+  box-shadow: inset 0 0 1em rgba(110,66,18,.5), 0 .2em .6em rgba(0,0,0,.4), 0 0 0 .12em #5a3c14; transition: opacity .3s; }
+.lb-prompt.off { opacity: 0; }
+.lb-prompt .key, .lb-hud .kc { display: inline-block; min-width: 1.3em; padding: 0 .3em; border-radius: .2em; text-align: center;
+  background: #2a1c10; color: #f6e3b0; font-family: Georgia, serif; font-size: .9em; margin: 0 .1em; }
+.lb-screen { position: absolute; inset: 0; display: grid; place-items: center; visibility: hidden; opacity: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(10,6,2,.3), rgba(10,6,2,.78)); transition: opacity .35s, visibility 0s linear .35s;
+  font-family: var(--txt); z-index: 30; }
+.lb-screen.on { visibility: visible; opacity: 1; pointer-events: auto; transition-delay: 0s; }
+.lb-sheet { width: min(44em, 92vw); padding: 1.8em 2.4em 1.4em; border-radius: .4em; color: #2a1c10;
+  box-shadow: inset 0 0 1.4em rgba(110,66,18,.55), 0 1em 3em rgba(0,0,0,.6), 0 0 0 .15em #5a3c14, 0 0 0 .28em rgba(201,162,74,.7); }
+.lb-sheet h2 { margin: 0; text-align: center; font-weight: normal; font-size: 2em; color: #4a1010; letter-spacing: .04em; }
+.lb-sheet .sub { text-align: center; font-style: italic; color: #5a4128; margin: .3em 0 1em; }
+.lb-sheet .warn { color: #7a1a10; text-align: center; margin: -.4em 0 .8em; }
+.lb-choices { display: grid; gap: .55em; }
+.lb-ch { text-align: left; display: block; width: 100%; padding: .6em .9em; font: inherit; cursor: pointer; color: #2a1c10;
+  background: rgba(255,246,220,.55); border: 1px solid rgba(90,60,20,.5); border-radius: .3em; letter-spacing: 0; box-shadow: none; }   /* a choice row, not an action button (style guide) */
+.lb-ch:hover { background: rgba(255,236,180,.85); border-color: #8a5a1c; }
+.lb-ch b { font-size: 1.15em; } .lb-ch span { display: block; font-size: .9em; color: #5a4128; margin-top: .15em; }
+.lb-sheet .actions { display: flex; justify-content: flex-end; margin-top: 1em; }
+.lb-sheet .actions .btn { font: inherit; font-family: var(--sc); letter-spacing: .06em; padding: .35em 1.2em; }   /* colours: .btn (style guide “Boutons”) */
+.lb-tab { width: 100%; border-collapse: collapse; margin: 0 0 1em; } .lb-tab td { padding: .2em .3em; border-bottom: 1px dotted rgba(90,60,20,.4); }
+.lb-tab .n { text-align: right; font-variant-numeric: tabular-nums; }
+.lb-fade { position: absolute; inset: 0; background: #0d0905; opacity: 0; pointer-events: none; transition: opacity .45s; z-index: 40; }
+.lb-fade.on { opacity: 1; }
+.lb-box { position: absolute; display: none; border: 1px solid #ffe9a0; background: rgba(255,233,160,.12); pointer-events: none; z-index: 20; }
+.lb-hud { position: absolute; inset: 0; pointer-events: none; font-family: var(--txt); z-index: 10; }
+.lb-hud.off { display: none; }
+.lb-top { position: absolute; top: .8em; left: 50%; transform: translateX(-50%); display: flex; gap: 1.2em; align-items: center; padding: .3em 1.2em;
+  border-radius: .3em; box-shadow: inset 0 0 1em rgba(110,66,18,.5), 0 .2em .6em rgba(0,0,0,.4), 0 0 0 .12em #5a3c14; }
+.lb-town { font-size: 1.2em; color: #4a1010; } .lb-clock { font-variant-numeric: tabular-nums; font-size: 1.1em; }
+.lb-hold { width: 7em; height: .5em; background: rgba(60,40,20,.25); border-radius: .25em; overflow: hidden; opacity: .35; }
+.lb-hold.on { opacity: 1; } .lb-hold i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #b8862c, #f0d58a); }
+.lb-cards { position: absolute; left: 1em; bottom: 3.6em; display: flex; gap: .45em; pointer-events: auto; }
+.lb-card { width: 8.2em; padding: .35em .5em .45em; border-radius: .3em; cursor: pointer; position: relative; font-size: .92em;
+  box-shadow: inset 0 0 .8em rgba(110,66,18,.5), 0 .15em .4em rgba(0,0,0,.4), 0 0 0 .1em #5a3c14; }
+.lb-card.sel { box-shadow: inset 0 0 .8em rgba(110,66,18,.5), 0 0 0 .18em #ffe9a0, 0 0 .8em rgba(255,233,160,.6); }
+.lb-card.dead { opacity: .35; } .lb-card.rout { filter: saturate(.3); }
+.lb-card b { display: block; } .lb-card .n { position: absolute; right: .5em; top: .35em; font-variant-numeric: tabular-nums; }
+.lb-card .mor, .lb-tag i { display: block; height: .3em; margin-top: .25em; background: rgba(60,40,20,.25); border-radius: .2em; overflow: hidden; }
+.lb-card .mor i, .lb-tag i b { display: block; height: 100%; background: linear-gradient(90deg, #8a2a1f, #c9a54a 40%, #5f8a3a); }
+.lb-help { position: absolute; left: 50%; bottom: .7em; transform: translateX(-50%); padding: .25em 1em; border-radius: .3em; font-size: .85em; white-space: nowrap;
+  box-shadow: inset 0 0 .8em rgba(110,66,18,.5), 0 0 0 .1em #5a3c14; }
+.lb-tags { position: absolute; inset: 0; overflow: hidden; }
+.lb-tag { position: absolute; left: 0; top: 0; margin: -1.4em 0 0 -2.2em; width: 4.4em; text-align: center; font-size: .78em; color: #f6e3b0;
+  text-shadow: 0 0 .25em #000, 0 0 .1em #000; }
+.lb-tag.enemy { color: #ffc2b0; width: 7em; margin-left: -3.5em; } .lb-tag.sel span { color: #fff3c4; }
+.lb-tag i { height: .25em; width: 3em; margin: .1em auto 0; background: rgba(0,0,0,.45); }
+.lb-toast { position: absolute; top: 3.6em; left: 50%; transform: translateX(-50%); color: #f6e3b0; font-size: 1.25em; opacity: 0;
+  text-shadow: 0 0 .3em #000, 0 .05em .1em #000; white-space: nowrap; }
+.lb-toast.on { animation: lbToast 3.2s ease forwards; }
+@keyframes lbToast { 0% { opacity: 0; transform: translate(-50%, -.3em); } 10%, 75% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
+.lb-pause { position: absolute; top: 40%; left: 50%; transform: translateX(-50%); font-size: 2.4em; color: #f6e3b0; letter-spacing: .2em;
+  text-shadow: 0 0 .3em #000; display: none; } .lb-pause.on { display: block; }
+/* Readability: text over the 3D (light terrain) sits on a dark pill, labels ≥ 11.5 px,
+   titles and names in IM Fell SC as elsewhere */
+.lb-sheet h2, .lb-town { font-family: var(--sc); letter-spacing: .04em; }
+.lb-toast { padding: .2em .9em .25em; border-radius: .5em; background: rgba(20,12,6,.62); box-shadow: 0 0 0 1px rgba(201,162,74,.4); }
+.lb-tag { font-size: max(.78em, 11.5px); }
+.lb-tag span { display: inline-block; padding: 0 .35em; border-radius: .4em; background: rgba(20,12,6,.5); line-height: 1.25; white-space: nowrap; }
+.lb-help { font-size: max(.85em, 11.5px); }
+.lb-card { font-size: max(.92em, 12px); }

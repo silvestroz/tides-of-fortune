@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tides of Fortune</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3v20M16 5l9 13h-9zM15 7l-8 11h8z' fill='%23f3e6c4' stroke='%23f3e6c4'/%3E%3Cpath d='M4 23h24l-4 6H8z' fill='%238a5a2b'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/ui/hud.css" />
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1620; }
+    #app { position: fixed; inset: 0; }
+    #app canvas { display: block; width: 100%; height: 100%; }
+    /* Loading screen: pure CSS, animated with transform / opacity only, so it stays smooth while the game generates
+       the world and compiles its shaders on the main thread. Removed by src/main.js when game.start() finishes. */
+    #boot { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; color: #f3e6c4;
+      background: radial-gradient(120% 90% at 50% 38%, #1d3a4d 0%, #10222f 55%, #070e15 100%);
+      transition: opacity .7s ease; }
+    #boot.done { opacity: 0; pointer-events: none; }
+    /* the title screen's logo (src/ui/menu.js _title(), .title-block styles of hud.css) copied as static markup, at the
+       same place and size (em = font size of #ui): when it fades out, the menu appears under the same logo */
+    #boot .bt { position: absolute; left: 50%; top: 9%; transform: translateX(-50%); width: 64em; max-width: 96vw; text-align: center;
+      font-size: clamp(13px, 1.5vh, 24px); display: flex; flex-direction: column; align-items: center; }
+    #boot .pre { font: 400 1em/1.2 'IM Fell English SC', Georgia, serif; letter-spacing: min(.6em, 1.4vw); padding-left: min(.6em, 1.4vw); white-space: nowrap;
+      color: #e8d39a; text-shadow: 0 .1em .3em rgba(0,0,0,.9); }
+    #boot h1 { margin: .12em 0 0; font: 400 min(6.6em, 13vw)/.95 'IM Fell English SC', Georgia, serif; letter-spacing: .02em;
+      background: linear-gradient(180deg, #fff5cf 0%, #f1d68a 38%, #b88a33 52%, #e9c97a 70%, #8a6020 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      filter: drop-shadow(0 .02em 0 #3a2408) drop-shadow(0 .05em .08em rgba(0,0,0,.85)) drop-shadow(0 0 .3em rgba(0,0,0,.45)); }
+    #boot h1 .of { font-family: 'IM Fell English', Georgia, serif; font-style: italic; font-size: .55em; letter-spacing: 0; padding: 0 .12em; vertical-align: .35em; }
+    #boot .flourish { width: min(30em, 80vw); height: 3.2em; margin: .4em auto 0; display: block; overflow: visible; filter: drop-shadow(0 .1em .2em rgba(0,0,0,.8)); }
+    #boot .flagrow { display: flex; justify-content: center; align-items: center; gap: .9em; margin: .6em auto .55em; }
+    #boot .flagrow .fl { display: block; width: 2.6em; height: 1.75em; position: relative; transform-origin: 0 50%;
+      animation: boot-wave 2.6s ease-in-out infinite; will-change: transform; }
+    #boot .flagrow .fl:nth-of-type(2) { animation-delay: -.6s; } #boot .flagrow .fl:nth-of-type(3) { animation-delay: -1.2s; } #boot .flagrow .fl:nth-of-type(4) { animation-delay: -1.8s; }
+    #boot .flagrow .fl::before { content: ''; position: absolute; left: -.18em; top: -.25em; bottom: -.35em; width: .12em; border-radius: .1em;
+      background: linear-gradient(90deg, #6e4f1a, #f1d488, #6e4f1a); }
+    #boot .flagrow svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 .08em .12em rgba(0,0,0,.7)); }
+    #boot .flagrow .dia { width: .38em; height: .38em; transform: rotate(45deg);
+      background: linear-gradient(160deg, #fbe7a6 0%, #d9b55a 22%, #8a6424 48%, #c9a24a 64%, #f1d488 82%, #7a5a1e 100%); box-shadow: 0 0 .3em rgba(0,0,0,.6); }
+    #boot .sub { margin-top: .3em; font: italic 400 1.25em/1.2 Spectral, Georgia, serif; color: #efe0b8; text-shadow: 0 .1em .3em rgba(0,0,0,.95); }
+    #boot .msg { margin-top: 3.2em; font: italic 400 1.15em/1.3 Spectral, Georgia, serif; color: rgba(243,230,196,.82); }
+    #boot .msg i { font-style: normal; display: inline-block; animation: boot-dot 1.4s ease-in-out infinite; }
+    #boot .msg i:nth-child(2) { animation-delay: .2s; }
+    #boot .msg i:nth-child(3) { animation-delay: .4s; }
+    #boot.fail .msg { color: #f0b9a0; font-style: normal; }
+    #boot.fail .fl, #boot.fail .msg i { animation-play-state: paused; }
+    @keyframes boot-wave { 0%, 100% { transform: skewY(0) scaleX(1); } 50% { transform: skewY(-3deg) scaleX(.94); } }
+    @keyframes boot-dot { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { #boot .fl, #boot .msg i { animation: none; } }
+    /* Mobile warning: the game targets keyboard + mouse, there are no touch controls. A discreet banner
+       above the loading screen (not full screen, not blocking: the player chooses), hidden by default and shown by
+       the script just below only on a touch device without a mouse that hasn't dismissed it already
+       (localStorage key tof.mobileWarnSeen). .btn / .btn.ghost buttons reused from hud.css (already loaded). */
+    #mobilewarn { display: none; position: fixed; left: 0; right: 0; top: 0; z-index: 150;
+      padding: calc(.7em + env(safe-area-inset-top)) 1em .7em; gap: .5em .9em;
+      background: linear-gradient(180deg, #2a1c10, #1a1109 85%); border-bottom: 1px solid #6e4a14;
+      box-shadow: 0 .3em .9em rgba(0,0,0,.5); color: #f3e6c4; font: 400 .92em/1.35 var(--txt, Georgia, serif);
+      align-items: center; justify-content: center; text-align: center; }
+    #mobilewarn.show { display: flex; flex-wrap: wrap; }
+    #mobilewarn p { margin: 0; max-width: 46em; }
+    #mobilewarn .acts { display: flex; gap: .5em; align-items: center; flex: none; }
+    #mobilewarn .btn { font-size: .95em; padding: .3em .9em; }
+    #mobilewarn .x { background: none; border: 0; color: #d9c9a0; font-size: 1.3em; line-height: 1; cursor: pointer; padding: .1em .3em; }
+    #mobilewarn .x:hover { color: #fff; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="ui"></div>
+  <div id="mobilewarn" role="status">
+    <p>Tides of Fortune is played with a keyboard and mouse: no touch controls yet. Keep this link to open it on a computer!</p>
+    <div class="acts">
+      <button class="btn ghost" data-share type="button">Copy the link</button>
+      <button class="x" data-close type="button" aria-label="Close">&times;</button>
+    </div>
+  </div>
+  <script>
+    (function () {
+      try {
+        var el = document.getElementById('mobilewarn');
+        var touchOnly = matchMedia('(hover: none) and (pointer: coarse)').matches;
+        if (!touchOnly || localStorage.getItem('tof.mobileWarnSeen')) return;
+        el.classList.add('show');
+        var dismiss = function () { el.classList.remove('show'); try { localStorage.setItem('tof.mobileWarnSeen', '1'); } catch (e) {} };
+        el.querySelector('[data-close]').onclick = dismiss;
+        var shareBtn = el.querySelector('[data-share]');
+        if (navigator.share) {
+          shareBtn.textContent = 'Share the link';
+          shareBtn.onclick = function () { navigator.share({ title: document.title, url: location.href }).catch(function () {}); };
+        } else {
+          shareBtn.onclick = function () {
+            var done = function () { shareBtn.textContent = 'Copied!'; setTimeout(function () { shareBtn.textContent = 'Copy the link'; }, 1600); };
+            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(location.href).then(done, done);
+            else { var ta = document.createElement('textarea'); ta.value = location.href; ta.style.position = 'fixed'; ta.style.opacity = '0';
+              document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta); done(); }
+          };
+        }
+      } catch (e) { /* never mind: no banner */ }
+    })();
+  </script>
+  <div id="boot" role="status" aria-live="polite">
+    <div class="bt">
+      <div class="pre">A chronicle of the Spanish Main</div>
+      <h1>Tides <span class="of">of</span> Fortune</h1>
+      <svg class="flourish" viewBox="0 0 600 60" aria-hidden="true"><g fill="none" stroke="#f1d488" stroke-width="1.6" stroke-linecap="round">
+        <path d="M40 30 H232"/><path d="M368 30 H560"/>
+        <path d="M232 30 C252 8 276 8 290 22 C298 30 302 30 310 22 C324 8 348 8 368 30"/>
+        <path d="M232 30 C252 52 276 52 290 38 C298 30 302 30 310 38 C324 52 348 52 368 30"/>
+        <path d="M40 30 C26 22 18 26 14 30 C18 34 26 38 40 30Z" fill="#f1d488"/><path d="M560 30 C574 22 582 26 586 30 C582 34 574 38 560 30Z" fill="#f1d488"/>
+        <circle cx="300" cy="30" r="4.5" fill="#f1d488"/><circle cx="200" cy="30" r="2.4" fill="#f1d488"/><circle cx="400" cy="30" r="2.4" fill="#f1d488"/>
+        <path d="M120 30 L128 24 L136 30 L128 36 Z" fill="#f1d488"/><path d="M464 30 L472 24 L480 30 L472 36 Z" fill="#f1d488"/></g></svg>
+      <div class="flagrow" aria-hidden="true"><span class="fl"><svg class="flag" viewBox="0 0 60 40" width="42" height="28" aria-hidden="true"><defs><clipPath id="bootfl1c"><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z"/></clipPath><linearGradient id="bootfl1g" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity="0.18"/><stop offset="0.25" stop-color="#fff" stop-opacity="0.16"/><stop offset="0.5" stop-color="#000" stop-opacity="0.14"/><stop offset="0.75" stop-color="#fff" stop-opacity="0.12"/><stop offset="1" stop-color="#000" stop-opacity="0.22"/></linearGradient></defs><g clip-path="url(#bootfl1c)"><rect width="60" height="40" fill="#b8242c"/><rect x="0" y="0" width="26" height="18" fill="#f1e8d2"/><rect x="11" y="0" width="4" height="18" fill="#b8242c"/><rect x="0" y="7" width="26" height="4" fill="#b8242c"/><rect width="60" height="40" fill="url(#bootfl1g)"/></g><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z" fill="none" stroke="#1c120a" stroke-opacity="0.55" stroke-width="1.2"/></svg></span><i class="dia"></i><span class="fl"><svg class="flag" viewBox="0 0 60 40" width="42" height="28" aria-hidden="true"><defs><clipPath id="bootfl2c"><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z"/></clipPath><linearGradient id="bootfl2g" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity="0.18"/><stop offset="0.25" stop-color="#fff" stop-opacity="0.16"/><stop offset="0.5" stop-color="#000" stop-opacity="0.14"/><stop offset="0.75" stop-color="#fff" stop-opacity="0.12"/><stop offset="1" stop-color="#000" stop-opacity="0.22"/></linearGradient></defs><g clip-path="url(#bootfl2c)"><rect width="60" height="40" fill="#f1e2b8"/><path d="M4 3 L56 37 M56 3 L4 37" stroke="#a5201f" stroke-width="5" stroke-linecap="round" stroke-dasharray="7 2.2"/><circle cx="30" cy="20" r="4.5" fill="#e0b43a" stroke="#7a4f10" stroke-width="1"/><rect width="60" height="40" fill="url(#bootfl2g)"/></g><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z" fill="none" stroke="#1c120a" stroke-opacity="0.55" stroke-width="1.2"/></svg></span><i class="dia"></i><span class="fl"><svg class="flag" viewBox="0 0 60 40" width="42" height="28" aria-hidden="true"><defs><clipPath id="bootfl3c"><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z"/></clipPath><linearGradient id="bootfl3g" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity="0.18"/><stop offset="0.25" stop-color="#fff" stop-opacity="0.16"/><stop offset="0.5" stop-color="#000" stop-opacity="0.14"/><stop offset="0.75" stop-color="#fff" stop-opacity="0.12"/><stop offset="1" stop-color="#000" stop-opacity="0.22"/></linearGradient></defs><g clip-path="url(#bootfl3c)"><rect width="60" height="40" fill="#2e5aa8"/><g transform="translate(20 13)" fill="#e7c25a"><path d="M0 -6 C2.4 -3 2.4 0 0 2.5 C-2.4 0 -2.4 -3 0 -6Z"/><path d="M0 1.5 C3 -2 6 -1 5 2.5 C3.5 1 2 1.8 0 3.5Z"/><path d="M0 1.5 C-3 -2 -6 -1 -5 2.5 C-3.5 1 -2 1.8 0 3.5Z"/><rect x="-3.5" y="3" width="7" height="1.6"/></g><g transform="translate(40 13)" fill="#e7c25a"><path d="M0 -6 C2.4 -3 2.4 0 0 2.5 C-2.4 0 -2.4 -3 0 -6Z"/><path d="M0 1.5 C3 -2 6 -1 5 2.5 C3.5 1 2 1.8 0 3.5Z"/><path d="M0 1.5 C-3 -2 -6 -1 -5 2.5 C-3.5 1 -2 1.8 0 3.5Z"/><rect x="-3.5" y="3" width="7" height="1.6"/></g><g transform="translate(30 28)" fill="#e7c25a"><path d="M0 -6 C2.4 -3 2.4 0 0 2.5 C-2.4 0 -2.4 -3 0 -6Z"/><path d="M0 1.5 C3 -2 6 -1 5 2.5 C3.5 1 2 1.8 0 3.5Z"/><path d="M0 1.5 C-3 -2 -6 -1 -5 2.5 C-3.5 1 -2 1.8 0 3.5Z"/><rect x="-3.5" y="3" width="7" height="1.6"/></g><rect width="60" height="40" fill="url(#bootfl3g)"/></g><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z" fill="none" stroke="#1c120a" stroke-opacity="0.55" stroke-width="1.2"/></svg></span><i class="dia"></i><span class="fl"><svg class="flag" viewBox="0 0 60 40" width="42" height="28" aria-hidden="true"><defs><clipPath id="bootfl4c"><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z"/></clipPath><linearGradient id="bootfl4g" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity="0.18"/><stop offset="0.25" stop-color="#fff" stop-opacity="0.16"/><stop offset="0.5" stop-color="#000" stop-opacity="0.14"/><stop offset="0.75" stop-color="#fff" stop-opacity="0.12"/><stop offset="1" stop-color="#000" stop-opacity="0.22"/></linearGradient></defs><g clip-path="url(#bootfl4c)"><rect width="60" height="14" fill="#e07a24"/><rect y="13" width="60" height="14" fill="#f1e8d2"/><rect y="26.5" width="60" height="13.5" fill="#2a4f8f"/><rect width="60" height="40" fill="url(#bootfl4g)"/></g><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z" fill="none" stroke="#1c120a" stroke-opacity="0.55" stroke-width="1.2"/></svg></span></div>
+      <div class="sub">Privateers, plunder and the high seas, anno 1660</div>
+      <div class="msg">Hoisting the sails<i>.</i><i>.</i><i>.</i></div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+/* The hold at sea (I key, src/ui/holdScreen.js): reuses the capture sheet
+   (.board-sheet, duel.css) and the Transbordement panel (.ts, .ts-t), with a few adjustments. */
+.hold-screen { z-index: 40; }
+.board-sheet.hold { width: min(44em, 94vw); }
+.board-sheet.hold .sub { font-family: var(--txt, Georgia); margin: .1em 0 .6em; }
+.board-sheet.hold .ts-hd { margin-bottom: .15em; }
+.board-sheet.hold .h-speed { font-family: var(--txt, Georgia); font-size: .9em; text-align: center; color: #5a4128; margin: 0 0 .35em; }
+.board-sheet.hold .h-speed b { font-family: var(--sc, Georgia); font-weight: normal; font-size: 1.08em; }
+.board-sheet.hold .h-speed .dn { color: #9a1c12; }
+.board-sheet.hold .h-speed .up { color: #2c5a1e; }
+.board-sheet.hold .ts-t tr.hd td.mv { font-size: .85em; }
+.board-sheet.hold .ts-t td.mv button { min-width: 2.3em; }
+.board-sheet.hold .ts-t td.mv button[data-mv="back"] { min-width: 1.9em; }
+.board-sheet.hold .ts-t td.q.out b { color: #2f5a6e; }
+.board-sheet.hold .h-empty { font-family: var(--txt, Georgia); font-style: italic; text-align: center; color: #5a4128; margin: .8em 0 .6em; }
+.board-sheet.hold .ts-help .kc { min-width: 1.3em; height: 1.3em; font-size: .9em; padding: 0 .2em; color: #2a1c10; background: rgba(255,248,226,.7);
+  border: 1px solid #c9a24a; border-radius: .2em; display: inline-grid; place-items: center; font-style: normal; }
+.board-sheet.hold .h-x { position: absolute; right: .45em; top: .25em; padding: 0 .25em; font-size: 1.6em; line-height: 1; color: #5a4128;
+  background: none; border: 0; box-shadow: none; }
+.board-sheet.hold .h-x:hover { background: none; color: #6e1010; }
+/* the help text only wraps between two groups (no more “cancel” alone on its line) */
+.board-sheet.hold .ts-help > span { white-space: nowrap; }
+/* “Guns” row (jettisoned by 2, bought back at the refit) */
+.board-sheet.hold .ts-t tr.guns td { border-top: 1px dashed rgba(110,79,26,.45); }
+.board-sheet.hold .ts-t tr.guns .gico svg { width: 100%; height: 100%; display: block; color: #3a2a1a; }
+.board-sheet.hold .h-speed .h-guns { display: block; margin-top: .15em; }
+/* .up / .dn are also grid rows of the shipyard (port.css): here, plain colours in the speed line */
+.board-sheet.hold .h-speed b.up, .board-sheet.hold .h-speed b.dn { display: inline; padding: 0; border: 0; gap: 0; }

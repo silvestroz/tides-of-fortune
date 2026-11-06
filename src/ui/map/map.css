@@ -1,0 +1,46 @@
+/* Full-screen sea chart overlay. */
+.tof-worldmap { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .35s; z-index: 30; }
+.tof-worldmap.on { opacity: 1; pointer-events: auto; }
+.tof-worldmap canvas { position: absolute; inset: 0; cursor: grab; display: block; }
+.tof-worldmap canvas.drag { cursor: grabbing; }
+.tof-worldmap .wm-hint { position: absolute; bottom: .3em; padding: .28em 1.1em; border-radius: .35em; background: rgba(24,14,6,.92); border: 1px solid rgba(201,162,74,.45); box-shadow: 0 .2em .6em rgba(0,0,0,.45); left: 50%; transform: translateX(-50%); display: flex; gap: 1.6em; color: #e9d8ae; font-family: var(--txt); font-style: italic; font-size: .95em; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.tof-worldmap .wm-hint .k { font-style: normal; font-weight: normal; font-family: 'IM Fell English SC', Georgia, serif; padding: 0 .35em; margin-right: .3em; border: 1px solid rgba(201,162,74,.8); border-radius: .2em; color: #f6e09a; }
+/* legend with layer filters, hover card */
+.tof-worldmap .wm-legend { position: absolute; left: calc(4.5vmin + 16px); bottom: calc(4.5vmin + 86px); width: 14.4em; padding: .55em .6em .6em; border-radius: .2em;
+  font-family: var(--txt); font-size: clamp(11px, 1.35vh, 15px); color: #2a1c10;
+  box-shadow: inset 0 0 1.2em rgba(110,66,18,.45), 0 0 0 1px #6e4f1a, 0 0 0 3px rgba(246,224,154,.5), 0 .3em 1em rgba(0,0,0,.35); }
+.tof-worldmap .wl-h { font-family: 'IM Fell English SC', Georgia, serif; text-align: center; letter-spacing: .12em; font-size: 1.1em; margin-bottom: .25em;
+  border-bottom: 1px solid rgba(70,42,14,.4); padding-bottom: .15em; }
+.tof-worldmap .wl-row, .tof-worldmap .wl-you { appearance: none; border: 0; background: none; font: inherit; color: inherit; width: 100%; display: grid; grid-template-columns: 1.5em 1fr 1em;
+  align-items: center; gap: .4em; padding: .1em .15em; text-align: left; cursor: pointer; border-radius: .15em; }
+.tof-worldmap .wl-you { grid-template-columns: 1.5em 1fr; cursor: default; font-style: italic; border-top: 1px solid rgba(70,42,14,.25); margin-top: .2em; padding-top: .3em; }
+.tof-worldmap .wl-row:hover { background: rgba(255,248,226,.45); }
+.tof-worldmap .wl-row i, .tof-worldmap .wl-you i { width: 1.4em; height: 1.4em; display: block; }
+.tof-worldmap .wl-row svg, .tof-worldmap .wl-you svg { width: 100%; height: 100%; display: block; }
+.tof-worldmap .wl-chk { width: .85em; height: .85em; border: 1px solid rgba(60,35,10,.7); border-radius: .12em; position: relative; }
+.tof-worldmap .wl-row.on .wl-chk::after { content: ''; position: absolute; left: .22em; top: -.08em; width: .28em; height: .55em; border: solid #8e1b1b; border-width: 0 .14em .14em 0; transform: rotate(40deg); }
+.tof-worldmap .wl-row:not(.on) { opacity: .5; }
+.tof-worldmap .wl-row:not(.on) span { text-decoration: line-through; text-decoration-color: rgba(60,35,10,.45); }
+.tof-worldmap .wl-center { appearance: none; display: block; width: 100%; margin-top: .4em; font: inherit; font-family: 'IM Fell English SC', Georgia, serif; letter-spacing: .06em;
+  color: var(--cta-ink, #2a1c10); cursor: pointer; border: 1px solid var(--cta-edge, #6e4a14); border-radius: .2em; padding: .2em .4em; background: var(--cta-bg, linear-gradient(180deg, #f3dfa6, #d9b35c)); box-shadow: var(--cta-drop, 0 .1em 0 #6e4a14); }
+.tof-worldmap .wl-center:hover { filter: brightness(1.08); box-shadow: var(--cta-drop), var(--cta-glow); }
+.tof-worldmap .wm-tip { position: absolute; left: 0; top: 0; max-width: 18em; padding: .45em .7em .5em; border-radius: .2em; pointer-events: none; display: flex; flex-direction: column; gap: .1em;
+  font-family: var(--txt); font-size: clamp(12px, 1.45vh, 16px); color: #2a1c10; line-height: 1.2; transition: opacity .15s;
+  box-shadow: inset 0 0 1em rgba(110,66,18,.45), 0 0 0 1px #6e4f1a, 0 .3em .9em rgba(0,0,0,.45); }
+.tof-worldmap .wm-tip.off { opacity: 0; }
+.tof-worldmap .wm-tip b { font-family: 'IM Fell English SC', Georgia, serif; font-weight: normal; font-size: 1.15em; letter-spacing: .04em; }
+.tof-worldmap .wm-tip span.bad { color: #8e1b1b; }
+.tof-worldmap .wm-tip span.good { color: #1e552d; }
+.tof-worldmap .wm-tip em { color: #6b5638; font-size: .9em; }
+
+/* legend can be folded (click its title), remembered per viewer; folded = title only */
+.tof-worldmap .wl-h { cursor: pointer; user-select: none; }
+.tof-worldmap .wl-h::after { content: ' ▾'; font-size: .8em; opacity: .7; }
+.tof-worldmap .wm-legend.min .wl-h { margin-bottom: 0; border-bottom: 0; padding-bottom: 0; }
+.tof-worldmap .wm-legend.min .wl-h::after { content: ' ▸'; }
+.tof-worldmap .wm-legend.min .wl-row, .tof-worldmap .wm-legend.min .wl-you, .tof-worldmap .wm-legend.min .wl-center { display: none; }
+.tof-worldmap .wm-legend.min { width: auto; padding: .35em .9em; }
+/* legend readable at 768 px (12 px at least), turned-off layers less washed out */
+.tof-worldmap .wm-legend { font-size: clamp(12px, 1.45vh, 16px); }
+.tof-worldmap .wl-row:not(.on) { opacity: .66; }
+.tof-worldmap .wm-tip em { font-size: max(.9em, 12px); }

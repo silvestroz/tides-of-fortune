@@ -1,0 +1,85 @@
+/* Registry, retirement screen, officer/item cards in port and at capture */
+.registry-screen, .retire-screen { z-index: 40; }
+.board-sheet.registry { width: min(64em, 96vw); max-height: 94vh; overflow: auto; padding: 1.4em 2em 1.2em; }
+.board-sheet.registry .sub { margin-bottom: .6em; }
+.board-sheet table.ranks td { padding: .16em .4em; font-size: .95em; }
+.board-sheet table.ranks tr.hd td { font-family: var(--sc, Georgia); color: #6b1a12; border-bottom: 1px solid rgba(42,28,16,.5); }
+.board-sheet table.ranks tr.me td { background: rgba(176,30,20,.12); color: #4a1010; }
+.board-sheet table.ranks tr.beaten td { opacity: .5; text-decoration: line-through; text-decoration-thickness: 1px; }
+.board-sheet table.ranks tr.beaten td.n, .board-sheet table.ranks tr.beaten td.d { text-decoration: none; }
+.board-sheet td.d { font-style: italic; color: #5a4128; }
+.board-sheet .cols3 { display: grid; grid-template-columns: 1.15fr 1fr .85fr; gap: 1.4em; }
+.board-sheet ul.lst { list-style: none; margin: 0 0 .6em; padding: 0; font-size: .9em; }
+.board-sheet ul.lst li { padding: .12em 0 .12em 1em; position: relative; opacity: .55; line-height: 1.15; }
+.board-sheet ul.lst li.on { opacity: 1; }
+.board-sheet ul.lst li::before { content: ''; position: absolute; left: 0; top: .45em; width: .5em; height: .5em; border: 1px solid #6e4f1a; border-radius: 50%; }
+.board-sheet ul.lst li.on::before { background: #8e1b1b; border-color: #4a0e0e; }
+.board-sheet ul.lst b { font-weight: normal; font-family: var(--sc, Georgia); margin-right: .4em; }
+.board-sheet ul.lst em { display: block; font-size: .92em; color: #5a4128; }
+.board-sheet .kv { display: flex; justify-content: space-between; gap: 1em; padding: .12em 0; border-bottom: 1px dotted rgba(42,28,16,.3); }
+.board-sheet .kv b { font-weight: normal; font-family: var(--sc, Georgia); }
+.board-sheet .dn { color: #9a1c12; }
+.board-sheet .hbar { height: .45em; margin: .2em 0 .4em; border: 1px solid #6e4f1a; border-radius: .25em; background: rgba(42,28,16,.15); overflow: hidden; }
+.board-sheet .hbar i { display: block; height: 100%; background: linear-gradient(90deg, #8e1b1b, #c46a2a 50%, #5f7a2a); }
+.board-sheet p.small, .board-sheet p.ink { font-size: .88em; font-style: italic; color: #5a4128; margin: .4em 0; }
+/* retraite */
+.board-sheet.retire-sheet { width: min(44em, 94vw); max-height: 94vh; overflow: auto; }
+.board-sheet table.score td.d { font-size: .92em; }
+.board-sheet table.score tr.tot td { border-bottom: none; border-top: 2px solid #6e4f1a; font-family: var(--sc, Georgia); font-size: 1.2em; color: #4a1010; padding-top: .3em; }
+.board-sheet .trade { text-align: center; }
+.board-sheet .trade .tl { font-style: italic; color: #5a4128; }
+.board-sheet .trade .tt { font-family: var(--sc, Georgia); font-size: 1.9em; color: #6b1a12; letter-spacing: .05em; }
+.board-sheet .trade p { margin: .2em 0; }
+.board-sheet .trade .tn { font-size: .9em; font-style: italic; color: #5a4128; }
+.board-sheet ol.hof { margin: 0; padding-left: 1.6em; font-size: .95em; }
+.board-sheet ol.hof li { padding: .1em 0; }
+.board-sheet ol.hof li span { display: inline-block; min-width: 9em; }
+.board-sheet ol.hof li em { color: #5a4128; margin-right: .8em; }
+.board-sheet ol.hof li b { float: right; font-weight: normal; font-family: var(--sc, Georgia); }
+.board-sheet ol.hof li.me { color: #8e1b1b; }
+/* capture screen: finds */
+.board-sheet .finds { margin-top: .4em; display: grid; gap: .35em; }
+.board-sheet .finds .f { display: flex; align-items: center; gap: .8em; justify-content: space-between; padding: .3em .6em; border: 1px dashed rgba(110,79,26,.6); border-radius: .25em; background: rgba(255,248,225,.35); }
+.board-sheet .finds .f em { color: #5a4128; font-size: .9em; }
+.board-sheet .finds button { font-size: .9em; padding: .3em .9em; white-space: nowrap; flex: none; }
+.pcol .kv.off { opacity: .45; }
+.pcol .kv.offi { gap: 1em; }
+.pcol .kv.offi > span { flex: none; }
+.pcol .kv.offi > b { text-align: right; font-size: .92em; }
+/* Readability: Registry (L) and ship's sheets — no more pale grey below 11 px */
+.board-sheet ul.lst li { opacity: .74; }
+.board-sheet ul.lst li.on { opacity: 1; }
+.board-sheet ul.lst em { font-size: max(.92em, 11.5px); color: #4e3820; }
+.board-sheet p.small, .board-sheet p.ink { font-size: max(.88em, 12.5px); color: #4e3820; }
+.board-sheet table.ranks td:first-child.n { font-family: var(--txt, Georgia); font-style: italic; }
+/* Registry (L) at 768 px — missing officers on one line, tighter table, Missions section, close button always
+   visible (stuck to the bottom of the sheet when it scrolls) */
+.board-sheet ul.lst li.miss { opacity: .8; padding-top: .05em; padding-bottom: .05em; }
+.board-sheet ul.lst li.miss b { color: #4e3820; }
+.board-sheet ul.lst li.note { opacity: 1; padding-left: 0; }
+.board-sheet ul.lst li.note::before { display: none; }
+.board-sheet ul.lst.mis li { padding-bottom: .3em; }
+.board-sheet ul.lst.mis li .mw { font-family: var(--txt, Georgia); font-style: italic; font-size: max(.9em, 12px); color: #4e3820; white-space: nowrap; }
+.board-sheet ul.lst.mis li.urgent .mw { color: #9a1c12; font-style: normal; font-weight: 600; }
+.board-sheet ul.lst.mis li.ready .mw { color: #2c5a1e; }
+.board-sheet ul.lst.mis li.urgent::before { background: #c46a2a; }
+.board-sheet table.ranks td { font-size: max(.95em, 13px); }
+.board-sheet.registry .choices { position: sticky; bottom: -1.2em; z-index: 1; margin: .6em -2em -1.2em; padding: .55em 2em .8em;
+  background: linear-gradient(180deg, rgba(222,200,150,0), #dcc595 .8em); }
+@media (max-height: 820px) {
+  .board-sheet.registry { padding: 1em 1.6em 1.2em; }
+  .board-sheet.registry h2 { font-size: 1.8em; }
+  .board-sheet.registry .sub { margin: .1em 0 .35em; }
+  .board-sheet.registry table.ranks td { padding: .06em .4em; }
+  .board-sheet.registry .rule { margin: .3em 0 .5em; }
+  .board-sheet.registry h3 { margin: .2em 0 .25em; }
+  .board-sheet.registry .choices { margin: .4em -1.6em -1.2em; padding: .45em 1.6em .7em; }
+}
+.board-sheet.registry .cols3 { grid-template-columns: 1fr 1.15fr .85fr; }
+.board-sheet ul.lst li.note em { text-align: left; }
+.board-sheet.registry .cols3 { grid-template-columns: 1fr 1.1fr 1fr; }
+.board-sheet ul.lst li.note em b { font-family: var(--sc, Georgia); font-style: normal; font-size: 1.04em; color: #3a2814; margin: 0; }
+@media (max-height: 820px) {
+  .board-sheet.registry .kv { padding: .05em 0; }
+  .board-sheet.registry .sub { margin: 0 0 .25em; }
+}
