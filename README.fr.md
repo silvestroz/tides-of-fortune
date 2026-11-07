@@ -8,6 +8,10 @@ carrière en mer. Sur ordinateur, au clavier et à la souris. Le jeu est en angl
 
 **Jouer :** https://tides-of-fortune.fr/
 
+https://github.com/user-attachments/assets/08863135-3381-42e2-ba97-17952717541b
+
+*Bande-annonce filmée dans le jeu lui-même (qualité Ultra), avec ses propres sons et sa musique générés par le code.*
+
 ![Le Merry Wren vent de travers, avec l'interface de navigation](docs/refboard/01-navire-chasse.jpg)
 
 ## Genèse du projet

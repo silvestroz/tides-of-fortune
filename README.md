@@ -8,6 +8,10 @@ Desktop, keyboard and mouse.
 
 **Play it:** https://tides-of-fortune.fr/
 
+https://github.com/user-attachments/assets/08863135-3381-42e2-ba97-17952717541b
+
+*Trailer captured in the game itself (Ultra quality), with its own procedural sound and music.*
+
 ![The Merry Wren on a beam reach, the HUD around her](docs/refboard/01-navire-chasse.jpg)
 
 ## Where it comes from
