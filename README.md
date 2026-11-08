@@ -42,7 +42,7 @@ turn into a free-for-all between several nations… watch out for reinforcements
 on that side is loaded. And one particularity of this game: your aim has to be judged with care, or your
 cannonballs will end up in the sea.
 
-https://github.com/user-attachments/assets/3d364e38-482e-4c49-8b12-846ec9e5091a
+https://github.com/user-attachments/assets/dcaa81e9-d278-4c94-aa01-b538bf6f5134
 
 *A run with the full interface: trimming sail, a fight with a Spanish galleon (round shot, then chain shot),
 boarding and the sword duel on deck. Key prompts are shown for a QWERTY keyboard.*
