@@ -27,6 +27,7 @@
 import * as THREE from 'three';
 import { buildShipModel, SHIP_SPECS } from './shipModel.js';
 import { SHALLOW_DRAFT } from '../data/shipTypes.js';
+import { playerWear } from '../data/hullWear.js';
 import { forwardFromHeading, wrapAngle, HALF_WORLD } from '../core/constants.js';
 import { angleOffWind, windRelative, luff, pointOfSail, sailDrive, HANDLING, RIGS, rigPolar, windAffinity } from './physics/sailPhysics.js';
 
@@ -82,6 +83,7 @@ export class Ship {
     this._groundCd = 0; this._nearLandT = 0; this._nearLand = true;
 
     this.model = buildShipModel(this.type, { faction: this.faction, name: this.name, seed: o.seed });
+    if (this.isPlayer) this.model.setWear(playerWear(game.state));   // AI ships: by role (combat.spawnAI)
     this.length = this.model.length; this.beam = this.model.beam;
     // gameplay draft from the ship table; shallow-draft hulls (≤ SHALLOW_DRAFT) skim reefs and sand bars
     this.draft = this.spec.navDraft ?? this.model.draft ?? this.spec.draft;

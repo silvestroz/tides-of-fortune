@@ -7,6 +7,7 @@
 //   ?view=family&fam=<famille>  the three sizes of one family
 //   ?view=furl     galleon furled / frigate battle sails / brig full sail
 //   ?view=wear     hull legibility at 60-140 m: clean planking, three-decker, half-wrecked and near-wrecked (ash-grey) hulls
+//   ?view=weather&d=near|far|&w=0..1 [&type=][&faction=]  hull weathering side by side, or one hull at a given wear
 import { SHIP_TYPES } from '../data/shipTypes.js';
 export async function setup(game) {
   const view = game.params.get('view') || 'lineup';
@@ -80,6 +81,18 @@ export async function setup(game) {
       if (dmg) s.model.forceDamage({ hull: dmg, sails: dmg * 0.6 });
     }
     game.cameraRig.setShot({ position: [0, 30, 10], lookAt: [0, 0, -112] });
+  } else if (view === 'weather') {
+    // hull weathering (src/data/hullWear.js), broadside-on. &d=near: fresh from the yard vs a pirate's never-careened
+    // hull at ~45 m; &d=far: 0.06 / 0.45 (as baked) / 0.75 / 1 at combat range (~130 m)
+    const h = Math.PI * 0.5; windFor(h, -2.2);
+    // &w=<0..1>: one frigate alone at that wear (same spot and swell for a strict before / after)
+    const far = game.params.get('d') === 'far', solo = game.params.get('w');
+    const ws = solo != null ? [parseFloat(solo)] : far ? [0.06, 0.45, 0.75, 1.0] : [0.06, 1.0], gap = far ? 50 : 46;
+    ws.forEach((w, i) => {
+      const s = spawn({ type: game.params.get('type') || 'frigate', faction: game.params.get('faction') || 'english', x: (i - (ws.length - 1) / 2) * gap, z: 0, heading: h, sailSetting: 0, lock: true });
+      s.model.setWear(w);
+    });
+    game.cameraRig.setShot(solo != null ? { position: [-6, 5, 30], lookAt: [-6, 3, 0] } : far ? { position: [0, 22, 135], lookAt: [0, 2, 0] } : { position: [0, 9, 50], lookAt: [0, 2.5, 0] });
   } else if (view === 'flags') {
     windFor(Math.PI * 0.5, -1.6);
     ['english', 'spanish', 'french', 'dutch', 'pirate'].forEach((f, i) => spawn({ type: 'sloop', faction: f, x: (i - 2) * 26, z: 0, heading: Math.PI * 0.5, sailSetting: 0.5, lock: true }));

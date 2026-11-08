@@ -7,6 +7,7 @@
 //   mastTops     [THREE.Object3D]   (for lookout cameras / smoke anchors)
 //   update(dt, t, { sailSetting 0..1, windRel (radians, wind relative to bow), speed, damage {hull,sails} 0..1, heel })
 //   setDamage({hull, sails})  visual damage (holes in sails, scorch)
+//   setWear(w)            hull weathering 0 (fresh from the yard) .. 1 (years at sea), see src/data/hullWear.js
 //   dispose()
 // Extensions:
 //   deckHeight            main-deck height above the waterline (model-local, midships)
@@ -367,6 +368,8 @@ export function buildShipModel(type, opts = {}) {
     },
     // override the damage that ship.js passes in (showcase / debugging)
     forceDamage(dmg) { damageOverride = dmg; if (dmg) model.setDamage(dmg); },
+    setWear(w) { if (Number.isFinite(w)) hu.uWear.value = Math.max(0, Math.min(1, w)); },
+    get wear() { return hu.uWear.value; },
     dispose() {
       hullMat.dispose(); hullMat.userData.depth.dispose();
       sailMat.dispose(); sailMat.userData.depth.dispose();

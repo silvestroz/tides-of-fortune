@@ -17,6 +17,7 @@ import { rearmCost } from '../transship.js';   // jettisoned guns replaced at th
 import { getReputation, changeReputation, relation, HOSTILE_REP } from '../../combat/factions.js';
 import { GOODS } from '../../data/world.js';
 import { mulberry32 } from '../../core/rng.js';
+import { wearRefit } from '../../data/hullWear.js';   // a yard repair repaints the hull
 import { shipType, fmtInt, theName, ofName } from '../../core/i18n.js';
 import { installSaveHooks, saveGame, applyUpgrades, NO_UPGRADES } from '../save.js';
 import { PortStage } from './stage/stage.js';
@@ -271,11 +272,12 @@ export class PortSystem {
   repair(part) {
     const g = this.game, p = g.player, st = g.state, rc = this.repairCost(), c = rc[part];
     if (!p) return;
-    if (rc.free) { if (part === 'hull') p.hull = p.hullMax; else p.sails = 1; return this._say('Repairs offered by the arsenal, with the governor’s compliments.', 'good'); }
+    if (rc.free) { if (part === 'hull') { p.hull = p.hullMax; p.model?.setWear(wearRefit(st)); } else p.sails = 1; return this._say('Repairs offered by the arsenal, with the governor’s compliments.', 'good'); }
     if (c <= 0) return;
     const f = Math.min(1, st.gold / c);
     st.gold -= Math.round(c * f);
     if (part === 'hull') p.hull += (p.hullMax - p.hull) * f; else p.sails += (1 - p.sails) * f;
+    if (part === 'hull' && f >= 1) p.model?.setWear(wearRefit(st));   // full hull repair: scraped and repainted
     this._say(f < 1 ? 'Partial repairs. Your purse is empty.' : 'The carpenters put her back in order.', f < 1 ? 'bad' : 'good');
   }
   // Guns jettisoned at sea (hold, I key) replaced at the refit — state.upgrades.gunsLost, in pairs if the purse

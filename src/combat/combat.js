@@ -39,6 +39,7 @@ import { AIController } from '../ships/ai.js';
 import { SHIP_SPECS } from '../ships/shipModel.js';
 import { pickTrafficType, classOf } from '../data/shipTypes.js';
 import { ZONE_TIERS } from '../data/seaZones.js';   // sea tiers
+import { wearForRole } from '../data/hullWear.js';
 import { theShip, ofShip } from '../core/i18n.js';
 import { BallTrails } from '../fx/ballTrails.js';
 
@@ -936,6 +937,7 @@ export class CombatSystem {
   spawnAI(opts) {
     const s = this.game.spawnShip(opts);
     s.role = opts.role || 'merchant';
+    s.model.setWear(opts.wear ?? wearForRole(s.role, s.name));   // navy hulls kept up, pirates never careened
     s.ai = s.controller = new AIController(this.game, s, s.role);
     if (s.role === 'pirate' && s.gunPower == null) s.gunPower = PIRATE_GUN_POWER;   // hard-bitten gun crews (see DIFFICULTY)
     this._initShip(s);

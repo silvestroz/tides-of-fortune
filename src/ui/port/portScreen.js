@@ -16,6 +16,7 @@ import { quote, holdUsed, holdCapacity, avgCost, CARGO_CAPACITY, SHIP_PRICES } f
 import { RANKS, RANK_MERIT, NATIONS, PRIVILEGES } from '../../game/career.js';
 import { SHIP_SPECS } from '../../ships/shipModel.js';
 import { SHIP_TYPES, yardTypes, classOf, CLASS_NAMES } from '../../data/shipTypes.js';
+import { HULL_WEAR, playerWear } from '../../data/hullWear.js';   // weathering of the hull shown at the quay
 import { ZONE_TEXT } from '../../data/seaZones.js';   // sea tiers: class at the shipyard, sea tier of the missions
 import { hashString } from '../../core/rng.js';
 import { fmtInt, nationAdj, nationPeople, nationName, shipType } from '../../core/i18n.js';
@@ -116,10 +117,10 @@ export class PortScreen {
   _yardShip() {
     const g = this.game, pl = g.player, st = g.state;
     const f = this.fleetSel != null ? st.fleet?.[this.fleetSel] : null;
-    if (f) return { type: f.type, faction: pl?.faction, name: f.name, damage: { hull: 1 - (f.hull ?? 1), sails: 1 - (f.sails ?? 1) } };
+    if (f) return { type: f.type, faction: pl?.faction, name: f.name, damage: { hull: 1 - (f.hull ?? 1), sails: 1 - (f.sails ?? 1) }, wear: HULL_WEAR.base };
     const sel = this.sel && SHIP_SPECS[this.sel] ? this.sel : pl?.type;
-    if (!pl || sel !== pl.type) return { type: sel || 'brig', faction: pl?.faction, name: '', damage: { hull: 0, sails: 0 } };
-    return { type: pl.type, faction: pl.faction, name: pl.name, damage: { hull: 1 - pl.hull / pl.hullMax, sails: 1 - pl.sails } };
+    if (!pl || sel !== pl.type) return { type: sel || 'brig', faction: pl?.faction, name: '', damage: { hull: 0, sails: 0 }, wear: HULL_WEAR.yardNew };
+    return { type: pl.type, faction: pl.faction, name: pl.name, damage: { hull: 1 - pl.hull / pl.hullMax, sails: 1 - pl.sails }, wear: playerWear(st) };
   }
   _syncYard() {
     const S = this.sys.stage, sc = S?.kind === 'shipyard' ? S.cur : null;

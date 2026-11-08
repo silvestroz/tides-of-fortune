@@ -3,11 +3,12 @@
 // per material instance (hull/sail/flag materials are per-ship where they carry per-ship state).
 //
 //   GLOBAL uniforms (shared by every ship, updated once per frame by updateGlobals): uTime, uNight, uSunView, uSunCol
-//   makeHullMaterial()  -> material with .userData.u { uHullDmg }
+//   makeHullMaterial()  -> material with .userData.u { uHullDmg, uWear (weathering 0..1, src/data/hullWear.js) }
 //   makeSailMaterial(color) -> material with .userData.u { uSet, uFill, uSide, uLuff, uSailDmg, uColor } + .userData.depth
 //   makeFlagMaterial(tex)  -> material with .userData.u { uYaw, uStrike, uWind } + .userData.depth
 import * as THREE from 'three';
 import { getWoodTex, getCanvasTex, getEmblemTex } from './textures.js';
+import { HULL_WEAR } from '../../data/hullWear.js';
 
 export const GLOBAL = {
   uTime: { value: 0 },
@@ -81,7 +82,7 @@ function greyTex() {
 // hulls, duel dressing) the analytic plank seams are off
 export function makeHullMaterial(skinTex = null, skinRange = null) {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0, envMapIntensity: 0.5 });
-  const u = { uHullDmg: { value: 0 }, uSailDmg: { value: 0 }, uDuel: { value: 0 }, uWood: { value: getWoodTex() }, uSkin: { value: skinTex || greyTex() }, uPiv: pivUniform(),
+  const u = { uHullDmg: { value: 0 }, uSailDmg: { value: 0 }, uDuel: { value: 0 }, uWear: { value: HULL_WEAR.base }, uWood: { value: getWoodTex() }, uSkin: { value: skinTex || greyTex() }, uPiv: pivUniform(),
     uSkinR: { value: new THREE.Vector2(skinRange?.[0] ?? 0, skinRange?.[1] ?? 0) } };
   m.userData.u = u;
   m.onBeforeCompile = (sh) => {
@@ -108,7 +109,7 @@ vNY = normal.y;
 }`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-uniform sampler2D uWood; uniform sampler2D uSkin; uniform float uHullDmg; uniform float uNight; uniform float uTime; uniform vec2 uSkinR;
+uniform sampler2D uWood; uniform sampler2D uSkin; uniform float uHullDmg; uniform float uNight; uniform float uTime; uniform vec2 uSkinR; uniform float uWear;
 varying vec4 vSurf; varying vec2 vWUv; varying vec3 vLPos; varying float vWY; varying float vDist; varying float vNY;
 ${BUMP_FN}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -118,6 +119,9 @@ vec2 skUv = vec2(vWUv.x, vWUv.y - 20.0);
 vec4 wt = texture2D(uWood, mix(vWUv, vec2(vLPos.z / 6.0, vLPos.y / 2.24 + step(0.0, vLPos.x) * 0.37), isSkin));
 // distance fade: fine detail gives way to flat, frank painted colour blocks (120-250 m)
 float farF = smoothstep(120.0, 250.0, vDist);
+// per-ship weathering around the baked skin (HULL_WEAR.base): wF = freshness below it, wW = extra wear above it
+float wF = clamp((${HULL_WEAR.base.toFixed(3)} - uWear) / ${HULL_WEAR.base.toFixed(3)}, 0.0, 1.0);
+float wW = clamp((uWear - ${HULL_WEAR.base.toFixed(3)}) / ${(1 - HULL_WEAR.base).toFixed(3)}, 0.0, 1.0);
 float grain = vSurf.w;
 float grainK = mix(1.0, 0.45, isSkin) * (1.0 - farF);
 float wood = wt.r * 1.28;
@@ -125,7 +129,8 @@ float wood = wt.r * 1.28;
 diffuseColor.rgb *= mix(1.0, wood, grain * grainK);
 // paint: brush streaks + weathered chips revealing oak
 float isPaint = step(0.35, grain) * step(grain, 0.6);
-float chip = isPaint * smoothstep(0.80, 0.86, wt.b) * (1.0 - farF);
+float chipT = 0.80 + 0.05 * wF - 0.09 * wW;   // fresh paint barely chipped, an old hull flakes widely
+float chip = isPaint * smoothstep(chipT, chipT + 0.06, wt.b) * (1.0 - farF);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.42, 0.27, 0.13) * wood, chip * 0.85);
 diffuseColor.rgb *= 1.0 + (wt.a - 0.5) * 0.35 * (1.0 - vSurf.x);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.3,0.59,0.11))), 0.03 * isPaint);
@@ -140,6 +145,26 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.75, 0.72, 0.64), salt * (1.0 - i
   float lum = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
   vec3 flatC = max(vec3(0.0), lum + (diffuseColor.rgb - lum) * 1.3) * (0.7 + 0.6 * smoothstep(0.04, 0.3, lum));
   diffuseColor.rgb = mix(diffuseColor.rgb, flatC, farF * isSkin); }
+// per-ship weathering (uWear). Fresh: paint richer and the skin a shade cleaner. Worn: sun-faded chalky paint on the
+// upper works, long rust and grime runs down the planking, and a weed band climbing above the waterline. The fade
+// and the weed read from afar; the runs are fine detail and go with distance like the rest.
+{ float lumW = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
+  vec3 rich = max(vec3(0.0), lumW + (diffuseColor.rgb - lumW) * 1.2) * 1.05;
+  diffuseColor.rgb = mix(diffuseColor.rgb, rich, wF * isPaint * 0.85);
+  diffuseColor.rgb *= 1.0 + 0.07 * wF * isSkin * (1.0 - isPaint);
+  diffuseColor.rgb *= 1.0 - 0.1 * wW * isSkin;   // general grime
+  float sunFade = wW * isPaint * smoothstep(0.5, 1.6, vWY) * (1.0 - chip);   // chips keep their bare oak
+  vec3 chalk = vec3(lumW) * vec3(1.04, 1.0, 0.92) + vec3(0.02, 0.018, 0.014);
+  diffuseColor.rgb = mix(diffuseColor.rgb, chalk, sunFade * 0.36);
+  float side = step(0.0, vLPos.x) * 3.1;
+  float runN = texture2D(uWood, vec2(vLPos.z * 0.85 + side, vLPos.y * 0.03 + 0.21)).b;
+  float runV = texture2D(uWood, vec2(vLPos.z * 0.31 + side, vLPos.y * 0.11 + 0.63)).a;
+  float runs = wW * isSkin * smoothstep(0.5, 0.68, runN) * smoothstep(0.12, 0.45, runV) * step(0.1, vWY) * (1.0 - farF);
+  diffuseColor.rgb *= mix(vec3(1.0), vec3(0.5, 0.4, 0.32), runs * 0.8);
+  float weedN = texture2D(uWood, vLPos.zy * vec2(0.21, 0.8) + 0.37).a;
+  float weedTop = 0.15 + 0.55 * wW + (weedN - 0.5) * 0.35;
+  float weed = isSkin * smoothstep(0.05, 0.35, wW) * smoothstep(weedTop, weedTop - 0.22, vWY) * step(-0.3, vWY);
+  diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.17, 0.21, 0.08), vec3(0.27, 0.25, 0.12), weedN), weed * 0.75); }
 // gfx-mer: analytic plank seams on the planked skin bands. The texture's caulk lines are ~1 texel and vanish in its
 // mips at 60-150 m (the side read as one flat colour): redrawn here at >= ~1 px with energy-conserving contrast,
 // plus a light/shade ramp across each strake, both faded out before they alias (fwS ~0.3-0.6: 120-250 m)
@@ -202,7 +227,8 @@ float ember = scorch * (1.0 - smoothstep(0.0, 0.012, abs(sc + 0.08 - (1.05 - sco
 roughnessFactor = clamp(vSurf.y * (0.85 + 0.3 * wt.a) + scorch * 0.2, 0.05, 1.0);
 // varnished/painted skin above the waterline: slight sheen
 roughnessFactor = mix(roughnessFactor, 0.5 + 0.2 * wt.a, isSkin * step(0.3, vWY) * (1.0 - scorch) * (1.0 - hole));
-roughnessFactor = mix(roughnessFactor, 0.97, burnAmt);`)
+roughnessFactor = mix(roughnessFactor, 0.97, burnAmt);
+roughnessFactor = clamp(roughnessFactor + isSkin * (0.25 * wW - 0.12 * wF), 0.05, 1.0);   // worn paint goes matte`)
       .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
 metalnessFactor = vSurf.x * (1.0 - burnAmt * 0.9);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
@@ -226,7 +252,7 @@ metalnessFactor = vSurf.x * (1.0 - burnAmt * 0.9);`)
   totalEmissiveRadiance += diffuseColor.rgb * vec3(0.08, 0.06, 0.04) * (1.0 - uNight * 0.85) * (1.0 - vSurf.x * 0.7) * (1.0 - isPaint * 0.6);
 }`);
   };
-  m.customProgramCacheKey = () => 'shipHull_v11';
+  m.customProgramCacheKey = () => 'shipHull_v12';
   const dm = new THREE.MeshDepthMaterial();
   dm.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);
