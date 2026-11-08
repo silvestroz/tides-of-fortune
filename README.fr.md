@@ -43,6 +43,11 @@ rejoindre, ce qui peut mener à des joutes entre plusieurs factions… attention
 fois tous les canons chargés sur le bord souhaité. Petite particularité de ce jeu, la précision des tirs doit être
 calculée avec soin pour que vos boulets ne finissent pas à l'eau.
 
+https://github.com/user-attachments/assets/3d364e38-482e-4c49-8b12-846ec9e5091a
+
+*Une partie avec l'interface complète : réglage des voiles, combat contre un galion espagnol (boulets ronds puis
+ramés), abordage et duel à l'épée sur le pont. Les touches sont affichées pour un clavier QWERTY.*
+
 ## L'univers : bateaux, factions, journées, commerce
 
 Lors de vos aventures, vous croiserez de nombreux modèles de bateaux appartenant à différentes classes (de I à V),

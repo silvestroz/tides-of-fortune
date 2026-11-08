@@ -42,6 +42,11 @@ turn into a free-for-all between several nations… watch out for reinforcements
 on that side is loaded. And one particularity of this game: your aim has to be judged with care, or your
 cannonballs will end up in the sea.
 
+https://github.com/user-attachments/assets/3d364e38-482e-4c49-8b12-846ec9e5091a
+
+*A run with the full interface: trimming sail, a fight with a Spanish galleon (round shot, then chain shot),
+boarding and the sword duel on deck. Key prompts are shown for a QWERTY keyboard.*
+
 ## The world: ships, nations, days and trade
 
 On your voyages you will come across many ship models, sorted into classes (I to V) that give you their estimated
