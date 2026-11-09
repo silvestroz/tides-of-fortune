@@ -1,7 +1,8 @@
 // Perf overlay, toggled with F3 (e.code). Shows smoothed fps, frame ms, draw calls, triangles, programs, screen
 // refresh rate and presented cadence (game.pacer), pixel ratio and its ceiling (game.dynres), rendered size, quality
-// tier and GPU name. Shift+F3 copies the same text plus browser and screen details to the clipboard, so a player can
-// paste it in a bug report. Hidden by default; when hidden the per-frame hook returns immediately (no DOM, no info reads).
+// tier and GPU name. Shift+F3 copies the same text plus browser and screen details and the state of the player's ship
+// (mode, controller, sails, speed and its factors, aground, repairs) to the clipboard, so a player can paste it in a
+// bug report. Hidden by default; when hidden the per-frame hook returns immediately (no DOM, no info reads).
 // API: new PerfOverlay(game, parent); overlay.frame(nowMs) after rendering; overlay.visible; overlay.report() -> text.
 // renderer.info is read after the frame; info.autoReset stays on, so the numbers are the last render() call's
 // unless the overlay switches autoReset off while shown (it does, and resets per frame itself).
@@ -50,8 +51,22 @@ export class PerfOverlay {
       `rendered ${w}×${h} for ${innerWidth}×${innerHeight} css px, dpr ${window.devicePixelRatio || 1}, px ratio ${r.getPixelRatio().toFixed(2)}${dr ? (dr.enabled ? ` (dynamic, cap ${dr.cap.toFixed(2)})` : ' (fixed)') : ''}`,
       `calls ${info.calls}, triangles ${info.triangles}, programs ${r.info.programs?.length ?? 0}`,
       `screen ${screen.width}×${screen.height}, GPU ${this._gpu()}`,
+      this._shipState(),
       `browser ${navigator.userAgent}`,
     ].join('\n');
+  }
+
+  // the player's ship and the modes that can hold it still: to diagnose a ship that does not answer from a pasted report
+  _shipState() {
+    const g = this.game, p = g.player;
+    if (!p) return `mode ${g.mode}, no ship`;
+    const f = v => (v ?? 1).toFixed(2);
+    return `mode ${g.mode}${g.frozen ? ' frozen' : ''}, time ×${g.timeScale}, boarding ${!!g.boarding?.active}, duel ${!!g.duel?.active}, ` +
+      `controller ${p.controller?.constructor?.name || 'none'}, sail ${f(p.sailSetting)}, speed ${p.speed.toFixed(2)} / ${(p.targetSpeed ?? 0).toFixed(2)} m/s, ` +
+      `hull ${Math.round(p.hull / p.hullMax * 100)} %, sails ${Math.round((p.sails ?? 1) * 100)} %, crew ${Math.round(p.crew)}, ` +
+      `factors combat ${f(p.combatSpeedF)} load ${f(p.loadSpeedF)} weather ${f(p.weatherSpeedF)}, ` +
+      `${p.grounded ? (p._groundBow ? 'aground (bow)' : 'aground') : 'afloat'}${p.repairing ? ', repairing' : ''}${p.struck ? ', struck' : ''}, ` +
+      `at ${Math.round(p.position.x)}, ${Math.round(p.position.z)}`;
   }
 
   _gpu() {

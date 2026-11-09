@@ -88,9 +88,26 @@ export class Boarding {
     return enemy._captain;
   }
 
-  async begin(player, enemy, { difficulty } = {}) {
-    const g = this.game;
+  // a failure anywhere in the boarding sequence (transition, duel, capture sheet) must never leave `active` set:
+  // the player controller ignores helm and sail orders while it is (the ship would be stuck at sea for good)
+  async begin(player, enemy, opts = {}) {
     if (this.active) return;
+    try { await this._begin(player, enemy, opts); }
+    catch (e) {
+      console.error('[boarding] aborted', e);
+      const g = this.game;
+      removeEventListener('keydown', this._keyH);
+      try { if (g.duel?.active) g.duel.abort?.(); } catch {}
+      this.screen.classList.remove('on'); this.fadeEl.classList.remove('on');
+      if (g.mode === 'menu' || g.frozen) this._pause(false);
+      if (g.player && !g.player.controller && player?.controller) g.player.controller = player.controller;
+      this.active = false; this.spoils = null; this.manifest = null;
+      g.events.emit('notify', { text: 'The boarding party falls back to the ship.', kind: 'info' });
+    }
+  }
+
+  async _begin(player, enemy, { difficulty } = {}) {
+    const g = this.game;
     this.active = true;
     this.enemy = enemy;
     g.events.emit('boarding:start', { attacker: player, defender: enemy, enemy });
