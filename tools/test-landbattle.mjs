@@ -63,8 +63,8 @@ function run(opts, bot = attackBot) {
 }
 {
   let w = 0, rout = 0;
-  for (let s = 1; s <= 10; s++) { const { res, ev } = run({ seed: s, playerForce: 60, garrison: 90 }); if (res?.winner === 'player') w++; rout += ev.rout || 0; }
-  ok(w >= 3 && w <= 9, `close fight (60 vs 90) is uncertain: ${w}/10 won`);
+  for (let s = 1; s <= 20; s++) { const { res, ev } = run({ seed: s, playerForce: 60, garrison: 90 }); if (res?.winner === 'player') w++; rout += ev.rout || 0; }
+  ok(w >= 6 && w <= 19, `close fight (60 vs 90) is uncertain: ${w}/20 won`);
   ok(rout > 5, `units rout (morale) in even fights: ${rout} routs`);
 }
 {

@@ -3,10 +3,12 @@
 //   const sim = new LandSim({ heights, seed, playerForce, garrison, nation, approach })
 //   sim.step(dt) -> events [{ type:'volley'|'melee'|'rout'|'rally'|'end', ... }]   sim.over, sim.result
 //   sim.order(units, x, z)  move (or attack if a visible enemy company is under the point)
-//   sim.halt(units)   sim.visible(unit)   sim.cellAt(x, z)
+//   sim.halt(units)   sim.visible(unit)   sim.cellAt(x, z)   sim.inTown(x, z) (square or street: cover)
 // Map: grid of LAND.W × LAND.H cells of LAND.cell m, x to the right, z up the screen (z = 0: beach).
 // Cells: 0 open, 1 woods (cover, invisible beyond LAND.woodSpot), 2 hill (high ground advantage),
 //        3 rocks (impassable), 4 town (square to hold), 5 water (impassable).
+// Décor flags for the view: map.built[k] 1 house / 2 church / 3 fort (always ROCK cells), map.street[k] 1 = town street;
+// map.fort {x, z} centre of the fort on the north edge.
 import { LAND, UNIT_KINDS } from '../../data/landbattle.js';
 import { mulberry32 } from '../../core/rng.js';
 
@@ -75,7 +77,23 @@ export function buildMap({ heights = null, seed = 1, approach = 'land' } = {}) {
     else if (h[k] >= hillAt) type[k] = T.HILL;
     else type[k] = T.OPEN;
   }
-  const map = { W, H, cell: LAND.cell, h, type, town: { x: town.x * LAND.cell, z: town.z * LAND.cell }, deploy: { x: deploy.x * LAND.cell, z: deploy.z * LAND.cell } };
+  // built-up town around the square: blocks of houses (ROCK: impassable) cut by a ring street and radial streets
+  // (the widest one runs down toward the beach), a church block north of the square, a fort on the north edge
+  // (the town's harbour shore). The view draws a house, the church or the fort on these cells, a street on the others.
+  const built = new Uint8Array(N), street = new Uint8Array(N);
+  const STREETS = [[-Math.PI / 2, 1.35], [-Math.PI / 2 - 0.85, 0.6], [-Math.PI / 2 + 0.85, 0.6], [0, 0.6], [Math.PI, 0.6], [Math.PI / 4, 0.6], [Math.PI * 0.75, 0.6]];
+  const fort = { x: town.x + 11, z: H - 1.5 };
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const k = j * W + i, ci = i + 0.5, cj = j + 0.5, u = (ci - town.x) / 1.3, v = cj - town.z, dT = Math.hypot(u, v);
+    if (type[k] === T.WATER || type[k] === T.TOWN || Math.hypot((i - deploy.x) / 2.2, j - deploy.z) < 4) continue;
+    if (Math.abs(ci - fort.x) < 3 && cj > H - 4) { built[k] = 3; type[k] = T.ROCK; continue; }
+    if (dT >= 7.2 + nW(i, j) * 1.4) continue;
+    if (Math.abs(ci - town.x) < 1.6 && v > 4.6 && v < 8) { built[k] = 2; type[k] = T.ROCK; continue; }
+    const onStreet = dT < 5 || STREETS.some(([a, w]) => u * Math.cos(a) + v * Math.sin(a) > 0 && Math.abs(-u * Math.sin(a) + v * Math.cos(a)) < w);
+    if (onStreet) { street[k] = 1; type[k] = T.OPEN; h[k] = Math.max(1.2, h[k]); }
+    else { built[k] = 1; type[k] = T.ROCK; }
+  }
+  const map = { W, H, cell: LAND.cell, h, type, built, street, fort: { x: fort.x * LAND.cell, z: fort.z * LAND.cell }, town: { x: town.x * LAND.cell, z: town.z * LAND.cell }, deploy: { x: deploy.x * LAND.cell, z: deploy.z * LAND.cell } };
   // guaranteed connectivity: if the town can't be reached from the beach, open a straight path
   if (!findPath(map, map.deploy.x, map.deploy.z, map.town.x, map.town.z)) {
     for (let j = Math.floor(deploy.z); j <= Math.ceil(town.z); j++) for (let di = -1; di <= 1; di++) {
@@ -179,6 +197,8 @@ export class LandSim {
   _men(side) { return this.units.reduce((a, u) => a + (u.side === side && u.state !== 'gone' ? u.n : 0), 0); }
 
   cellAt(x, z) { return this.map.type[cellIndex(this.map, x, z)]; }
+  // the square and the streets between the houses: cover for whoever stands there
+  inTown(x, z) { const k = cellIndex(this.map, x, z); return this.map.type[k] === T.TOWN || this.map.street[k] === 1; }
   alive(u) { return u && u.state !== 'gone' && u.n > 0; }
   // seen by the other side? (woods: only up close or after firing)
   visible(u, bySide = u.side === 'player' ? 'enemy' : 'player') {
@@ -234,7 +254,8 @@ export class LandSim {
       if (d < sp * dt + 0.5) { if (u.state !== 'rout') { u.x = goal.x; u.z = goal.z; u.path?.shift(); } }
       else {
         const nx = u.x + dx / d * sp * dt, nz = u.z + dz / d * sp * dt;
-        if (u.state === 'rout' || passable(m, cellIndex(m, nx, nz))) { u.x = nx; u.z = nz; } else u.path = null;
+        // a company pushed into an impassable cell (by the separation) may always walk out of it
+        if (u.state === 'rout' || passable(m, cellIndex(m, nx, nz)) || !passable(m, cellIndex(m, u.x, u.z))) { u.x = nx; u.z = nz; } else u.path = null;
         u.heading = Math.atan2(dx, dz);
         u.charging = u.K.charge ? 1 : 0;
       }
@@ -262,7 +283,7 @@ export class LandSim {
         if (u.charging && u.K.charge) { k *= u.K.charge; }
         if (u.K.mounted && this.cellAt(u.x, u.z) === T.WOOD) k *= 0.6;
         if (o.state === 'rout') k *= 2;
-        if (this.cellAt(o.x, o.z) === T.TOWN && o.side === 'enemy') k *= 0.8;   // defenders fight among the walls
+        if (this.inTown(o.x, o.z) && o.side === 'enemy') k *= 0.8;   // defenders fight among the walls
         k *= 0.6 + 0.4 * Math.min(1, u.morale / 60);
         hit(o, k);
         if (!this._meleeT || this.time - this._meleeT > 0.6) { this._meleeT = this.time; ev.push({ type: 'melee', x: (u.x + o.x) / 2, z: (u.z + o.z) / 2 }); }
@@ -280,7 +301,7 @@ export class LandSim {
       u.reveal = LAND.revealT;
       let k = u.n * u.K.fire * LAND.killFire * (1 - 0.5 * bd / u.K.range);
       if (this.cellAt(tgt.x, tgt.z) === T.WOOD) k *= LAND.woodCover;
-      if (this.cellAt(tgt.x, tgt.z) === T.TOWN) k *= 0.75;
+      if (this.inTown(tgt.x, tgt.z)) k *= 0.75;
       if (this._higher(u, tgt)) k *= LAND.hillBonus;
       hit(tgt, k);
       u.heading = Math.atan2(tgt.x - u.x, tgt.z - u.z);
