@@ -21,6 +21,7 @@
 //   combatSpeedF / combatTurnF  multipliers written by combat.js (dismasting, weather gauge); default 1
 //   teleport(x, z, heading?)  instant move with buoyancy reset
 //   steerToward(heading, dt)  sets rudder with a damped P-controller; returns remaining heading error
+//   (an AI controller far from the camera runs every 2 or 4 frames with the accumulated dt: see _think)
 // Events emitted: 'ship:grounded' { ship, impact }, 'ship:collide' { a, b, impact }
 // Coordinates: rotation applied as model.group.rotation.set(pitch, -heading, roll, 'YXZ');
 //   roll > 0 lifts starboard (heel to port); pitch > 0 lifts the bow.
@@ -116,7 +117,7 @@ export class Ship {
 
   update(dt, t) {
     if (!(dt > 0)) { this._applyTransform(dt, t); return; }
-    this.controller?.update(dt);
+    this._think(dt);
     if (this.desiredHeading != null) this.steerToward(this.desiredHeading, dt);
     const n = Math.min(8, Math.ceil(dt / MAX_SUBSTEP));
     const h = dt / n;
@@ -370,6 +371,26 @@ export class Ship {
     }
     const lim = HALF_WORLD - 50;
     p.x = Math.max(-lim, Math.min(lim, p.x)); p.z = Math.max(-lim, Math.min(lim, p.z));
+  }
+
+  // the controller (player or AI) decides; physics and steering toward desiredHeading still run every frame.
+  // Far AI ships think less often, with the time gone by: every 2 frames beyond 900 m of the camera, every 4 beyond
+  // 2 500 m (staggered by id) — never a ship that has the player as its target, nor one being chased by the player.
+  _think(dt) {
+    const c = this.controller;
+    if (!c) return;
+    let every = 1;
+    if (!this.isPlayer) {
+      const cam = this.game.camera?.position, ai = this.ai;
+      const d = cam ? Math.hypot(this.position.x - cam.x, this.position.z - cam.z) : 0;
+      const engaged = ai?.target?.isPlayer || this.game.player?.controller?.target === this || this.lastAttacker?.isPlayer;
+      every = engaged || d < 900 ? 1 : d < 2500 ? 2 : 4;
+    }
+    this._thinkDt = (this._thinkDt || 0) + dt;
+    this._thinkN = (this._thinkN ?? this.id) + 1;
+    if (this._thinkN % every) return;
+    c.update(this._thinkDt);
+    this._thinkDt = 0;
   }
 
   _applyTransform(dt, t) {
