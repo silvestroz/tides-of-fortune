@@ -120,7 +120,10 @@ in hand, take a town by storm with your crew, or slip past the guards of a hosti
 ### Performance
 
 - Three graphics presets (Performance, Standard, Ultra) and a dynamic resolution that adjusts the image size every
-  second to keep the frame rate steady.
+  second to keep the frame rate steady, within a pixel budget per preset (a 4K screen is rendered smaller and
+  scaled up).
+- The game measures the screen's refresh rate. On a 120–240 Hz screen it can show every second image at an even
+  pace when it cannot keep up with all of them (Options → Frame rate).
 - The target is 60 fps in 1080p on a mid-range laptop GPU, under 400 draw calls. At sea, the Standard preset draws
   100 to 170 calls and 0.4 to 0.6 million triangles.
 - Shaders are compiled ahead of time, in parallel when the GPU allows it, so that a port, a duel or a battle opens
@@ -225,7 +228,7 @@ with W A S D, Shift to run and Space to pick a lock.
 - **Time**: one calendar day is one day-night cycle, four real minutes (T speeds up both). A full career, from
   your first command to retirement, lasts 12 to 18 hours of play.
 - **Graphics**: Options → Graphics offers Performance, Standard and Ultra (applied on reload). F3 shows the frame
-  rate and rendering cost.
+  rate, screen refresh rate and rendering cost; Shift+F3 copies those details, to paste in a bug report.
 - **Statistics**: in production, the game counts a few anonymous milestones (loading time, first steps, frame
   rate, errors) as page views through Vercel Web Analytics. Nothing is sent with Do Not Track or Global Privacy Control,
   and Options → Statistics turns it off.

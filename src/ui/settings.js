@@ -2,10 +2,11 @@
 //   game.settings = { master, music, sfx (0..1), quality: 'low'|'medium'|'high'|'ultra', mouseSensitivity (0.2..2),
 //                     hints (bool, contextual hints and guided goals, src/ui/hints.js),
 //                     combatCam: 'auto'|'manual' (automatic tactical view in combat, src/camera/cameraRig.js),
-//                     stats (bool, anonymous statistics, src/core/telemetry.js) }
+//                     stats (bool, anonymous statistics, src/core/telemetry.js),
+//                     fps: 'auto'|'max'|'60' (presented cadence on fast screens, src/core/framePacer.js) }
 // API: ensureSettings(game) -> settings ; saveSettings(game, patch) (merges, persists, emits 'settings:change')
 const KEY = 'tof.settings.v1';
-export const DEFAULT_SETTINGS = { master: 0.8, music: 0.6, sfx: 0.8, quality: 'high', mouseSensitivity: 1, hints: true, combatCam: 'auto', stats: true };
+export const DEFAULT_SETTINGS = { master: 0.8, music: 0.6, sfx: 0.8, quality: 'high', mouseSensitivity: 1, hints: true, combatCam: 'auto', stats: true, fps: 'auto' };
 
 export function ensureSettings(game) {
   if (game.settings) return game.settings;

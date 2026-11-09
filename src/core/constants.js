@@ -38,19 +38,19 @@ export const FACTIONS = {
 export const QUALITY = {
   tier: 'high',
   shadowMapSize: 2048,
-  maxPixelRatio: 2,
+  maxMpx: 3.7,
 };
 export const QUALITY_TIERS = {
-  //        shadow map, max DPR, cloud fraction, vegetation fraction, ocean angular segments factor, canvas MSAA
+  //        shadow map, max rendered megapixels (dynres pixel budget, src/core/dynres.js), cloud fraction, vegetation fraction, ocean angular segments factor, canvas MSAA
   // low/high: shipLodFarM/shipLodNearM and shadowR tightened from the 250/220 m and 90 m defaults
   // (src/ships/shipModel.js, src/world/sky.js) — hulls switch to the far LOD sooner, smaller shadow box (fewer
   // towns/ships rasterised into the shadow map, same idea as splitting towns into chunks).
   // `medium` keeps its original values (old saves / ?quality=medium) but is no longer offered in the
   // “Graphics” menu since the switch to 3 presets (QUALITY_UI_ORDER: Performance/Standard/Ultra).
-  low:    { shadowMapSize: 1024, maxPixelRatio: 1,    clouds: 0.45, vegetation: 0.35, oceanSegs: 0.75, antialias: false,
+  low:    { shadowMapSize: 1024, maxMpx: 2.2, clouds: 0.45, vegetation: 0.35, oceanSegs: 0.75, antialias: false,
             shipLodFarM: 170, shipLodNearM: 145, shadowR: 65 },
-  medium: { shadowMapSize: 2048, maxPixelRatio: 1.25, clouds: 0.75, vegetation: 0.65, oceanSegs: 0.875, antialias: true  },
-  high:   { shadowMapSize: 2048, maxPixelRatio: 2,    clouds: 1,    vegetation: 1,    oceanSegs: 1,    antialias: true,
+  medium: { shadowMapSize: 2048, maxMpx: 2.8, clouds: 0.75, vegetation: 0.65, oceanSegs: 0.875, antialias: true  },
+  high:   { shadowMapSize: 2048, maxMpx: 3.7, clouds: 1,    vegetation: 1,    oceanSegs: 1,    antialias: true,
             shipLodFarM: 220, shipLodNearM: 190, shadowR: 80 },
   // Ultra: spends the headroom of a desktop GPU, never on by default (proposed by src/core/gpuProbe.js).
   // shadowR: sun shadow frustum half-size (m, 90 elsewhere); shadowSoft: PCF kernel radius; vegStep: scatter grid (m,
@@ -60,7 +60,7 @@ export const QUALITY_TIERS = {
   // shipLodFarM/shipLodNearM: hull geometry LOD switch distances (m, 250/220 elsewhere, src/ships/shipModel.js) —
   // full-detail hulls (guns, rails, ratlines) stay up further out; godRayDiv: sun-shaft render target divisor
   // (screen size / this value, 4 elsewhere, src/post/godRaysPass.js) — smaller = sharper shafts, more pixels.
-  ultra:  { swell: 1.6, shadowMapSize: 4096, maxPixelRatio: 2,    clouds: 1,    cloudDetail: 0.6, vegetation: 1,    oceanSegs: 1.3,  antialias: true, oceanLodR: [380, 2800],
+  ultra:  { swell: 1.6, shadowMapSize: 4096, maxMpx: 8.3, clouds: 1,    cloudDetail: 0.6, vegetation: 1,    oceanSegs: 1.3,  antialias: true, oceanLodR: [380, 2800],
             shadowR: 150, shadowSoft: 2.5, vegStep: 8, vegNear: 760, vegMid: 1900, vegFar: 3600, vegShadowR: 230,
             msaa: 8, smaa: true, ao: true, particles: 1.6, wakeSize: 2048, prCap: 1.5,
             shipLodFarM: 340, shipLodNearM: 295, godRayDiv: 2.5 },
@@ -73,7 +73,7 @@ export const QUALITY_UI_LABELS = { low: 'Performance', high: 'Standard', ultra: 
 export const QUALITY_UI_GROUP = { low: 'low', medium: 'low', high: 'high', ultra: 'ultra' };
 export function applyQualityTier(tier) {
   if (!QUALITY_TIERS[tier]) tier = 'high';
-  for (const k of Object.keys(QUALITY)) if (k !== 'shadowMapSize' && k !== 'maxPixelRatio') delete QUALITY[k];
+  for (const k of Object.keys(QUALITY)) if (k !== 'shadowMapSize' && k !== 'maxMpx') delete QUALITY[k];
   Object.assign(QUALITY, QUALITY_TIERS[tier], { tier });
   return QUALITY;
 }

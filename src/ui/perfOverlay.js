@@ -1,6 +1,8 @@
-// Perf overlay, toggled with F3 (e.code). Shows smoothed fps, frame ms, draw calls, triangles, programs, pixel ratio
-// and quality tier. Hidden by default; when hidden the per-frame hook returns immediately (no DOM, no info reads).
-// API: new PerfOverlay(game, parent); overlay.frame(nowMs) after rendering; overlay.visible.
+// Perf overlay, toggled with F3 (e.code). Shows smoothed fps, frame ms, draw calls, triangles, programs, screen
+// refresh rate and presented cadence (game.pacer), pixel ratio and its ceiling (game.dynres), rendered size, quality
+// tier and GPU name. Shift+F3 copies the same text plus browser and screen details to the clipboard, so a player can
+// paste it in a bug report. Hidden by default; when hidden the per-frame hook returns immediately (no DOM, no info reads).
+// API: new PerfOverlay(game, parent); overlay.frame(nowMs) after rendering; overlay.visible; overlay.report() -> text.
 // renderer.info is read after the frame; info.autoReset stays on, so the numbers are the last render() call's
 // unless the overlay switches autoReset off while shown (it does, and resets per frame itself).
 export class PerfOverlay {
@@ -13,6 +15,7 @@ export class PerfOverlay {
     addEventListener('keydown', e => {
       if (e.code !== 'F3' || e.repeat) return;
       e.preventDefault();
+      if (e.shiftKey) { this.copy(); return; }
       this.toggle();
     });
   }
@@ -32,6 +35,32 @@ export class PerfOverlay {
     if (v) { info.reset(); this._last = 0; }
   }
 
+  copy() {
+    const text = this.report();
+    const done = ok => this.game.events.emit('notify', { text: ok ? 'Performance details copied: paste them in your message.' : 'Could not copy the performance details.', kind: ok ? 'info' : 'bad', topic: 'info' });
+    try { navigator.clipboard.writeText(text).then(() => done(true), () => done(false)); } catch { done(false); }
+  }
+
+  report() {
+    const g = this.game, dr = g.dynres, pc = g.pacer, r = g.renderer, info = this._info || r.info.render;
+    const w = Math.round(innerWidth * r.getPixelRatio()), h = Math.round(innerHeight * r.getPixelRatio());
+    return [
+      `Tides of Fortune — ${g.quality || '?'} quality, frame rate ${g.settings?.fps || 'auto'}`,
+      `fps ${(1000 / this._ms).toFixed(0)} (${this._ms.toFixed(1)} ms)` + (pc ? `, screen ${pc.hz} Hz, every ${pc.div > 1 ? pc.div + ' refreshes' : 'refresh'}` : ''),
+      `rendered ${w}×${h} for ${innerWidth}×${innerHeight} css px, dpr ${window.devicePixelRatio || 1}, px ratio ${r.getPixelRatio().toFixed(2)}${dr ? (dr.enabled ? ` (dynamic, cap ${dr.cap.toFixed(2)})` : ' (fixed)') : ''}`,
+      `calls ${info.calls}, triangles ${info.triangles}, programs ${r.info.programs?.length ?? 0}`,
+      `screen ${screen.width}×${screen.height}, GPU ${this._gpu()}`,
+      `browser ${navigator.userAgent}`,
+    ].join('\n');
+  }
+
+  _gpu() {
+    if (this._gpuName == null) {
+      try { const gl = this.game.renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info'); this._gpuName = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)); } catch { this._gpuName = '?'; }
+    }
+    return this._gpuName;
+  }
+
   // call once per presented frame, after all rendering
   frame(now) {
     if (!this.visible) return;
@@ -41,13 +70,17 @@ export class PerfOverlay {
     if (now >= this._next) {
       this._next = now + 250;
       const r = info.render, tris = r.triangles;
+      this._info = { calls: r.calls, triangles: tris };   // for report(): renderer.info is reset after each frame
       const t = tris >= 1e6 ? (tris / 1e6).toFixed(2) + ' M' : (tris / 1e3).toFixed(1) + ' k';
-      const dr = g.dynres;
+      const dr = g.dynres, pc = g.pacer, pr = g.renderer.getPixelRatio();
       this.el.textContent =
         `${(1000 / this._ms).toFixed(0).padStart(3)} fps  ${this._ms.toFixed(1)} ms\n` +
+        (pc ? `screen ${pc.hz} Hz  ${pc.div > 1 ? '1 image / ' + pc.div : 'every refresh'}  ${g.settings?.fps || 'auto'}\n` : '') +
         `calls ${r.calls}  tris ${t}\n` +
         `programs ${info.programs?.length ?? 0}\n` +
-        `px ratio ${g.renderer.getPixelRatio().toFixed(2)}${dr ? (dr.enabled ? ` (dyn, cap ${dr.cap.toFixed(2)})` : ' (fixed)') : ''}  ${g.quality || ''}`;
+        `px ratio ${pr.toFixed(2)}${dr ? (dr.enabled ? ` (dyn, cap ${dr.cap.toFixed(2)})` : ' (fixed)') : ''}  ${g.quality || ''}\n` +
+        `${Math.round(innerWidth * pr)}×${Math.round(innerHeight * pr)}  ${this._gpu().replace(/^ANGLE \((.*)\)$/, '$1').slice(0, 48)}\n` +
+        `Shift+F3: copy`;
     }
     info.reset();
   }

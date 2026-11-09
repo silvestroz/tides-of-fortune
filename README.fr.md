@@ -127,7 +127,10 @@ ville hostile.
 ### Performances
 
 - Trois préréglages graphiques (Performance, Standard, Ultra) et une résolution dynamique qui ajuste la taille de
-  l'image chaque seconde pour garder un rythme d'images stable.
+  l'image chaque seconde pour garder un rythme d'images stable, dans un budget de pixels par préréglage (un écran 4K
+  est rendu plus petit puis agrandi).
+- Le jeu mesure la fréquence de l'écran. Sur un écran de 120 à 240 Hz, il peut n'afficher qu'une image sur deux, à
+  un rythme régulier, quand il ne suit pas toutes les images de l'écran (Options → Frame rate).
 - La cible est de 60 images par seconde en 1080p sur un GPU de portable milieu de gamme, sous 400 appels de dessin.
   En mer, le préréglage Standard en fait 100 à 170 pour 0,4 à 0,6 million de triangles.
 - Les shaders sont compilés à l'avance, en parallèle quand le GPU le permet : un port, un duel ou une bataille
@@ -237,7 +240,8 @@ caméra ; l'infiltration avec W A S D, Maj pour courir et Espace pour crocheter 
 - **Temps** : un jour du calendrier est un cycle jour-nuit, soit quatre minutes réelles (T accélère les deux). Une
   carrière complète, du premier commandement à la retraite, dure 12 à 18 heures de jeu.
 - **Graphismes** : Options → Graphics propose Performance, Standard et Ultra (appliqué au rechargement). F3 affiche
-  la fréquence d'images et le coût du rendu.
+  la fréquence d'images, celle de l'écran et le coût du rendu ; Maj+F3 copie ces informations, à coller dans un
+  signalement de bug.
 - **Statistiques** : en production, le jeu compte quelques étapes anonymes (durée du chargement, premiers pas,
   fluidité, erreurs) sous forme de pages vues dans Vercel Web Analytics. Rien n'est envoyé avec Do Not Track ou
   Global Privacy Control, et Options → Statistics les coupe.

@@ -1,7 +1,8 @@
 // Proposes (never applies) the 'ultra' quality tier when the GPU looks strong. installGpuProbe(game) once at start.
 // Rule: the WebGL renderer string (WEBGL_debug_renderer_info) names a desktop-class GPU (GeForce RTX / GTX 10xx+ at
 // 70/80 class, Radeon RX 5700+/6000+/7000+, Arc A7xx, Apple M Pro/Max/Ultra) AND, after 12 s of sailing in 'high', the
-// smoothed frame interval stays under 17.5 ms (vsync-bound) at a pixel ratio >= 1. Then one discreet message
+// game shows every refresh of the screen (game.pacer.div 1) with a smoothed frame interval under 1.05x the refresh
+// period (vsync-bound: 17.5 ms at 60 Hz, 7.3 ms at 144 Hz) at a pixel ratio >= 1. Then one discreet message
 // suggests Options > Graphismes > Ultra. Asked once per browser (localStorage 'tof.ultraOffer'); skipped for ?shot=,
 // ?quality= and when the player already chose ultra or a lower tier than high.
 const KEY = 'tof.ultraOffer';
@@ -29,8 +30,9 @@ export function installGpuProbe(game) {
     const now = performance.now(), dt = (now - last) / 1000; last = now;
     if (game.mode === 'sail' && !document.hidden) sailT += Math.min(dt, 0.1);
     if (sailT < 12) { requestAnimationFrame(tick); return; }
-    const ms = game.dynres?.ms ?? 99, pr = game.renderer.getPixelRatio();
-    if (ms < 17.5 && pr >= 0.99) {
+    const ms = game.dynres?.ms ?? 99, pr = game.renderer.getPixelRatio(), pacer = game.pacer;
+    const holds = pacer ? pacer.div === 1 && ms < pacer.refreshMs * 1.05 : ms < 17.5;
+    if (holds && pr >= 0.99) {
       try { localStorage.setItem(KEY, String(Date.now())); } catch { /* ignore */ }
       game.events.emit('notify', { text: 'Your graphics card has headroom: the Ultra level is available (Options › Graphics).', kind: 'info', topic: 'info' });
     }

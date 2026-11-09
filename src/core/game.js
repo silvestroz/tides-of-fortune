@@ -13,6 +13,7 @@ import { Ocean } from '../world/ocean.js';
 import { Islands } from '../world/islands.js';
 import { PostFX } from './post.js';
 import { DynRes } from './dynres.js';                     // perf: adaptive resolution
+import { FramePacer } from './framePacer.js';             // even steps, cadence on fast screens
 import { PerfOverlay } from '../ui/perfOverlay.js';       // perf: F3 overlay
 import { Ship } from '../ships/ship.js';
 import { SeaZones } from '../world/seaZones.js';   // sea tiers
@@ -72,6 +73,8 @@ export class Game {
     // ?shot= showcases), which freeze the loop before a capture; players keep the direct swap
     const keepBuffer = !!navigator.webdriver || this.params.has('shot') || this.params.get('keepbuffer') === '1';
     const r = this.renderer = new THREE.WebGLRenderer({ antialias: QUALITY.antialias || this.params.get('post') === '0', powerPreference: 'high-performance', preserveDrawingBuffer: keepBuffer });
+    this.pacer = new FramePacer({ mode: this.settings.fps || 'auto' });   // refresh rate, even dt, cadence (settings.fps)
+    this.events.on('settings:change', ({ patch }) => { if (patch.fps) this.pacer.mode = patch.fps; });
     this.dynres = new DynRes(this);   // pixel ratio: tier cap (1.0 unless 'high') + dynamic scale, ?dynres=0 / ?pr=N
     r.setPixelRatio(this.dynres.scale);
     // every program compiled by renderer.compile (warm-ups) is pinned at once, before the warm-up set is
@@ -182,7 +185,7 @@ export class Game {
     { const nm = {}; for (const [k, v] of Object.entries(this)) if (v && typeof v === 'object' && v.constructor && v.constructor !== Object) nm[v.constructor.name] ??= k;   // minified names → game keys
       const t = {}; for (const [n, ms] of this.bootTimes) t[nm[n] || n] = (t[nm[n] || n] || 0) + ms; const top = Object.entries(t).sort((a, b) => b[1] - a[1]).slice(0, 6);
       console.info(`[loading] ready at ${(performance.now() / 1000).toFixed(1)} s${window.__prebake ? ` · terrain baked in ${window.__prebake.ms} ms (${window.__prebake.workers} workers)` : ''} · ${top.map(([n, ms]) => `${n} ${ms} ms`).join(' · ')}`); }
-    this.renderer.setAnimationLoop(() => this.frame());
+    this.renderer.setAnimationLoop(ts => this.frame(ts));
     if (!shot) this.warmupRare();   // title screen: one per idle slot
   }
 
@@ -197,13 +200,18 @@ export class Game {
     this.combat.spawnInitialTraffic?.();
   }
 
-  frame() {
-    this.clock.update(); let dt = Math.min(this.clock.getDelta(), 1 / 20);
+  // ts: rAF timestamp from the animation loop (the frame pacer turns it into an even step and may skip a refresh);
+  // tools that call frame() by hand pass nothing and get the wall-clock step, as before
+  frame(ts) {
+    this.clock.update();
+    let dt = this.clock.getDelta();
+    if (ts !== undefined) { dt = this.pacer.tick(ts); if (dt < 0) return; }
+    dt = Math.min(dt, 1 / 20);
     if (this.frozen) dt = 0;
     this.step(dt * this.timeScale);
     // perf: resolution changes happen BEFORE rendering: a resize after the render cleared the canvas, and a frame
     // presented (or captured) right then showed an all-black 3D view (the intermittent black combat screenshots)
-    const now = performance.now();
+    const now = ts ?? performance.now();
     this.dynres.frame(now);
     if (this.renderOverride) this.renderOverride(dt); else this.post.render(dt);   // renderOverride: full-screen modes (port stages, duel sets, land battle, sneaking)
     this.input.endFrame();
