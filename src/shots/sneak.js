@@ -2,8 +2,10 @@
 //   ?port=<id> (default havana)   ?kind=infiltrate|escape   ?play=<s> advances the game (the captain follows a path)
 //   ?view=offer: the “Soldiers guard the quay” screen   ?view=prison: the prison screen with “Attempt an escape”
 //   ?level=0..4: forces the gauge (shows the red cones and the alarm)
+//   ?torch=1: a torch-bearing guard walks past a few metres from the captain, his back turned
+//   ?frozen=1 (set by tools/shot.mjs): the simulation stops once the scene is set (stable captures)
 import { PlayerController } from '../ships/playerController.js';
-import { findPath } from '../game/sneak/sim.js';
+import { findPath, blocked } from '../game/sneak/sim.js';
 
 export async function setup(game) {
   const port = game.islands.getPort?.(game.params.get('port') || 'havana') || game.islands.ports.find(p => !p.haven);
@@ -39,6 +41,16 @@ export async function setup(game) {
     if (L >= 4) sim.raiseAlarm(); else if (near[0]) { near[0].sus = [5, 30, 60, 90][L]; near[0].lastSeen = { x: sim.player.x, z: sim.player.z }; }
     sim.step(0.01);
   }
+  if (game.params.get('torch')) {
+    const p = sim.player, g = sim.guards.filter(q => !q.down && !q.post).sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0];
+    if (g) {
+      g.torch = true; g.leader = null; g.sus = 0;
+      const a = [0, Math.PI / 2, Math.PI, -Math.PI / 2].find(t => !blocked(sim.map, p.x + Math.sin(t) * 5, p.z + Math.cos(t) * 5)) ?? 0;
+      g.x = p.x + Math.sin(a) * 5; g.z = p.z + Math.cos(a) * 5; g.heading = a; g.path = []; g.wait = 99; g.baseH = a;
+    }
+    sim.step(0.01);
+  }
   sn.view.cam.x = sim.player.x; sn.view.cam.z = sim.player.z;
   sn._scripted = !!game.params.get('frozen');
+  if (sn._scripted) sn.speed = 0;
 }

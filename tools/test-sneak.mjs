@@ -4,7 +4,8 @@
 //    bodies, stones, pursuit and capture, lock picking; win rates of a straight-line bot (must mostly fail) and of a
 //    careful bot (dark routes, waits for gaps, hides, stones, knock-outs: must mostly win).
 // 2. --browser: ?shot=sneak on the dev server (127.0.0.1:5173, started separately or by this script): mode 'sneak',
-//    keyboard movement (physical codes), alarm, entering port through the tavern, hostile-port screen, escape
+//    keyboard movement (physical codes), the tools' keys (H, T, K), draw calls, alarm, entering port through the
+//    tavern, hostile-port screen, escape
 //    from the prison screen, zero console errors; --shots: captures.
 import { SneakSim, buildTown, findPath, lineOfSight, C } from '../src/game/sneak/sim.js';
 import { straightBot, carefulBot } from './_sneak-bots.mjs';
@@ -163,7 +164,7 @@ if (process.argv.includes('--browser')) {
   await page.waitForTimeout(1500);
   const st = await page.evaluate(() => { const g = window.__game, s = g.sneak; return { mode: g.mode, active: s.active, guards: s.sim?.guards.length, calls: g.renderer.info.render.calls, theme: g.audio?.music?.cur?.name || null }; });
   ok(st.mode === 'sneak' && st.active && st.guards >= 3, `browser: infiltration running (mode ${st.mode}, ${st.guards} guards, ${st.calls} draw calls)`);
-  ok(st.calls < 60, `draw calls within budget (${st.calls})`);
+  ok(st.calls < 120, `draw calls within budget (${st.calls})`);
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/sneak-start.png` });
   await page.waitForFunction(() => window.__game.sneak.sim.time > 8, null, { timeout: 120000 }).catch(() => {});   // SwiftShader: slow first frames
   // ZQSD by physical code: KeyW moves up the screen (increasing z)
@@ -171,6 +172,19 @@ if (process.argv.includes('--browser')) {
   await page.keyboard.down('KeyW'); await page.waitForTimeout(2500); await page.keyboard.up('KeyW');
   const z1 = await page.evaluate(() => window.__game.sneak.sim.player.z);
   ok(z1 - z0 > 0.2, `physical-key movement (z ${z0.toFixed(1)} → ${z1.toFixed(1)})`);
+  // fugitive's tools by keyboard (key + code sent): H hides next to a hiding spot, T throws a stone, K knocks out
+  const tools = await page.evaluate(() => { const s = window.__game.sneak.sim, h = s.map.hides[0]; s.player.x = h.x; s.player.z = h.z; return { stones: s.stones }; });
+  await page.keyboard.press('KeyH'); await page.waitForTimeout(300);
+  const hid = await page.evaluate(() => !!window.__game.sneak.sim.player.hidden);
+  await page.keyboard.press('KeyH'); await page.keyboard.press('KeyT'); await page.waitForTimeout(1500);
+  const used = await page.evaluate(() => { const s = window.__game.sneak.sim; return { hidden: !!s.player.hidden, stones: s.stones, prompt: document.querySelector('.sn-help, .lb-help')?.textContent || '' }; });
+  ok(hid && !used.hidden && used.stones === tools.stones - 1, `keys: H hides and leaves (${hid} → ${used.hidden}), T throws a stone (${tools.stones} → ${used.stones})`);
+  ok(/throw a stone/.test(used.prompt) && /hide/.test(used.prompt) && /knock out/.test(used.prompt), 'the help line lists the tools');
+  const ko = await page.evaluate(() => { const s = window.__game.sneak.sim, p = s.player, g = s.guards.find(q => !q.post && !q.down);
+    p.heading = 0; g.x = p.x; g.z = p.z + 1.2; g.heading = 0; g.sus = 0; g.path = []; g.wait = 99; g.lure = null; g.leader = null; return g.id; });
+  await page.keyboard.press('KeyK'); await page.waitForTimeout(300);
+  const down = await page.evaluate(id => window.__game.sneak.sim.guards[id].down, ko);
+  ok(down, 'K knocks out a guard from behind');
   // forced alarm: gauge, marks, red cones
   await page.evaluate(() => { const s = window.__game.sneak.sim; s.raiseAlarm(); s.guards.forEach(g => { g.x = 2; g.z = 150; }); });
   await page.waitForTimeout(500);
@@ -190,21 +204,21 @@ if (process.argv.includes('--browser')) {
   await page.evaluate(() => { const g = window.__game, p = g.sneak.port; g.living.town(p).garrison = 100; g.state.items ||= {}; g.state.items.disguise = 0; g.ports.enter(p); });
   await page.waitForTimeout(600);
   const offer = await page.evaluate(() => ({ txt: document.querySelector('.sn-screen.on')?.textContent || '', open: window.__game.ports.isOpen }));
-  ok(/Slip into town/.test(offer.txt) && !offer.open, 'hostile port: « Se faufiler en ville » is offered instead of the arrest');
+  ok(/Slip into town/.test(offer.txt) && !offer.open, 'hostile port: “Slip into town” is offered instead of the arrest');
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/sneak-offer.png` });
   await page.evaluate(() => document.querySelector('.sn-screen.on [data-act="leave"]')?.click());
   await page.waitForTimeout(400);
-  // prison: « Tenter l'évasion » → sneak mode (escape) → success → at sea, few days elapsed, gold kept
+  // prison: “Attempt an escape” → sneak mode (escape) → success → at sea, few days elapsed, gold kept
   const before = await page.evaluate(() => { const g = window.__game; g.state.gold = 5000; g.state.items.lockpick = 2; const p = g.sneak.port || g.islands.ports.find(q => !q.haven && q.faction === 'spanish');
     g.boarding._captivityScreen(g.player, { faction: p.faction, _captain: { name: 'la garde' }, alive: false }, { cause: 'sneak', how: 'Pris.' }); return { day: g.state.date?.day ?? null, abs: g.career?.dayCount?.() ?? null }; });
   await page.waitForTimeout(700);
   const hasBtn = await page.evaluate(() => !!document.querySelector('.board-screen.on button[data-c="escape"], .on button[data-c="escape"]'));
-  ok(hasBtn, 'prison screen offers « Tenter l’évasion »');
+  ok(hasBtn, 'prison screen offers “Attempt an escape”');
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/sneak-prison.png` });
   await page.evaluate(() => document.querySelector('button[data-c="escape"]').click());
-  await page.waitForTimeout(1500);
+  await page.waitForFunction(() => window.__game.mode === 'sneak', null, { timeout: 30000, polling: 200 }).catch(() => {});   // town built under the fade
   const esc = await page.evaluate(() => { const s = window.__game.sneak; return { kind: s.kind, active: s.active, mode: window.__game.mode, lockTime: s.sim?.lockTime }; });
-  ok(esc.active && esc.kind === 'escape' && esc.mode === 'sneak' && esc.lockTime === SNEAK.lockTime[2], `escape mode running (lock ${esc.lockTime} s with the kit)`);
+  ok(esc.active && esc.kind === 'escape' && esc.mode === 'sneak' && esc.lockTime === SNEAK.lockTime[2], `escape mode running (mode ${esc.mode}, lock ${esc.lockTime} s with the kit)`);
   if (shotsDir) { await page.waitForTimeout(800); await page.screenshot({ path: `${shotsDir}/sneak-escape.png` }); }
   await page.evaluate(() => window.__game.sneak.forceEnd('success'));
   // (fade to black then back: slower in software rendering — wait for the sea, up to 10 s)

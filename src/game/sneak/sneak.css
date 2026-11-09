@@ -29,3 +29,9 @@
 .sn-top b { font-family: var(--sc); letter-spacing: .04em; }
 .sn-goalmark { font-size: max(.9em, 12px); }
 .sn-goalmark span, .sn-goalmark { text-shadow: 0 0 .3em #000, 0 0 .12em #000, 0 1px 2px #000; }
+/* Fugitive's tools: stones left (top right), contextual key prompt above the captain */
+.sn-tools { position: absolute; top: .8em; right: 1em; padding: .3em .9em; border-radius: .3em; font-size: .95em; color: #4a3018;
+  box-shadow: inset 0 0 .8em rgba(110,66,18,.5), 0 0 0 .1em #5a3c14; white-space: nowrap; }
+.sn-tools b { letter-spacing: .15em; color: #3a2410; font-weight: normal; }
+.sn-ctx { position: absolute; left: 0; top: 0; margin: -1.8em 0 0 -5em; width: 10em; text-align: center; color: #f6e3b0; font-size: .9em;
+  text-shadow: 0 0 .3em #000, 0 0 .12em #000, 0 1px 2px #000; display: none; }

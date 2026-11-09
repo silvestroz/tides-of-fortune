@@ -53,9 +53,9 @@ export function buildTown({ seed = 1, kind = 'infiltrate' } = {}) {
   // lots of a plain block: strips 1–3 cells wide, cut front / back when deep
   const lots = (i0, i1, j0, j1, b) => {
     for (let i = i0; i < i1;) {
-      let w = Math.min(i1 - i, 1 + Math.floor(r() * 3)); if (i1 - (i + w) === 1 && w < 3) w++;
+      let w = Math.min(i1 - i, 1 + (r() < 0.6 ? 1 : 0) + (r() < 0.12 ? 1 : 0)); if (i1 - (i + w) === 1 && w < 3) w++;
       const d = j1 - j0;
-      if (d >= 4 || (d >= 3 && r() < 0.5)) { const m = j0 + 2 + (d >= 5 && r() < 0.5 ? 1 : 0); lot(i, i + w, j0, m, b); lot(i, i + w, m, j1, b); }
+      if (d >= 4 || (d >= 3 && r() < 0.6)) { const m = j0 + (d >= 4 ? 2 : 1) + (d >= 5 && r() < 0.5 ? 1 : 0); lot(i, i + w, j0, m, b); lot(i, i + w, m, j1, b); }
       else lot(i, i + w, j0, j1, b);
       i += w;
     }
@@ -106,7 +106,7 @@ export function buildTown({ seed = 1, kind = 'infiltrate' } = {}) {
   const post = (id, x, z, h) => { if (free(x, z)) map.posts.push({ id, x, z, h }); };
   if (kind === 'escape') {
     const g0 = goals[0], side = g0.x < W * cell / 2 ? 1 : -1;
-    post('quay', g0.x + side * 7, g0.z + 1.5, 0);
+    post('quay', g0.x + side * 9, g0.z + 1.5, side * 0.45);   // faces the town, turned a little away from the boat
     const front = { x: gate.x, z: gate.z - cell };
     const cand = [];
     for (let k = 0; k < N; k++) if (type[k] === C.STREET) {
@@ -119,10 +119,9 @@ export function buildTown({ seed = 1, kind = 'infiltrate' } = {}) {
     for (const g of goals) { const s = r() < 0.5 ? 1 : -1; for (const dx of [s * 4.2, -s * 4.2]) { if (free(g.x + dx, g.z + 1)) { post(g.id, g.x + dx, g.z + 1, Math.PI); break; } } }
     post('quay', W * cell * (0.42 + r() * 0.16), 4.1 * cell, 0);
   }
-  // lanterns: on house corners at some crossings, at the doors of the tavern and the palace, the prison grate, the posts
+  // lanterns: on house corners at some crossings, at the doors of the tavern and the palace, by the posts
   const lamp = (x, z, wall = true) => { if (!blocked(map, x, z) && map.lamps.every(l => Math.hypot(l.x - x, l.z - z) > 7)) map.lamps.push({ x, z, r: SNEAK.light.lamp, wall }); };
   for (const g of goals) if (g.id !== 'quay') lamp(g.x + 2.2, g.z + 1.4);
-  if (kind === 'escape') lamp(gate.x + 2.2, gate.z - cell * 0.5 - 1.1);
   for (const p of map.posts) lamp(p.x + (p.id === 'quay' ? 0 : 1.2), p.z + (p.id === 'quay' ? -1.8 : 1.2), p.id !== 'quay');
   for (const b of blocks) {
     if (b.yard || b === pri) continue;
@@ -572,7 +571,7 @@ export class SneakSim {
         g.look += dt;
         if (g.state === 'lured') {
           g.lureH ??= g.heading;
-          this._turn(g, g.lureH + Math.sin(g.look * 1.4) * 1.1, dt);
+          this._turn(g, g.lureH + Math.sin(g.look * 1.4) * 0.7, dt);
           if (g.look > SNEAK.tools.lureLook) { g.lure = null; g.lureH = null; g.path = null; }
         } else {
           this._turn(g, g.heading + 1.5, dt);

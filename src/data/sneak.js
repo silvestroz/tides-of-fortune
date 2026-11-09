@@ -23,7 +23,7 @@ export const SNEAK = {
   // between the guard's facing and you, noise radius m); a knocked-out guard seen within bodySight m raises the alarm
   tools: { stones: 3, throwMax: 16, stoneNoise: 15, cooldown: 1.2, lureLook: 5, hideR: 2.2, searchR: 2.2, koR: 1.9, koBack: 1.9, koNoise: 5, bodySight: 15, bodyTime: 0.5 },
   moonElev: 0.62,                  // rad: moon height (long cast shadows; the same direction for rendering and simulation)
-  moonDir: { x: 0.62, z: 0.78 },   // direction (in plan) toward the moon
+  moonDir: { x: 0.85, z: -0.53 },  // direction (in plan) toward the moon: low on the sea side, the facades seen are moonlit
   // aftermath
   escapeDays: [2, 5],              // successful escape: days elapsed instead of the sentence
   failMul: 1.5, failDays: 15,      // failed escape: sentence × 1.5 + 15 days
