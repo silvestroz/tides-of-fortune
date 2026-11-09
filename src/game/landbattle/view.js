@@ -213,7 +213,7 @@ export class LandView {
       return Math.max(0, Math.min(1, n * 0.9 + Math.max(0, 1 - o / 45) * 0.45 - 0.15)); };
     for (let j = 0; j < m.H; j++) for (let i = 0; i < m.W; i++) {
       const k = j * m.W + i, dT = Math.hypot((i + 0.5 - tcx) / 1.3, j + 0.5 - tcz);
-      if (m.type[k] === T.OPEN && !m.street[k] && !road[k] && dT > 8.5 && dT < 17 && hash(Math.floor(i / 3), Math.floor(j / 2)) > 0.6) field[k] = 1;
+      if (m.type[k] === T.OPEN && !m.street[k] && !road[k] && dT > 8.5 && dT < 17 && hash(Math.floor(i / 3), Math.floor(j / 2)) > 0.7) field[k] = 1;
     }
     for (let j = 0; j < m.H; j++) for (let i = 0; i < m.W; i++) {
       const k = j * m.W + i, t = m.type[k], n = hash(i, j);
