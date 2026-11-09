@@ -111,8 +111,12 @@ if (process.argv.includes('--browser')) {
   await page.waitForTimeout(400);
   const moving = await page.evaluate(() => window.__game.landBattle.sim.units.filter(u => u.side === 'player' && (u.path?.length || u.target)).length);
   ok(moving >= 3, `T selects all, right click orders them (${moving} moving)`);
+  const order = await page.evaluate(() => [...document.querySelectorAll('.tw-bubble.lb-order')].map(b => b.textContent).join(' | '));
+  ok(/march|move|charge|at them/i.test(order), `the officer shouts the order in a bubble (${order})`);
   await page.evaluate(() => { window.__game.landBattle.speed = 8; });
   await page.waitForTimeout(9000);
+  const shouts = await page.evaluate(() => window.__game.landBattle.fx?.barks ?? 0);
+  console.log(`  ..   ${shouts} officers' bubbles on screen during the fight`);
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/landbattle-fight.png` });
   await page.evaluate(() => { const lb = window.__game.landBattle; lb.speed = 1; lb.forceEnd('player'); });
   await page.waitForTimeout(1200);
