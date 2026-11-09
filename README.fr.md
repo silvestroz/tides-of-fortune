@@ -128,7 +128,11 @@ ville hostile.
 
 - Trois préréglages graphiques (Performance, Standard, Ultra) et une résolution dynamique qui ajuste la taille de
   l'image chaque seconde pour garder un rythme d'images stable, dans un budget de pixels par préréglage (un écran 4K
-  est rendu plus petit puis agrandi).
+  est rendu plus petit puis agrandi). Quand l'image est rendue plus petite, un agrandissement FSR 1 (suréchantillonnage
+  qui suit les contours, puis accentuation) la ramène à pleine taille : gréements et côtes restent nets.
+- Les îles ont quatre niveaux de détail du relief, choisis selon l'erreur visible à l'écran ; les navires cachés
+  derrière une île ne sont pas dessinés ; l'IA des navires lointains réfléchit moins souvent ; l'occlusion ambiante
+  d'Ultra est calculée en demi-résolution.
 - Le jeu mesure la fréquence de l'écran. Sur un écran de 120 à 240 Hz, il peut n'afficher qu'une image sur deux, à
   un rythme régulier, quand il ne suit pas toutes les images de l'écran (Options → Frame rate).
 - La cible est de 60 images par seconde en 1080p sur un GPU de portable milieu de gamme, sous 400 appels de dessin.

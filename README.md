@@ -121,7 +121,10 @@ in hand, take a town by storm with your crew, or slip past the guards of a hosti
 
 - Three graphics presets (Performance, Standard, Ultra) and a dynamic resolution that adjusts the image size every
   second to keep the frame rate steady, within a pixel budget per preset (a 4K screen is rendered smaller and
-  scaled up).
+  scaled up). When the image is rendered smaller, an FSR 1 upscaler (edge-adaptive upsampling and sharpening)
+  brings it back to full size, so rigging and coastlines stay sharp.
+- Islands use four terrain levels of detail chosen by on-screen error; ships hidden behind an island are not drawn;
+  distant AI ships think less often; Ultra's ambient occlusion runs at half resolution.
 - The game measures the screen's refresh rate. On a 120–240 Hz screen it can show every second image at an even
   pace when it cannot keep up with all of them (Options → Frame rate).
 - The target is 60 fps in 1080p on a mid-range laptop GPU, under 400 draw calls. At sea, the Standard preset draws
