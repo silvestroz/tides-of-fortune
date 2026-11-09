@@ -13,7 +13,8 @@ import { Ocean } from '../world/ocean.js';
 import { Islands } from '../world/islands.js';
 import { PostFX } from './post.js';
 import { DynRes } from './dynres.js';                     // perf: adaptive resolution
-import { FramePacer } from './framePacer.js';             // even steps, cadence on fast screens
+import { FramePacer } from './framePacer.js';
+import { ShipOcclusion } from '../world/occlusion.js';             // even steps, cadence on fast screens
 import { PerfOverlay } from '../ui/perfOverlay.js';       // perf: F3 overlay
 import { Ship } from '../ships/ship.js';
 import { SeaZones } from '../world/seaZones.js';   // sea tiers
@@ -136,6 +137,7 @@ export class Game {
     this.landBattle = this.addSystem(new LandBattle(this));   // mode 'land'
     this.sneak = this.addSystem(new Sneak(this));             // mode 'sneak'
     this.seaLife = QUALITY.tier === 'low' ? null : this.addSystem(new SeaLife(this));   // rare sea animals
+    this.occlusion = this.addSystem(new ShipOcclusion(this));   // ships behind islands are not drawn (?occlusion=0)
 
     if (this.params.get('tod')) this.sky.setTimeOfDay(parseFloat(this.params.get('tod')));
 
