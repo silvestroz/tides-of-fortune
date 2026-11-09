@@ -1,4 +1,6 @@
-// Perf overlay, toggled with F3 (e.code). Shows smoothed fps, frame ms, draw calls, triangles, programs, screen
+// Perf overlay, toggled with F3 (e.code), in the bottom-left corner (free of HUD: the ship card, resources and
+// messages are top-left, the sea bar bottom-centre; lifted above that bar when a narrow window brings it under the
+// corner). Shows smoothed fps, frame ms, draw calls, triangles, programs, screen
 // refresh rate and presented cadence (game.pacer), pixel ratio and its ceiling (game.dynres), rendered size, quality
 // tier and GPU name. Shift+F3 copies the same text plus browser and screen details and the state of the player's ship
 // (mode, controller, sails, speed and its factors, aground, repairs) to the clipboard, so a player can paste it in a
@@ -27,13 +29,24 @@ export class PerfOverlay {
     if (v && !this.el) {
       const el = this.el = document.createElement('div');
       el.className = 'tof-perf';
-      el.style.cssText = 'position:absolute;top:4.2em;left:1em;z-index:50;pointer-events:none;font:11px/1.35 ui-monospace,Menlo,Consolas,monospace;' +
+      el.style.cssText = 'position:absolute;bottom:1em;left:1em;z-index:50;pointer-events:none;font:11px/1.35 ui-monospace,Menlo,Consolas,monospace;' +
         'color:#f3e6c4;background:rgba(20,14,6,0.62);padding:4px 7px;border-radius:3px;white-space:pre;';
       this.parent.appendChild(el);
     }
     if (this.el) this.el.style.display = v ? 'block' : 'none';
     info.autoReset = !v;      // while shown: sum every render() of the frame (passes, wakes, shadows)
     if (v) { info.reset(); this._last = 0; }
+  }
+
+  // bottom-left corner; lifted above the sea bar when a narrow window brings the bar under it
+  _place() {
+    const bar = document.querySelector('#ui .bar.tof-wood'), el = this.el;
+    let lift = 0;
+    if (bar && bar.offsetParent) {
+      const b = bar.getBoundingClientRect(), o = el.getBoundingClientRect();
+      if (b.left < o.right + 8) lift = Math.max(0, innerHeight - b.top + 8);
+    }
+    el.style.bottom = lift ? lift + 'px' : '1em';
   }
 
   copy() {
@@ -96,6 +109,7 @@ export class PerfOverlay {
         `scale ${pr.toFixed(2)}${dr ? (dr.enabled ? ` (dyn, cap ${dr.cap.toFixed(2)})` : ' (fixed)') : ''}${dr?.fsr ? ' FSR' : ''}  ${g.quality || ''}\n` +
         `${Math.round(innerWidth * pr)}×${Math.round(innerHeight * pr)}  ${this._gpu().replace(/^ANGLE \((.*)\)$/, '$1').slice(0, 48)}\n` +
         `Shift+F3: copy`;
+      this._place();
     }
     info.reset();
   }
