@@ -1,12 +1,18 @@
 // Procedural sculpted characters (duel captains, deck crews and port NPCs) with a joint hierarchy and a pose blender.
 //   const f = new CaptainFigure({ coat:'#7a1e1e', trim:'#d8b05a', hat:'tricorn'|'bicorne'|'bandana'|'cap'|'wig'|'bonnet'|'morion'|'wide'|'none',
 //                                 beard, skin, seed, scale, sailor, expr:'fierce'|'smile'|'stern'|'calm', eyes,
-//                                 dress, bodice, apron, breastplate, sleeves:'rolled', tool:'halberd'|'hammer'|'quill'|'mug', sword })
+//                                 dress, bodice, apron, breastplate, sleeves:'rolled', tool:'halberd'|'hammer'|'quill'|'mug'|'musket', sword,
+//                                 sheathed (sword in a scabbard at the left hip, both hands free), lite (see below) })
 //   f.group (feet at y=0, faces +Z, right hand = -X)       f.sword (blade mesh group) ; f.tip / f.hilt Object3Ds
 //   f.apply(pose)  pose: { joint: [x,y,z] } radians, plus rootPos, hipsY     f.capture()     f.flash(k)   f.dispose()
+//   f.j.prop: a bone in the left hand carrying the tool (only with o.tool / o.mug), so an animator can turn the tool
+//   (a musket shouldered or at port arms) independently of the hand.
 // Stylised "heroic" proportions: head ~1.16x, hands ~1.25x, V-shaped torso, sculpted folds. Each part bakes a painted
 // ambient-occlusion ramp into a vertex attribute; the shared material adds a height gradient and a warm rim light.
 // One SkinnedMesh per material kind (skin, cloth, coat, leather, metal, steel): ~6 draw calls per character.
+// o.lite (figures seen from far above, e.g. the night town): one untextured vertex-coloured material for every part
+// and no eyes, teeth or finger nails: one draw call (plus its ink contour and its shadow); the material is the
+// caller's (liteFigureMaterials), shared by every lite figure of a scene and disposed with it.
 import * as THREE from 'three';
 import { mulberry32 } from '../../core/rng.js';
 import { clothTex, coatTex, leatherTex, skinTex, steelTex, stripeTex } from './textures.js';
@@ -55,7 +61,8 @@ function painterly(m, kind = '') {
 }
 
 // inverted-hull ink contour for skinned figures: back faces pushed out along the skinned normal (per-vertex weight olw)
-function outlineMaterial(color, width) {
+// far: seen from far above (lite figures of the night town): the width keeps growing with the distance, never fades
+function outlineMaterial(color, width, far = false) {
   const m = new THREE.MeshBasicMaterial({ color, side: THREE.BackSide });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uOl = { value: width };
@@ -64,10 +71,18 @@ function outlineMaterial(color, width) {
       // about the same width on screen near or far (×1 at 4,5 m, up to ×2.2), fading out past 20 m
       .replace('#include <skinning_vertex>', `#include <skinning_vertex>
         float olDz = -(modelViewMatrix * vec4(transformed, 1.0)).z;
-        transformed += normalize(objectNormal) * uOl * olw * clamp(olDz / 4.5, 0.6, 2.2) * (1.0 - smoothstep(20.0, 32.0, olDz));`);
+        transformed += normalize(objectNormal) * uOl * olw * ${far ? 'max(olDz / 4.5, 0.6)' : 'clamp(olDz / 4.5, 0.6, 2.2) * (1.0 - smoothstep(20.0, 32.0, olDz))'};`);
   };
-  m.customProgramCacheKey = () => 'figure-outline-2';
+  m.customProgramCacheKey = () => 'figure-outline-2' + (far ? '-far' : '');
   return m;
+}
+
+// the shared materials of lite figures (o.lite = this object): painted vertex colours, one ink contour.
+// The caller owns them: dispose() when its scene goes.
+export function liteFigureMaterials({ outline = '#1c120a', outlineW = 0.0022, roughness = 0.82 } = {}) {
+  const mat = painterly(new THREE.MeshStandardMaterial({ vertexColors: true, roughness, metalness: 0 }), 'lite');
+  const ol = outline ? outlineMaterial(outline, outlineW, true) : null;
+  return { mat, outline: ol, dispose() { mat.dispose(); ol?.dispose(); } };
 }
 
 // level of detail of the figure being built (o.detail, 0.4–1): every segment count below scales with it. Close
@@ -145,7 +160,7 @@ export class CaptainFigure {
     const rosy = M(new THREE.Color(skinHex).lerp(new THREE.Color('#c0503c'), 0.22), { kind: 'skin' });
     const shade = M(new THREE.Color(skinHex).multiplyScalar(0.62), { kind: 'skin' });
     const nailM = M(new THREE.Color(skinHex).lerp(new THREE.Color('#f6dcd2'), 0.6), { kind: 'skin' });   // finger nails
-    const coat = { kind: 'coat', color: new THREE.Color(o.sailor ? (o.coat || '#e9e1cc') : '#ffffff') };
+    const coat = { kind: 'coat', color: new THREE.Color(o.sailor ? (o.coat || '#e9e1cc') : o.lite ? (o.coat || '#7a1e1e') : '#ffffff') };   // the coat texture carries the colour (not on lite figures)
     const coatPlain = M(o.coat || '#7a1e1e');
     const shirt = M(o.shirt || '#e8dfc8');
     const breeches = M(o.breeches || '#c8b48a');
@@ -325,7 +340,7 @@ export class CaptainFigure {
     }
 
     // ---- arms ----
-    const swordWr = o.sword !== false && !o.tool ? (o.lefty ? lWr : rWr) : null;
+    const swordWr = o.sword !== false && !o.tool && !o.sheathed ? (o.lefty ? lWr : rWr) : null;
     const rolled = o.sleeves === 'rolled' || (o.sailor && !o.jacket) || dress;   // dresses: elbow sleeves, lace, bare forearms
     for (const [sh, el, wr, s] of [[rSh, rEl, rWr, -1], [lSh, lEl, lWr, 1]]) {
       // sleeves are cloth over an arm: a fuller upper sleeve (shoulder cap, bicep) gathering into soft
@@ -352,7 +367,7 @@ export class CaptainFigure {
       // (stylised) so they read at the duel camera's distance.
       const hn = new THREE.Object3D(); hn.scale.setScalar(1.25); wr.add(hn);
       if (wr === swordWr || o.fists) buildFist(wr, s, skin, rosy, mesh, wr === swordWr);
-      else buildOpenHand(wr, s, skin, rosy, mesh, nailM);
+      else buildOpenHand(wr, s, skin, rosy, mesh, o.lite ? null : nailM);
       if (coated && !dress && !o.sailor && o.sword !== false) mesh(lathe([[-0.02, 0.05], [0.03, 0.058], [0.075, 0.078]], 16, { sz: 0.85 }), belt, hn, [0, 0.02, 0], { lo: 0.6 });   // swordsmen only
     }
 
@@ -494,9 +509,9 @@ export class CaptainFigure {
     const mq = new THREE.QuadraticBezierCurve3(new THREE.Vector3(-0.034, 0.3 * 0.014, -0.003), new THREE.Vector3(0, -0.3 * 0.016, 0.009), new THREE.Vector3(0.034, 0.3 * 0.014, -0.003));
     mesh(new THREE.TubeGeometry(mq, 8, o.headScale ? 0.0068 : 0.0055, 4), shade, mouthB);
     const teethB = J('teeth', jawB, [0, -0.004, 0.002]);   // teeth on their own bone, scaled to nothing until the mouth opens
-    mesh(new THREE.BoxGeometry(0.03, 0.009, 0.006), M('#f1e9da', { kind: 'skin' }), teethB, null);
+    if (!o.lite) mesh(new THREE.BoxGeometry(0.03, 0.009, 0.006), M('#f1e9da', { kind: 'skin' }), teethB, null);
     // open-mouth cavity: dark ellipse under the upper lip, scaled shut at rest
-    mesh(sphere(0.02, 10, 6).scale(1.3, 1, 0.35).translate(0, -0.016, 0), M('#3a1410', { kind: 'skin' }), jawB);
+    if (!o.lite) mesh(sphere(0.02, 10, 6).scale(1.3, 1, 0.35).translate(0, -0.016, 0), M('#3a1410', { kind: 'skin' }), jawB);
     mesh(new THREE.CapsuleGeometry(0.0085, 0.028, 2, 6).rotateZ(Math.PI / 2).translate(0, -0.03, 0.002), M(new THREE.Color(skinHex).lerp(new THREE.Color('#9a3a30'), 0.45), { kind: 'skin' }), jawB);
     this._exprRest = { curve, browAng: expr === 'fierce' ? 0.42 : expr === 'stern' ? 0.25 : expr === 'smile' ? -0.12 : 0.05 };
     this._exprS = { curve, brow: 0, browY: 0, jaw: 0, wide: 1 };
@@ -507,12 +522,15 @@ export class CaptainFigure {
     const browM = M(new THREE.Color(o.hair || '#2b1d14').multiplyScalar(0.55));
     for (const s of [-1, 1]) {
       const ek = dress ? 1.08 : 1;   // the ladies' eyes a little larger
+      if (o.lite) mesh(sphere(0.014, 6, 4).scale(1.1, 0.9, 0.6), pupil, hd, [s * eyeX, eyeY, eyeZ + 0.006]);   // a dark eye, seen from afar
+      else {
       mesh(sphere(0.0175 * ek, 10, 8).scale(1.15, 0.9, 0.7), eyeW, hd, [s * eyeX, eyeY, eyeZ]);
       mesh(sphere(0.0118 * ek, 12, 8).scale(1, 1, 0.5), iris, hd, [s * (eyeX - 0.002), eyeY - 0.001, eyeZ + 0.0112 * ek]);
       mesh(sphere(0.0062 * ek, 8, 6).scale(1, 1, 0.5), pupil, hd, [s * (eyeX - 0.002), eyeY - 0.001, eyeZ + 0.0155 * ek]);
       mesh(sphere(0.0028, 4, 3), glint, hd, [s * (eyeX - 0.002) + 0.004, eyeY + 0.004, eyeZ + 0.017 * ek]);
       mesh(sphere(0.0195 * ek, 10, 4, 0, Math.PI * 2, 0, Math.PI * 0.42).scale(1.18, 0.75, 0.8), skin, hd, [s * eyeX, eyeY + 0.004, eyeZ + 0.001]);   // upper lid
       mesh(torus(0.019 * ek, o.headScale || DET < 0.8 || dress ? 0.0042 : 0.0032, 3, 10, Math.PI).scale(1.15, 0.6, 1), lash, hd, [s * eyeX, eyeY + 0.002, eyeZ + 0.007 * ek]);   // lid line
+      }
       const brow = J(s < 0 ? 'browR' : 'browL', hd, [s * 0.042, 0.166 - (expr === 'fierce' ? 0.004 : 0), 0.103]);
       // brows: duellists (headScale) get heavier, darker brows so the expression reads at camera distance
       // tapered, slightly arched brows (thick at the nose, thin at the temple) instead of straight bars
@@ -599,17 +617,25 @@ export class CaptainFigure {
     }
 
     // ---- sabre (in the right hand). Blade along +Z of the grip frame. ----
+    // sheathed: hilt forward at the left hip, the scabbard slanting down and back
     const grip = this.grip = new THREE.Group();
-    grip.position.set(0, -0.085, 0.02);
-    (o.lefty ? lWr : rWr).add(grip);
-    if (o.sword !== false && !o.tool) this._buildSabre(grip, steel, brass, belt, mesh, o.blade || (o.cutlass ? 'cutlass' : 'sabre'));
+    if (o.sheathed) { grip.position.set(0.22, 0.1, 0.07); grip.rotation.set(2.1, 0.12, 0); hips.add(grip); }
+    else { grip.position.set(0, -0.085, 0.02); (o.lefty ? lWr : rWr).add(grip); }
+    if (o.sword !== false && !o.tool) this._buildSabre(grip, steel, brass, belt, mesh, o.blade || (o.cutlass ? 'cutlass' : 'sabre'), !!o.sheathed);
     else this.tip = this.hilt = this.mid = grip;
-    // props for NPCs, in the left (+X) hand
-    const pg = new THREE.Object3D(); pg.position.set(0, -0.1, 0.03); lWr.add(pg);
+    // props for NPCs, in the left (+X) hand, on a bone of their own
+    const pg = o.tool || o.mug ? J('prop', lWr, [0, -0.1, 0.03]) : lWr;
     const wood = M('#5a3a1c', { kind: 'leather' });
     if (o.tool === 'halberd') { mesh(new THREE.CylinderGeometry(0.017, 0.017, 2.2, 6).translate(0, 0.4, 0), wood, pg); mesh(new THREE.BoxGeometry(0.02, 0.28, 0.18), iron, pg, [0, 1.45, 0.06]); mesh(new THREE.ConeGeometry(0.03, 0.22, 6), iron, pg, [0, 1.62, 0]); }
     if (o.tool === 'hammer') { const h = mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.35, 5).rotateX(Math.PI / 2).translate(0, 0, 0.12), wood, pg); void h; mesh(new THREE.BoxGeometry(0.14, 0.06, 0.06), iron, pg, [0, 0, 0.3]); }
     if (o.tool === 'quill') mesh(new THREE.ConeGeometry(0.012, 0.22, 4).rotateX(0.4), M('#f5f0e6'), pg, [0, 0.02, 0.04]);
+    if (o.tool === 'musket') {   // along +Y from the butt (y = 0) to the bayonet's point, lock side toward +X
+      mesh(sculpt(new THREE.BoxGeometry(0.045, 0.5, 0.1, 1, 3, 1).translate(0, 0.25, 0), v => { const t = v.y / 0.5; v.z *= 1 - 0.45 * t; v.z += 0.02 * t; }), wood, pg);   // butt stock
+      mesh(new THREE.BoxGeometry(0.036, 0.62, 0.045).translate(0, 0.79, 0.025), wood, pg);                                             // fore-stock
+      mesh(new THREE.CylinderGeometry(0.011, 0.013, 1.0, 6).translate(0, 0.98, 0.035), iron, pg);                                      // barrel
+      mesh(new THREE.BoxGeometry(0.03, 0.06, 0.03), iron, pg, [0.025, 0.47, 0.03]);                                                    // lock
+      mesh(new THREE.ConeGeometry(0.008, 0.36, 4).translate(0, 1.66, 0.06), iron, pg);                                                 // bayonet
+    }
     if (o.tool === 'mug' || o.mug) { mesh(new THREE.CylinderGeometry(0.045, 0.04, 0.11, 10), wood, pg, [0, 0.02, 0.05], { lo: 0.7 }); mesh(torus(0.028, 0.008, 4, 8), wood, pg, [0.05, 0.02, 0.05]).rotation.y = Math.PI / 2; mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.01, 10), M('#e8dcc0'), pg, [0, 0.075, 0.05]); }
 
     this.lHand = lWr; this.rHand = rWr;
@@ -624,7 +650,7 @@ export class CaptainFigure {
 
   // kind: 'sabre' (default captain's sword), 'cutlass' (short broad), 'rapier' (long thin straight, cup hilt),
   // 'longsword' (long broad straight, cross guard)
-  _buildSabre(grip, steel, brass, leather, mesh, kind = 'sabre') {
+  _buildSabre(grip, steel, brass, leather, mesh, kind = 'sabre', sheathed = false) {
     const cutlass = kind === 'cutlass', rapier = kind === 'rapier', long = kind === 'longsword';
     mesh(new THREE.CylinderGeometry(0.016, 0.018, long ? 0.2 : 0.12, 8).rotateX(Math.PI / 2).translate(0, 0, long ? -0.05 : -0.01), leather, grip);
     mesh(sphere(long ? 0.03 : 0.024, 8, 6), brass, grip, [0, 0, long ? -0.16 : -0.08]);
@@ -644,6 +670,14 @@ export class CaptainFigure {
       mesh(sphere(0.05, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.4).rotateX(Math.PI / 2).scale(1, 1, 0.6), brass, grip, [0, 0, 0.04]);
     }
     const L = cutlass ? 0.94 : rapier ? 1.2 : long ? 1.3 : 1.12, W = cutlass ? 0.072 : rapier ? 0.034 : long ? 0.085 : 0.062;   // broader blades that read at duel distance
+    if (sheathed) {   // the blade stays in its scabbard: leather, a brass throat and chape
+      const Ls = L * 0.78;   // drawn a little short: a full-length scabbard hanging from the hip reads as a walking stick
+      mesh(new THREE.CylinderGeometry(0.022, 0.034, Ls, 6, 1).rotateX(Math.PI / 2).scale(0.55, 1, 1).translate(0, 0, 0.07 + Ls / 2), leather, grip);
+      mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.06, 6).rotateX(Math.PI / 2).scale(0.6, 1, 1).translate(0, 0, 0.09), brass, grip);
+      mesh(new THREE.ConeGeometry(0.024, 0.08, 6).rotateX(Math.PI / 2).scale(0.6, 1, 1).translate(0, 0, Ls + 0.1), brass, grip);
+      this.hilt = this.mid = this.tip = grip; this.bladeLen = Ls;
+      return;
+    }
     const sh = new THREE.Shape();
     const curve = z => (rapier || long ? 0 : 0.06) * (z / L) * (z / L);
     sh.moveTo(0, -W * 0.5);
@@ -746,7 +780,7 @@ export class CaptainFigure {
     // arms and the legs read against a busy deck or a dark rampart; blades and brass stay bright (no contour).
     // the cloth, coat, skin and leather parts share one geometry (one group per material), so the contour is
     // a single draw call over that same geometry; it never casts a shadow (userData.noCast, see PortStage._shadows).
-    const olMat = o.outline ? outlineMaterial(o.outline === true ? '#22160d' : o.outline, o.outlineW || 0.0075) : null;
+    const olMat = o.outline && !o.lite ? outlineMaterial(o.outline === true ? '#22160d' : o.outline, o.outlineW || 0.0075) : null;
     this.outlines = [];
     const add = (geo, mat) => {
       const sm = new THREE.SkinnedMesh(geo, mat);
@@ -754,6 +788,17 @@ export class CaptainFigure {
       g.add(sm); sm.bind(skeleton, g.matrixWorld); this.meshes.push(sm);
       return sm;
     };
+    if (o.lite) {   // every part in one geometry and one shared material (liteFigureMaterials)
+      const geo = mergeGeometries(Object.values(byKind).flat());
+      add(geo, o.lite.mat);
+      if (o.lite.outline) {
+        const om = new THREE.SkinnedMesh(geo, o.lite.outline); om.frustumCulled = false; om.castShadow = false; om.receiveShadow = false;
+        om.userData.noCast = true;
+        g.add(om); om.bind(skeleton, g.matrixWorld); this.outlines.push(om);
+      }
+      mats.length = 0;   // the shared material is not this figure's to flash or dispose
+      return;
+    }
     const soft = Object.keys(byKind).filter(k => k !== 'steel' && k !== 'metal');
     if (soft.length) {
       const geo = mergeGeometries(soft.map(k => mergeGeometries(byKind[k])), true);

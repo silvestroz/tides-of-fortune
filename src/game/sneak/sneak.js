@@ -96,8 +96,10 @@ export class Sneak {
     this._prevMode = g.mode; this._prevFrozen = this._panelFrozen ?? g.frozen; this._panelFrozen = undefined;
     this._prevHud = g.hud?.visible;
     await this._fadeTo(true);
-    this.view = new SneakView(g).build(this.sim, { coat: NATION_COATS[port.faction] || '#555', seed });
+    this.view = new SneakView(g).build(this.sim, { coat: NATION_COATS[port.faction] || '#555', nation: port.faction, seed });
+    this.view.update(this.sim, 0);   // the figures in place (and visible) before their programs are compiled
     await precompile(g.renderer, this.view.scene, this.view.camera, { shadows: true });   // programs compiled in parallel under the fade
+    this.view.render();   // one frame under the fade: the shadow-map variants (skinned figures) compile now, not on the first visible frame
     g.mode = 'sneak'; g.frozen = true;
     g.hud?.show?.(false);
     g.events.emit('state:change', { from: this._prevMode || 'sail', to: 'sneak' });

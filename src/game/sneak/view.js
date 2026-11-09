@@ -3,13 +3,17 @@
 // torches are mostly faked (additive light pools on the ground, halos, unlit flames, warm windows) with only
 // four real point lights following the lights nearest the captain. The static town is built into a handful of
 // merged meshes (≈ 25 draw calls in all).
-//   const v = new SneakView(game).build(sim, { coat, seed })   v.update(sim, dt)   v.render()   v.dispose()
+//   const v = new SneakView(game).build(sim, { coat, nation, seed })   v.update(sim, dt)   v.render()   v.dispose()
 //   v.project(x, z, y) -> { x, y } screen pixels     v.pick(clientX, clientY) -> { x, z } on the ground or null
 //   v.throwStone({ x, z, dur }) (stone in flight)    v.ping(x, z) (noise ring where it fell)
-//   SneakView.warmup(game) (called by game.warmupRare()): compiles every program of the scene.
-// Men (geometry and material) come from the land battle's view; the rest is built here.
+//   SneakView.warmup(game) (called by game.warmupRare()): compiles the town's programs (the characters' are compiled
+//   when a scene starts: SneakActors are built with the scene and disposed with it).
+// The captain and the guards are articulated, animated figures (actors.js); rings and the flag material come from
+// the land battle's view; the rest is built here.
 import * as THREE from 'three';
-import { makeMaterials, manGeo } from '../landbattle/view.js';
+import { makeMaterials } from '../landbattle/view.js';
+import { setFigureFill } from '../duel/figure.js';
+import { SneakActors } from './actors.js';
 import { C, rayFree } from './sim.js';
 import { SNEAK } from '../../data/sneak.js';
 import { mulberry32 } from '../../core/rng.js';
@@ -148,7 +152,7 @@ export class SneakView {
     const kind = new THREE.BoxGeometry(1, 1, 1); kind.setAttribute('aKind', new THREE.BufferAttribute(new Float32Array(kind.attributes.position.count), 1));
     const gm = new THREE.Mesh(kind, M.ground); gm.receiveShadow = true; s.add(gm);
     for (const m of [M.roof, M.house, M.veg, M.water, M.glow, M.pool, M.halo, M.cone, M.stone, LM.ring, LM.flag]) { const o = new THREE.Mesh(g, m); o.castShadow = o.receiveShadow = true; s.add(o); }
-    for (const m of [M.house, M.veg, M.glow, M.pool, M.halo, LM.men, LM.ring]) { const im = new THREE.InstancedMesh(g, m, 1); im.setColorAt(0, new THREE.Color(1, 1, 1)); im.castShadow = im.receiveShadow = true; s.add(im); }
+    for (const m of [M.house, M.veg, M.glow, M.pool, M.halo, LM.ring]) { const im = new THREE.InstancedMesh(g, m, 1); im.setColorAt(0, new THREE.Color(1, 1, 1)); im.castShadow = im.receiveShadow = true; s.add(im); }
     const cam = new THREE.PerspectiveCamera(40, 1, 1, 100), r = game.renderer, sh = r.shadowMap.enabled;
     r.shadowMap.enabled = true;
     try { r.compile(s, cam); } catch (e) { console.warn('warmup sneak', e); }
@@ -157,7 +161,7 @@ export class SneakView {
     s.traverse(o => { if (o.isInstancedMesh) o.dispose(); if (o.isLight) o.dispose?.(); });
   }
 
-  build(sim, { coat = '#2d4c8f', seed = 1 } = {}) {
+  build(sim, { coat = '#2d4c8f', nation = 'spanish', seed = 1 } = {}) {
     const M = materials(), LM = makeMaterials(), m = sim.map, S = this.scene = new THREE.Scene(), r = mulberry32(seed), cell = m.cell;
     this.sim = sim; this.disposables = [];
     const keep = o => { this.disposables.push(o); return o; };
@@ -197,11 +201,9 @@ export class SneakView {
       const fl = this.flag = new THREE.Mesh(keep(new THREE.PlaneGeometry(2.6, 1.7, 6, 2)), keep(LM.flag.clone()));
       fl.material.color.set(coat); fl.position.set(x + 1.3, gov.h + gov.roof + 4.2, z); S.add(fl);
     }
-    // ---- captain, guards, their torches ----
-    const men = this.men = new THREE.InstancedMesh(keep(manGeo('musket')), LM.men, MAXG); men.castShadow = true; men.frustumCulled = false; men.setColorAt(0, new THREE.Color()); S.add(men);
-    this.cap = new THREE.InstancedMesh(keep(manGeo('blade')), LM.men, 1); this.cap.castShadow = true; this.cap.frustumCulled = false; this.cap.setColorAt(0, new THREE.Color('#9a2420')); S.add(this.cap);
-    this.coat = new THREE.Color(coat).offsetHSL(0, 0.05, 0.08);
-    const TS = new Builder(); TS.box(0, 0, 0, 0.09, 0.9, 0.09, col('#4a3020')); TS.box(0, 0.86, 0, 0.16, 0.14, 0.16, col('#2a2420'));
+    // ---- captain, guards (articulated figures), the torches in the guards' raised hands ----
+    this.actors = new SneakActors(S, { coat, nation, maxGuards: MAXG });
+    const TS = new Builder(); TS.box(0, -0.3, 0, 0.09, 0.9, 0.09, col('#4a3020')); TS.box(0, 0.56, 0, 0.16, 0.14, 0.16, col('#2a2420'));
     this.torchSticks = new THREE.InstancedMesh(keep(TS.geometry()), M.house, MAXG);
     const TF = new Builder(); TF.cyl(0, 0, 0, 0.14, 0.02, 0.5, 6, col('#ffb347')); TF.cyl(0, 0.02, 0, 0.08, 0.01, 0.34, 5, col('#fff1b0'));
     this.torchFlames = new THREE.InstancedMesh(keep(TF.geometry()), M.glow, MAXG);
@@ -425,36 +427,34 @@ export class SneakView {
     const o = new THREE.Mesh(keep(T.geometry()), M.veg); o.castShadow = true; o.receiveShadow = true; this.scene.add(o);
   }
 
-  throwStone(e) { const p = this.sim.player; this.flights.push({ x0: p.x, z0: p.z, x1: e.x, z1: e.z, t: 0, dur: e.dur }); }
+  throwStone(e) { this.actors.throwStone(); const p = this.sim.player; this.flights.push({ x0: p.x, z0: p.z, x1: e.x, z1: e.z, t: 0, dur: e.dur }); }
   ping(x, z) { this.pings.push({ x, z, t: 0 }); }
 
   update(sim, dt) {
     this._t += dt;
     const d = new THREE.Object3D(), c = new THREE.Color(), p = sim.player, m = sim.map, T = this._t;
-    // captain (crouched when hidden)
-    const bob = p.moving ? Math.abs(Math.sin(T * (p.run ? 14 : 9))) * 0.22 : 0;
-    d.position.set(p.x, bob, p.z); d.rotation.set(p.picking ? 0.35 : 0, p.heading, 0); d.scale.set(2.05, p.hidden ? 1.1 : 2.05, 2.05); d.updateMatrix(); this.cap.setMatrixAt(0, d.matrix); this.cap.instanceMatrix.needsUpdate = true;
+    // captain and guards (animated figures); the torches follow the bearers' hands
+    this.camera.updateMatrixWorld();
+    const t0 = performance.now();
+    const hands = this.actors.update(sim, dt, this.camera);
+    this.animMs = (this.animMs || 0) * 0.95 + (performance.now() - t0) * 0.05;
     this.capRing.position.set(p.x, 0.12, p.z); this.capRing.scale.setScalar(1.3 + 0.12 * Math.sin(T * 4));
     this.capRing.material.color.set(p.hidden ? 0x8fb4ff : 0xffe9a0); this.capRing.material.opacity = p.hidden ? 0.5 : 0.85;
-    // guards (lying on their backs when knocked out), torches, cones
+    // torches, cones
     const pa = this.coneGeo.attributes.position.array, ca = this.coneGeo.attributes.color.array, V = SNEAK.view;
     let n = 0, v = 0, nt = 0;
     const torches = [];
+    hands.forEach((h, i) => {   // the stick in the fist, leaning a little forward; the flame on top
+      d.position.set(h.x, h.y, h.z); d.rotation.set(0.15, h.heading, 0, 'YXZ'); d.scale.setScalar(1.3); d.updateMatrix(); this.torchSticks.setMatrixAt(nt, d.matrix);
+      const fl = 1 + 0.18 * Math.sin(T * 17 + i * 3) + 0.1 * Math.sin(T * 29 + i);
+      const fx = h.x + Math.sin(h.heading) * 0.14, fz = h.z + Math.cos(h.heading) * 0.14, fy = h.y + 0.9;
+      d.position.set(fx, fy, fz); d.rotation.set(0, T * 2, 0); d.scale.set(1.3, 1.3 * fl, 1.3); d.updateMatrix(); this.torchFlames.setMatrixAt(nt, d.matrix);
+      torches.push({ x: fx, z: fz, y: fy + 0.2, fl }); nt++;
+    });
     for (const g of sim.guards) {
       if (n >= MAXG) break;
-      const moving = !g.down && g.path?.length && !(g.wait > 0), lift = moving ? Math.abs(Math.sin(T * 8 + g.id)) * 0.18 : 0;
-      if (g.down) { d.position.set(g.x, 0.25, g.z); d.rotation.set(-Math.PI / 2, g.heading, 0, 'YXZ'); }
-      else { d.position.set(g.x, lift, g.z); d.rotation.set(0, g.heading, 0, 'XYZ'); }
-      d.scale.setScalar(1.9); d.updateMatrix();
-      this.men.setMatrixAt(n, d.matrix); this.men.setColorAt(n, c.copy(this.coat)); n++;
+      n++;
       if (g.down) continue;
-      if (g.torch) {   // torch raised in the hand, a little ahead
-        const sx = Math.sin(g.heading), sz = Math.cos(g.heading), hx = g.x - sz * 0.75 + sx * 0.45, hz = g.z + sx * 0.75 + sz * 0.45, hy = 2.6 + lift;
-        d.position.set(hx, hy, hz); d.rotation.set(0.15, g.heading, 0, 'XYZ'); d.scale.setScalar(1.3); d.updateMatrix(); this.torchSticks.setMatrixAt(nt, d.matrix);
-        const fl = 1 + 0.18 * Math.sin(T * 17 + g.id * 3) + 0.1 * Math.sin(T * 29 + g.id);
-        d.position.y = hy + 1.2; d.rotation.set(0, T * 2, 0); d.scale.set(1.3, 1.3 * fl, 1.3); d.updateMatrix(); this.torchFlames.setMatrixAt(nt, d.matrix);
-        torches.push({ x: hx, z: hz, y: hy + 1.4, fl }); nt++;
-      }
       const range = V.range * SNEAK.light.moon * (sim.alarm || g.sus >= SNEAK.levels[2] ? V.alarmMul : 1), k = Math.min(1, g.sus / 100);
       c.setRGB(1, 0.9 - k * 0.7, 0.55 - k * 0.45);
       if (sim.alarm) c.setRGB(1, 0.15, 0.1);
@@ -466,7 +466,6 @@ export class SneakView {
         first = false; px = x; pz = z;
       }
     }
-    this.men.count = n; this.men.instanceMatrix.needsUpdate = true; if (this.men.instanceColor) this.men.instanceColor.needsUpdate = true;
     this.torchSticks.count = this.torchFlames.count = nt; this.torchSticks.instanceMatrix.needsUpdate = this.torchFlames.instanceMatrix.needsUpdate = true;
     this.coneGeo.setDrawRange(0, v / 3); this.coneGeo.attributes.position.needsUpdate = true; this.coneGeo.attributes.color.needsUpdate = true;
     this.cones.material.opacity = sim.alarm ? 0.22 + 0.1 * Math.sin(T * 9) : 0.22;
@@ -507,12 +506,14 @@ export class SneakView {
   render() {
     const r = this.game.renderer, c = this.cam, cam = this.camera;
     const W = innerWidth, H = innerHeight; if (cam.aspect !== W / H) { cam.aspect = W / H; cam.updateProjectionMatrix(); }
-    const pitch = 1.12, tz = c.z + 6;
+    const pitch = c.pitch ?? 1.12, tz = c.z + 6;
     cam.position.set(c.x, Math.sin(pitch) * c.dist, tz - Math.cos(pitch) * c.dist);
     cam.lookAt(c.x, 0, tz);
     const prevExp = r.toneMappingExposure, sh = r.shadowMap.enabled;
     r.toneMappingExposure = 1.0; r.shadowMap.enabled = true; r.shadowMap.needsUpdate = true;
+    const fill = setFigureFill(0.32, '#ffdcb8');   // the figures' own soft lamp: faces and coats read in the night
     r.setRenderTarget(null); r.render(this.scene, cam);
+    setFigureFill(1, fill);
     r.toneMappingExposure = prevExp; r.shadowMap.enabled = sh;
   }
 
@@ -528,6 +529,7 @@ export class SneakView {
 
   dispose() {
     for (const o of this.disposables || []) o.dispose?.();
+    this.actors?.dispose(); this.actors = null;
     this.scene?.traverse(o => { if (o.isInstancedMesh) o.dispose?.(); if (o.isLight) o.dispose?.(); });
     this.scene = null;
   }
