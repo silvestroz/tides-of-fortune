@@ -274,10 +274,10 @@ export class Sneak {
       m.style.transform = `translate(${p.x.toFixed(0)}px, ${p.y.toFixed(0)}px)`;
     });
     this.hud.querySelector('.sn-stones').innerHTML = `Stones <b>${'●'.repeat(s.stones)}${'○'.repeat(Math.max(0, SNEAK.tools.stones - s.stones))}</b>${s.player.hidden ? ' · <i>hidden</i>' : ''}`;
-    // contextual prompt above the captain
+    // contextual prompt under the captain
     const ctx = s.player.hidden ? `${kc('KeyH')} leave the hiding place` : s.koTarget() ? `${kc('KeyK')} knock him out` : s.nearHide() ? `${kc('KeyH')} hide` : '';
-    if (ctx !== this._ctxHtml) { this._ctxHtml = ctx; this._ctx.innerHTML = ctx; this._ctx.style.display = ctx ? '' : 'none'; }
-    if (ctx) { const p = this.view.project(s.player.x, s.player.z, 4.2); this._ctx.style.transform = `translate(${p.x.toFixed(0)}px, ${p.y.toFixed(0)}px)`; }
+    if (ctx !== this._ctxHtml) { this._ctxHtml = ctx; this._ctx.innerHTML = ctx; this._ctx.style.display = ctx ? 'block' : 'none'; }
+    if (ctx) { const p = this.view.project(s.player.x, s.player.z, 0); this._ctx.style.transform = `translate(${p.x.toFixed(0)}px, ${p.y.toFixed(0)}px)`; }
     s.goals.forEach((g, i) => { const p = this.view.project(g.x, g.z, 2.5), e = this._goalEls[i]; e.style.transform = `translate(${Math.max(64, Math.min(innerWidth - 64, p.x)).toFixed(0)}px, ${Math.max(70, Math.min(innerHeight - 60, p.y)).toFixed(0)}px)`; });
   }
   // stone: at the cursor when the mouse is on the town, otherwise ahead of the captain

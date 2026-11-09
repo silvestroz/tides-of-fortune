@@ -69,11 +69,11 @@ diffuseColor.rgb *= tile;`);
     ground, roof,
     house: std({ vertexColors: true, flatShading: true }),
     veg: std({ vertexColors: true, flatShading: true }),
-    water: std({ color: 0x0f2a3a, roughness: 0.25, metalness: 0.1, transparent: true, opacity: 0.9 }),
+    water: std({ color: 0x24506a, emissive: 0x081a28, roughness: 0.18, metalness: 0.1, transparent: true, opacity: 0.88 }),
     glow: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }),   // windows, flames: lit from within
     pool: add({ polygonOffset: true, polygonOffsetFactor: -2 }),                     // light pools on the ground
     halo: add({ side: THREE.DoubleSide }),                                           // halos around the flames
-    cone: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.26, depthWrite: false, side: THREE.DoubleSide }),
+    cone: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }),
     stone: new THREE.MeshBasicMaterial({ color: 0xd8d0c0 }),
   };
   return MATS;
@@ -235,11 +235,11 @@ export class SneakView {
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), z = pos.getZ(i), inside = x >= 0 && z >= 0 && x <= MW && z <= MH;
       const k = Math.max(0, Math.min(m.W - 1, Math.floor(x / cell))) + Math.max(0, Math.min(m.H - 1, Math.floor(z / cell))) * m.W;
-      const t = inside ? m.type[k] : z < 3 * cell ? C.WATER : C.YARD;
+      const t = inside ? m.type[k] : z < 3 * cell ? C.WATER : C.YARD, hill = !inside && t === C.YARD;
       let y = t === C.WATER ? -2.2 : 0;
       if (!inside && z >= 3 * cell) y = 2 + Math.min(10, Math.max(-x, x - MW, z - MH, 0) * 0.08);
       pos.setY(i, y);
-      c.set(PAL[t]);
+      c.set(hill ? '#3d5230' : PAL[t]);
       const n = Math.sin(x * 0.9) * Math.sin(z * 0.9) * 0.5 + Math.sin(x * 0.13 + z * 0.07) * 0.5;
       c.offsetHSL(n * 0.012, n * 0.03, n * 0.035);
       if (inside && m.shade[k]) c.multiplyScalar(0.8);
@@ -317,7 +317,7 @@ export class SneakView {
     }
   }
 
-  // rampart and prison: stone walls with merlons; the quay edge and its bollards
+  // rampart and prison: stone walls with merlons; the quay edge
   _stone(B, m) {
     const cell = m.cell, pri = m.houses.find(h => h.role === 'prison'), sc = col('#8f8676'), dark = col('#6f6858');
     for (let k = 0; k < m.W * m.H; k++) {
@@ -335,9 +335,14 @@ export class SneakView {
         }
       }
     }
-    const zq = 3 * cell;
+    // quay: stone edge, a low parapet along the water broken by the landing steps, bollards
+    const zq = 3 * cell, steps = m.goals.filter(g => g.id === 'quay').concat(m.kind === 'infiltrate' ? [m.start] : []).map(g => g.x);
     B.box(m.W * cell / 2, -2.2, zq - 0.4, m.W * cell, 2.35, 0.8, col('#6f6a5e'));
-    for (let x = 6; x < m.W * cell; x += 11) B.cyl(x, 0, zq + 0.8, 0.28, 0.22, 0.8, 6, col('#2e2a26'));
+    for (let x = 0; x < m.W * cell; x += 8) {
+      if (steps.some(sx => Math.abs(sx - (x + 4)) < 7)) continue;
+      B.box(x + 4, 0, zq + 0.25, 7.6, 0.7, 0.5, col('#8a8274').offsetHSL(0, 0, ((x / 8) % 3 - 1) * 0.02)); B.box(x + 4, 0.7, zq + 0.25, 7.8, 0.12, 0.62, col('#9a9282'));
+    }
+    for (let x = 6; x < m.W * cell; x += 11) if (!steps.some(sx => Math.abs(sx - x) < 3)) B.cyl(x, 0, zq + 1.1, 0.28, 0.22, 0.8, 6, col('#2e2a26'));
   }
 
   // crates and barrels, hiding spots (doorways, barrels, haystacks), boats at the quay
@@ -464,7 +469,7 @@ export class SneakView {
     this.men.count = n; this.men.instanceMatrix.needsUpdate = true; if (this.men.instanceColor) this.men.instanceColor.needsUpdate = true;
     this.torchSticks.count = this.torchFlames.count = nt; this.torchSticks.instanceMatrix.needsUpdate = this.torchFlames.instanceMatrix.needsUpdate = true;
     this.coneGeo.setDrawRange(0, v / 3); this.coneGeo.attributes.position.needsUpdate = true; this.coneGeo.attributes.color.needsUpdate = true;
-    this.cones.material.opacity = sim.alarm ? 0.24 + 0.1 * Math.sin(T * 9) : 0.26;
+    this.cones.material.opacity = sim.alarm ? 0.22 + 0.1 * Math.sin(T * 9) : 0.22;
     // torch pools and halos after the lanterns'
     const nl = this.nLamps;
     torches.forEach((t, i) => {
