@@ -262,6 +262,7 @@ export class Game {
       m('shipPool');
     }
     this.renderer.setRenderTarget(rt0);
+    try { this.post?.fsr?.warm?.(this.renderer); } catch (e) { console.warn('warmup fsr', e); } m('fsr');   // upscaler (dynamic resolution)
     // ocean wakes: the cannon-splash splat pass only renders when a ball lands -> its program compiled on the first
     // broadside (measured ~1 new program mid-combat). Compile it into its own render target (linear output key).
     const w = this.ocean?.wakes, r = this.renderer;

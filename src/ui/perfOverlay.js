@@ -44,11 +44,11 @@ export class PerfOverlay {
 
   report() {
     const g = this.game, dr = g.dynres, pc = g.pacer, r = g.renderer, info = this._info || r.info.render;
-    const w = Math.round(innerWidth * r.getPixelRatio()), h = Math.round(innerHeight * r.getPixelRatio());
+    const rs = dr ? dr.renderSize() : null, w = rs ? rs.w : Math.round(innerWidth * r.getPixelRatio()), h = rs ? rs.h : Math.round(innerHeight * r.getPixelRatio());
     return [
       `Tides of Fortune — ${g.quality || '?'} quality, frame rate ${g.settings?.fps || 'auto'}`,
       `fps ${(1000 / this._ms).toFixed(0)} (${this._ms.toFixed(1)} ms)` + (pc ? `, screen ${pc.hz} Hz, every ${pc.div > 1 ? pc.div + ' refreshes' : 'refresh'}` : ''),
-      `rendered ${w}×${h} for ${innerWidth}×${innerHeight} css px, dpr ${window.devicePixelRatio || 1}, px ratio ${r.getPixelRatio().toFixed(2)}${dr ? (dr.enabled ? ` (dynamic, cap ${dr.cap.toFixed(2)})` : ' (fixed)') : ''}`,
+      `rendered ${w}×${h} for ${innerWidth}×${innerHeight} css px, dpr ${window.devicePixelRatio || 1}, scale ${(dr?.scale ?? r.getPixelRatio()).toFixed(2)}${dr ? (dr.enabled ? ` (dynamic, cap ${dr.cap.toFixed(2)})` : ' (fixed)') : ''}${dr?.fsr ? `, FSR to ${Math.round(innerWidth * dr.outPr)}×${Math.round(innerHeight * dr.outPr)}` : ''}`,
       `calls ${info.calls}, triangles ${info.triangles}, programs ${r.info.programs?.length ?? 0}`,
       `screen ${screen.width}×${screen.height}, GPU ${this._gpu()}`,
       this._shipState(),
@@ -87,13 +87,13 @@ export class PerfOverlay {
       const r = info.render, tris = r.triangles;
       this._info = { calls: r.calls, triangles: tris };   // for report(): renderer.info is reset after each frame
       const t = tris >= 1e6 ? (tris / 1e6).toFixed(2) + ' M' : (tris / 1e3).toFixed(1) + ' k';
-      const dr = g.dynres, pc = g.pacer, pr = g.renderer.getPixelRatio();
+      const dr = g.dynres, pc = g.pacer, pr = dr ? dr.scale : g.renderer.getPixelRatio();
       this.el.textContent =
         `${(1000 / this._ms).toFixed(0).padStart(3)} fps  ${this._ms.toFixed(1)} ms\n` +
         (pc ? `screen ${pc.hz} Hz  ${pc.div > 1 ? '1 image / ' + pc.div : 'every refresh'}  ${g.settings?.fps || 'auto'}\n` : '') +
         `calls ${r.calls}  tris ${t}\n` +
         `programs ${info.programs?.length ?? 0}\n` +
-        `px ratio ${pr.toFixed(2)}${dr ? (dr.enabled ? ` (dyn, cap ${dr.cap.toFixed(2)})` : ' (fixed)') : ''}  ${g.quality || ''}\n` +
+        `scale ${pr.toFixed(2)}${dr ? (dr.enabled ? ` (dyn, cap ${dr.cap.toFixed(2)})` : ' (fixed)') : ''}${dr?.fsr ? ' FSR' : ''}  ${g.quality || ''}\n` +
         `${Math.round(innerWidth * pr)}×${Math.round(innerHeight * pr)}  ${this._gpu().replace(/^ANGLE \((.*)\)$/, '$1').slice(0, 48)}\n` +
         `Shift+F3: copy`;
     }

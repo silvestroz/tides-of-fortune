@@ -3,10 +3,13 @@
 //   RenderPass (linear HDR) → GodRaysPass (sun shafts, 1/4 res (1/2.5 in ultra), only when the sun is in view)
 //   → UnrealBloomPass (thresholded: only sun, glitter, lanterns, muzzle flashes, lightning glow)
 //   → OutputPass (ACES + exposure + sRGB) → GradePass (lift/gamma/gain, sat, split tone, canvas, vignette, grain)
-//   → FXAA (to screen).
+//   → FXAA → FsrPass (FSR 1 upscale to the canvas size + sharpening, to screen; only while the dynamic resolution renders
+//   below the canvas size, see setRenderSize).
 // Extended API:
 //   post.enabled (bool; false = plain renderer.render)   post.bloom (UnrealBloomPass)   post.grade (ShaderPass; .uniforms)
 //   post.godRays (GodRaysPass)   post.setQuality('low'|'medium'|'high')   ?post=0 disables, ?quality=low forces low.
+//   post.setRenderSize(w, h | null)  size of the scene and every pass (DynRes); null = the canvas drawing buffer.
+//     Smaller than the canvas -> the FSR pass upsamples to the canvas (post.fsr.enabled). ?fsr=0 keeps the old path.
 // Follows game.settings.quality when present ('settings:change' event).
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -19,6 +22,7 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { QUALITY } from './constants.js';
 import { GodRaysPass } from '../post/godRaysPass.js';
 import { createGradePass } from '../post/gradePass.js';
+import { FsrPass } from '../post/fsrPass.js';
 
 const _v = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
@@ -53,7 +57,9 @@ export class PostFX {
     this.ao = null; this.smaa = null;
     if (QUALITY.ao) this.ao = this._makeAO(game, size);
     if (QUALITY.smaa) this.smaa = new SMAAPass();
-    const passes = [this.renderPass, this.ao, this.godRays, this.bloom, this.output, this.grade, this.smaa || this.fxaa].filter(Boolean);
+    this.fsr = new FsrPass(); this.fsr.enabled = false;
+    this._renderSize = null;
+    const passes = [this.renderPass, this.ao, this.godRays, this.bloom, this.output, this.grade, this.smaa || this.fxaa, this.fsr].filter(Boolean);
     for (const p of passes) this.composer.addPass(p);
     this.time = 0;
     this.quality = 'high';
@@ -156,12 +162,19 @@ export class PostFX {
     this.composer.render(dt);
   }
 
-  resize(w, h) {
-    // size every target from the canvas's integer drawing-buffer size (follows DynRes pixel-ratio changes; avoids
+  setRenderSize(w, h) { this._renderSize = w ? { w, h } : null; this.resize(); }
+
+  resize() {
+    // size every target from integers: the render size given by DynRes when it is smaller than the canvas (FSR
+    // upscales the result), else the canvas's drawing-buffer size (follows DynRes pixel-ratio changes; avoids
     // fractional w * pr target sizes at scales like 0.7)
     const b = this.game.renderer.getDrawingBufferSize(new THREE.Vector2());
+    const rs = this._renderSize, up = !!rs && rs.w < b.x - 1;
+    const w = up ? rs.w : b.x, h = up ? rs.h : b.y;
+    this.fsr.enabled = up;
+    if (up) this.fsr.setOutput(b.x, b.y);
     this.composer.setPixelRatio(1);
-    this.composer.setSize(b.x, b.y);
-    this.grade.uniforms.uRes.value.set(b.x, b.y);
+    this.composer.setSize(w, h);
+    this.grade.uniforms.uRes.value.set(w, h);
   }
 }

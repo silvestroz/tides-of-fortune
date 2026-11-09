@@ -13,6 +13,11 @@
 //   < 0.78 T -> one step up; a sustained 4 s under 1.03 T (vsync-bound) also allows a step up, except to a scale
 //   that caused a drop in the last 20 s (no ping-pong at the edge). Never above the ceiling.
 // No decision while the pacer tries a faster cadence (pacer.probing); a change resets the pacer's tries.
+// Upscaling: below the output ratio (outPr = min(dpr, 2) in Standard/Ultra, min(dpr, 1) in Performance), while the
+// post chain draws the sea (no renderOverride, ?fsr != 0), the canvas stays at outPr and the post chain renders at
+// `scale` then FSR 1 upsamples (post.setRenderSize, src/post/fsrPass.js): sharp edges instead of a browser stretch.
+// Otherwise (supersampling, full-screen modes with their own render, FSR off) the canvas itself is sized at `scale`,
+// as before. dynres.fsr tells which; dynres.renderSize() = { w, h } actually rendered.
 // On a change it calls renderer.setPixelRatio + post.resize, so every post-processing target follows.
 import { QUALITY } from './constants.js';
 const CHECK_MS = 1000, STEPS = [0.7, 0.8, 0.9, 1, 1.25, 1.5, 1.75, 2];
@@ -23,6 +28,8 @@ export class DynRes {
     const p = game.params;
     const forced = parseFloat(p.get('pr'));
     this.enabled = p.get('dynres') !== '0' && !(forced > 0);
+    this._noFsr = p.get('fsr') === '0';
+    this.fsr = false;
     this._size = '';
     this._ceiling();
     this.scale = forced > 0 ? forced : Math.min(1, this.cap);
@@ -39,16 +46,27 @@ export class DynRes {
     const tier = g.quality === 'ultra' ? Math.max(QUALITY.prCap || 1.5, dpr) : g.quality === 'high' ? Math.max(1, dpr) : Math.min(dpr, 1);
     const budget = Math.sqrt((QUALITY.maxMpx || 3.7) * 1e6 / Math.max(1, innerWidth * innerHeight));
     this.cap = Math.round(Math.min(tier, budget) * 100) / 100;
+    this.outPr = Math.min(dpr, g.quality === 'high' || g.quality === 'ultra' ? 2 : 1);
     this.ladder = STEPS.filter(s => s < this.cap - 0.01);
     if (this.cap < STEPS[0]) this.ladder = [Math.round(this.cap * 0.8 * 100) / 100];   // huge screen on a small budget
     this.ladder.push(this.cap);
   }
 
-  apply() {
+  _wantFsr() {
     const g = this.game;
-    g.renderer.setPixelRatio(this.scale);
+    return !this._noFsr && !!g.post?.enabled && !g.renderOverride && this.scale < this.outPr * 0.95;
+  }
+
+  renderSize() {
+    return { w: Math.round(innerWidth * this.scale), h: Math.round(innerHeight * this.scale) };
+  }
+
+  apply() {
+    const g = this.game, fsr = this.fsr = this._wantFsr();
+    g.renderer.setPixelRatio(fsr ? this.outPr : this.scale);
     g.renderer.setSize(innerWidth, innerHeight);
-    g.post?.resize?.(innerWidth, innerHeight);
+    if (g.post?.setRenderSize) { const r = this.renderSize(); g.post.setRenderSize(fsr ? r.w : null, r.h); }
+    else g.post?.resize?.(innerWidth, innerHeight);
   }
 
   frame(now) {
@@ -58,10 +76,11 @@ export class DynRes {
       if (this._win.length < 600) this._win.push(d);
     }
     this._last = now;
+    if (this._wantFsr() !== this.fsr) this.apply();   // a full-screen mode came or went: canvas sizing follows
     if (!this.enabled || document.hidden) { this._win.length = 0; return; }
     if (this._size !== innerWidth + 'x' + innerHeight) {   // resized: new ceiling, scale kept under it
       this._ceiling();
-      if (this.scale > this.cap + 1e-6) this._set(this.cap);
+      if (this.scale > this.cap + 1e-6) this._set(this.cap); else this.apply();
     }
     if (!this._check) { this._check = now + 2 * CHECK_MS; this._win.length = 0; return; }   // let shaders settle after start
     if (now < this._check) return;

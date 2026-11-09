@@ -30,7 +30,7 @@ export function installGpuProbe(game) {
     const now = performance.now(), dt = (now - last) / 1000; last = now;
     if (game.mode === 'sail' && !document.hidden) sailT += Math.min(dt, 0.1);
     if (sailT < 12) { requestAnimationFrame(tick); return; }
-    const ms = game.dynres?.ms ?? 99, pr = game.renderer.getPixelRatio(), pacer = game.pacer;
+    const ms = game.dynres?.ms ?? 99, pr = game.dynres?.scale ?? game.renderer.getPixelRatio(), pacer = game.pacer;
     const holds = pacer ? pacer.div === 1 && ms < pacer.refreshMs * 1.05 : ms < 17.5;
     if (holds && pr >= 0.99) {
       try { localStorage.setItem(KEY, String(Date.now())); } catch { /* ignore */ }
