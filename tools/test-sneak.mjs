@@ -1,12 +1,14 @@
 // Targeted test of sneaking / prison escape: node tools/test-sneak.mjs [--browser] [--shots folder]
-// 1. pure simulation (no browser): connected towns, sight (cone, walls, shadow, disguise), noise, levels and
-//    alarm, pursuit and capture, lock picking (skeleton key / kit), objective reached by a careful bot in 1–3 min.
+// 1. pure simulation (no browser): connected towns (lanterns, hiding spots, varied houses), patrols drawn per attempt,
+//    sight (cone, walls, moon shadow, lantern light, disguise), noise, levels and alarm, hiding, knock-out and found
+//    bodies, stones, pursuit and capture, lock picking; win rates of a straight-line bot (must mostly fail) and of a
+//    careful bot (dark routes, waits for gaps, hides, stones, knock-outs: must mostly win).
 // 2. --browser: ?shot=sneak on the dev server (127.0.0.1:5173, started separately or by this script): mode 'sneak',
 //    keyboard movement (physical codes), alarm, entering port through the tavern, hostile-port screen, escape
 //    from the prison screen, zero console errors; --shots: captures.
 import { SneakSim, buildTown, findPath, lineOfSight, C } from '../src/game/sneak/sim.js';
+import { straightBot, carefulBot } from './_sneak-bots.mjs';
 import { SNEAK } from '../src/data/sneak.js';
-import { mulberry32 } from '../src/core/rng.js';
 import { BASE, PORT, launchOpts } from './_env.mjs';
 
 let fails = 0;
@@ -19,22 +21,33 @@ console.log('sneak sim tests');
   for (let s = 1; s <= 16; s++) for (const kind of ['infiltrate', 'escape']) {
     const m = buildTown({ seed: s, kind });
     if (kind === 'escape') m.type[m.gate.j * m.W + m.gate.i] = C.STREET;
-    if (m.goals.every(g => findPath(m, m.start.x, m.start.z, g.x, g.z))) good++;
+    if (m.goals.every(g => findPath(m, m.start.x, m.start.z, g.x, g.z)) && m.hides.every(h => findPath(m, m.start.x, m.start.z, h.x, h.z, true))) good++;
   }
-  ok(good === 32, `32 towns: every goal reachable from the start (${good}/32)`);
+  ok(good === 32, `32 towns: every goal and hiding spot reachable from the start (${good}/32)`);
   const m = buildTown({ seed: 3, kind: 'escape' });
   ok(!findPath(m, m.start.x, m.start.z, m.goals[0].x, m.goals[0].z), 'escape: the prison gate is shut at the start');
-  let sh = 0, open = 0; for (let k = 0; k < m.W * m.H; k++) if (m.type[k] === C.STREET || m.type[k] === C.QUAY) { open++; if (m.shade[k]) sh++; }
-  ok(sh / open > 0.12 && sh / open < 0.7, `long evening shadows cover ${Math.round(sh / open * 100)} % of the streets`);
+  let sh = 0, lit = 0, open = 0; for (let k = 0; k < m.W * m.H; k++) if (m.type[k] === C.STREET || m.type[k] === C.QUAY) { open++; if (m.shade[k]) sh++; if (m.light[k] > 0.2) lit++; }
+  ok(sh / open > 0.15 && sh / open < 0.7, `moon shadows cover ${Math.round(sh / open * 100)} % of the streets`);
+  ok(lit / open > 0.05 && lit / open < 0.3 && m.lamps.length >= 8, `${m.lamps.length} lanterns light ${Math.round(lit / open * 100)} % of the streets`);
+  ok(m.hides.length >= 8 && new Set(m.hides.map(h => h.kind)).size >= 2, `${m.hides.length} hiding spots (${[...new Set(m.hides.map(h => h.kind))].join(', ')})`);
+  const hs = m.houses.filter(h => !h.role), walls = new Set(hs.map(h => h.wall)), hh = new Set(hs.map(h => Math.round(h.h)));
+  ok(hs.length > 30 && walls.size >= 4 && hh.size >= 3, `${hs.length} houses, ${walls.size} wall colours, ${hh.size} heights`);
+  // patrols drawn again at every attempt, the town stays the same
+  const a = new SneakSim({ seed: 3, patrolSeed: 11, kind: 'escape' }), b = new SneakSim({ seed: 3, patrolSeed: 12, kind: 'escape' });
+  const sig = s => s.guards.map(g => `${Math.round(g.x)},${Math.round(g.z)}`).join(' ');
+  ok(sig(a) !== sig(b) && a.map.houses.length === b.map.houses.length, 'another attempt: other patrol routes in the same town');
+  const kinds = s => ({ posts: s.guards.filter(g => g.post).length, pairs: s.guards.filter(g => g.leader).length, torches: s.guards.filter(g => g.torch).length });
+  const k = kinds(a);
+  ok(k.posts >= 1 && a.guards.some(g => g.post?.id === 'quay'), `escape: the quay is guarded by a sentry (${k.posts} posts, ${k.pairs} pairs, ${k.torches} torches, ${a.guards.length} guards)`);
 }
 
 // controlled scene: a single guard, motionless, the captain at a given distance in front of him
-function duo({ d = 10, angle = 0, disguise = 0, shade = false, wall = false, run = false } = {}) {
+function duo({ d = 10, angle = 0, disguise = 0, shade = false, wall = false, run = false, light = 0 } = {}) {
   const sim = new SneakSim({ seed: 2, kind: 'infiltrate', garrison: 0, disguise });
   const m = sim.map;
-  m.type.fill(C.STREET); m.shade.fill(shade ? 1 : 0);
+  m.type.fill(C.STREET); m.shade.fill(shade ? 1 : 0); m.lamps = light ? [{ x: 100, z: 60 + d, r: 9 }] : []; m.hides = [{ x: 100, z: 60 + d, kind: 'door' }];
   const g = sim.guards[0]; sim.guards = [g];
-  Object.assign(g, { x: 100, z: 60, heading: angle, route: [{ x: 100, z: 60 }, { x: 100, z: 60 }], path: [], wait: 999, baseH: angle, phase: 0, look: 0, sus: 0 });
+  Object.assign(g, { x: 100, z: 60, heading: angle, route: [{ x: 100, z: 60 }, { x: 100, z: 60 }], path: [], wait: 999, baseH: angle, phase: 0, look: 0, sus: 0, torch: false, post: null, leader: null, state: 'patrol' });
   g._lockH = angle;
   sim.player.x = 100; sim.player.z = 60 + d;
   if (wall) for (let i = 0; i < m.W; i++) m.type[Math.floor((60 + d / 2) / m.cell) * m.W + i] = C.HOUSE;
@@ -44,19 +57,22 @@ function duo({ d = 10, angle = 0, disguise = 0, shade = false, wall = false, run
 const timeTo = (sim, lvl, max = 12) => { const t0 = sim.time; while (sim.time - t0 < max) { sim.step(DT); for (const g of sim.guards) { g.heading = g._lockH; g.wait = 999; g.path = []; } if (sim.level >= lvl) return sim.time - t0; } return Infinity; };
 {
   const a = duo({ d: 10 }), ta = timeTo(a.sim, 4);
-  ok(ta < 4, `in full view at 10 m: alarm in ${ta.toFixed(2)} s`);
+  ok(ta < 5, `moonlight, in full view at 10 m: alarm in ${ta.toFixed(2)} s`);
   const b = duo({ d: 10, angle: Math.PI });
   ok(timeTo(b.sim, 1, 5) === Infinity, 'behind the guard (walking): never noticed');
   const c = duo({ d: 10, wall: true });
   ok(timeTo(c.sim, 1, 5) === Infinity && !lineOfSight(c.sim.map, 100, 60, 100, 70), 'a house between: not seen');
-  const s = duo({ d: 14, shade: true });
-  ok(timeTo(s.sim, 1, 5) === Infinity, 'in shadow at 14 m (beyond the shortened sight): not seen');
-  const s2 = duo({ d: 9, shade: true }), ts2 = timeTo(s2.sim, 4), n2 = duo({ d: 9 }), tn2 = timeTo(n2.sim, 4);
-  ok(ts2 > tn2 * 1.4, `shadow slows detection at 9 m: ${ts2.toFixed(2)} s vs ${tn2.toFixed(2)} s in the light`);
+  const s = duo({ d: 10, shade: true });
+  ok(timeTo(s.sim, 1, 5) === Infinity, 'deep shadow at 10 m (beyond the shortened sight): not seen');
+  const far = duo({ d: 19 }), lit = duo({ d: 19, light: 1 });
+  ok(timeTo(far.sim, 1, 5) === Infinity && timeTo(lit.sim, 4) < 6, `at 19 m: unseen by moonlight, lantern light gives you away (${lit.sim.time.toFixed(2)} s)`);
+  const l2 = duo({ d: 9, light: 1 }), tl2 = timeTo(l2.sim, 4), s2 = duo({ d: 6, shade: true }), ts2 = timeTo(s2.sim, 4), n2 = duo({ d: 6 }), tn2 = timeTo(n2.sim, 4);
+  ok(ts2 > tn2 * 1.8, `deep shadow slows detection at 6 m: ${ts2.toFixed(2)} s vs ${tn2.toFixed(2)} s by moonlight`);
+  ok(tl2 < 1.5, `in a lantern's light at 9 m: alarm in ${tl2.toFixed(2)} s`);
   const dz = duo({ d: 10, disguise: 2 }), td = timeTo(dz.sim, 4);
   ok(td > ta * 2, `disguise (level 2) slows detection: ${td.toFixed(2)} s vs ${ta.toFixed(2)} s`);
-  const lv = duo({ d: 16 }); const seen = [];
-  for (let i = 0; i < 200 && lv.sim.level < 4; i++) { for (const e of lv.sim.step(DT)) if (e.type === 'level') seen.push(e.to); lv.g.heading = 0; lv.g.path = []; lv.g.wait = 999; lv.sim.player.z = 76; }
+  const lv = duo({ d: 13 }); const seen = [];
+  for (let i = 0; i < 200 && lv.sim.level < 4; i++) { for (const e of lv.sim.step(DT)) if (e.type === 'level') seen.push(e.to); lv.g.heading = 0; lv.g.path = []; lv.g.wait = 999; lv.sim.player.z = 73; }
   ok([1, 2, 3, 4].every(l => seen.includes(l)), `gauge climbs through every level: ${seen.join(' → ')}`);
   // noise: running behind a guard makes him turn round
   const nz = duo({ d: 9, angle: Math.PI, run: true });
@@ -64,6 +80,30 @@ const timeTo = (sim, lvl, max = 12) => { const t0 = sim.time; while (sim.time - 
   let turned = false;
   for (let i = 0; i < 16; i++) { nz.sim.step(DT); nz.g.heading = Math.PI; if (nz.g.sus > 0) turned = true; }
   ok(turned, `running behind a guard is heard (suspicion ${Math.round(nz.g.sus)})`);
+  // hiding spot: unseen in plain view, found by a guard searching right there
+  const h = duo({ d: 8 }); const he = h.sim.toggleHide();
+  ok(he.type === 'hide' && he.on && timeTo(h.sim, 1, 4) === Infinity, 'hidden in a doorway in front of a guard: unseen');
+  h.g.sus = SNEAK.levels[1] + 5; h.g.lastSeen = { x: 100, z: 68 }; h.g.wait = 0;
+  let found = false; for (let i = 0; i < 200 && !found; i++) { h.sim.step(DT); found = h.g.see > 0 || !!h.sim.caught; }
+  ok(found, 'a guard searching the doorway finds the hidden captain');
+  // knock-out: from behind only, the body raises the alarm when found
+  const k1 = duo({ d: 1.4, angle: Math.PI }); const ko = k1.sim.tryKnockOut();
+  const k2 = duo({ d: 1.4 }); const ko2 = k2.sim.tryKnockOut();
+  ok(ko.type === 'ko' && k1.g.down && ko2.type === 'fail' && ko2.why === 'facing', 'knock-out: from behind it works, face to face it fails');
+  const g2 = { ...k1.g, id: 1, down: false, ko: false, x: 100, z: 70, heading: Math.PI, sus: 0, path: [], wait: 999, _lockH: Math.PI };
+  k1.sim.guards.push(g2); k1.sim.player.x = 60; k1.sim.player.z = 10;
+  let body = false; for (let i = 0; i < 40 && !body; i++) for (const e of k1.sim.step(DT)) if (e.type === 'body') body = true;
+  ok(body && k1.sim.alarm, 'a guard who finds his knocked-out comrade raises the alarm');
+  // stone: the nearest guard goes to look where it fell
+  const st = duo({ d: -11, angle: 0 }); st.g.wait = 0; st.g.path = null;
+  st.sim.player.x = 95;
+  const sev = st.sim.throwStone(106, 64); let landed = null;
+  for (let i = 0; i < 40 && !landed; i++) for (const e of st.sim.step(DT)) if (e.type === 'landed') landed = e;
+  const d0 = Math.hypot(st.g.x - landed.x, st.g.z - landed.z);
+  for (let i = 0; i < 160; i++) st.sim.step(DT);
+  ok(sev.type === 'stone' && landed?.guard === st.g && Math.hypot(st.g.x - landed.x, st.g.z - landed.z) < d0 - 4 && st.sim.gauge < SNEAK.levels[0], `a thrown stone draws the guard (${d0.toFixed(1)} m → ${Math.hypot(st.g.x - landed.x, st.g.z - landed.z).toFixed(1)} m) without raising the gauge`);
+  st.sim.stoneCd = 0; let n = 0; while (st.sim.throwStone(100, 40).type === 'stone') { n++; st.sim.stoneCd = 0; }
+  ok(n === SNEAK.tools.stones - 1, `${SNEAK.tools.stones} stones per attempt`);
 }
 {
   // pursuit: alarm raised, the motionless captain is caught
@@ -84,33 +124,23 @@ const timeTo = (sim, lvl, max = 12) => { const t0 = sim.time; while (sim.time - 
     let t = 0; while (!sim.map.gate.open && t < 20) { sim.step(DT); t += DT; }
     return t;
   });
-  ok(times[0] > times[1] && times[1] > times[2] && Math.abs(times[0] - SNEAK.lockTime[0]) < 0.2, `lock picked in ${times.map(t => t.toFixed(1)).join(' / ')} s (nothing / passe-partout / kit)`);
+  ok(times[0] > times[1] && times[1] > times[2] && Math.abs(times[0] - SNEAK.lockTime[0]) < 0.2, `lock picked in ${times.map(t => t.toFixed(1)).join(' / ')} s (nothing / skeleton key / kit)`);
 }
-// careful bot: follows the shortest path, stops when a guard looks at it up close, otherwise hides while walking
-function bot(sim) {
-  let path = null, gi = 0;
-  return () => {
-    const p = sim.player, gl = sim.goals[gi % sim.goals.length];
-    if (!sim.map.gate.open) { const g = sim.map.gate; if (Math.hypot(p.x - g.x, p.z - (g.z + sim.map.cell * 0.5)) > 1.5) { path = findPath(sim.map, p.x, p.z, g.x, g.z + sim.map.cell * 0.9) || []; } else { sim.input = { x: 0, z: 0, run: false, act: true }; return; } }
-    if (!path || !path.length) path = findPath(sim.map, p.x, p.z, gl.x, gl.z) || [];
-    const danger = sim.guards.some(g => !g.down && Math.hypot(g.x - p.x, g.z - p.z) < 26 && g.sus > 30 && sim.canSee(g) > 0);
-    const n = path[0]; if (!n) { sim.input = { x: 0, z: 0 }; return; }
-    if (Math.hypot(n.x - p.x, n.z - p.z) < 0.6) { path.shift(); return; }
-    sim.input = { x: n.x - p.x, z: n.z - p.z, run: danger || sim.alarm, act: false };
-  };
-}
-{
-  for (const kind of ['infiltrate', 'escape']) {
-    let won = 0, caught = 0; const times = [];
-    for (let s = 1; s <= 12; s++) {
-      const sim = new SneakSim({ seed: s, kind, garrison: 60, rand: mulberry32(s) });
-      const b = bot(sim);
-      while (!sim.over && !sim.caught && sim.time < 300) { b(); sim.step(DT); }
-      if (sim.over) { won++; times.push(sim.time); } else if (sim.caught) caught++;
-    }
-    ok(won >= 2 && caught >= 2, `${kind}: a straight-line bot wins ${won}/12, is caught ${caught}/12 (the mode is neither free nor impossible)`);
-    ok(times.every(t => t > 20 && t < 180), `${kind}: successful runs last ${times.map(t => Math.round(t)).join(' ')} s`);
+const RUNS = 16, rates = {};
+for (const [name, mk] of [['straight-line', straightBot], ['careful', carefulBot]]) for (const kind of ['infiltrate', 'escape']) {
+  let won = 0, caught = 0; const times = [];
+  for (let s = 1; s <= RUNS; s++) {
+    const sim = new SneakSim({ seed: s, patrolSeed: s * 13 + 5, kind, garrison: 60, lockpick: 1 });
+    const b = mk(sim);
+    while (!sim.over && !sim.caught && sim.time < 300) { b(); sim.step(DT); }
+    if (sim.over) { won++; times.push(sim.time); } else if (sim.caught) caught++;
   }
+  rates[name + ':' + kind] = won;
+  console.log(`  ..   ${name} bot, ${kind}: wins ${won}/${RUNS}, caught ${caught}/${RUNS}, times ${times.map(t => Math.round(t)).join(' ')} s`);
+}
+for (const kind of ['infiltrate', 'escape']) {
+  ok(rates['straight-line:' + kind] <= RUNS * 0.3, `${kind}: the straight-line bot fails most of the time (wins ${rates['straight-line:' + kind]}/${RUNS})`);
+  ok(rates['careful:' + kind] >= RUNS * 0.55, `${kind}: the careful bot wins most of the time (${rates['careful:' + kind]}/${RUNS})`);
 }
 
 if (process.argv.includes('--browser')) {

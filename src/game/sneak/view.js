@@ -2,7 +2,7 @@
 // (materials and silhouettes shared with landbattle/view.js), ~15 draw calls.
 //   const v = new SneakView(game).build(sim, { coat, seed })   v.update(sim, dt)   v.render()   v.dispose()
 //   v.project(x, z, y) -> { x, y } screen pixels     SneakView.warmup(game) (called by game.warmup())
-// The render's sun follows SNEAK.sunDir / sunElev: the shadows shown are the ones that hide in the simulation.
+// The render's sun follows SNEAK.moonDir / moonElev: the shadows shown are the ones that hide in the simulation.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeMaterials, painted, tr, manGeo } from '../landbattle/view.js';
@@ -37,7 +37,7 @@ export class SneakView {
     S.background = new THREE.Color(0x6f7c8c);
     S.fog = new THREE.Fog(0x7d8692, 140, 420);
     S.add(new THREE.HemisphereLight(0xc9d2e6, 0x4a4036, 1.05));
-    const sun = new THREE.DirectionalLight(0xffc690, 2.6), sd = SNEAK.sunDir, e = SNEAK.sunElev;
+    const sun = new THREE.DirectionalLight(0xffc690, 2.6), sd = SNEAK.moonDir, e = SNEAK.moonElev;
     sun.position.set(MW / 2 + sd.x * Math.cos(e) * 200, Math.sin(e) * 200, MH / 2 + sd.z * Math.cos(e) * 200);
     sun.target.position.set(MW / 2, 0, MH / 2); S.add(sun, sun.target);
     sun.castShadow = true; const sc = sun.shadow.camera; sc.left = -150; sc.right = 150; sc.top = 130; sc.bottom = -130; sc.far = 500; sc.updateProjectionMatrix();
