@@ -62,3 +62,14 @@
 .lb-tag span { display: inline-block; padding: 0 .35em; border-radius: .4em; background: rgba(20,12,6,.5); line-height: 1.25; white-space: nowrap; }
 .lb-help { font-size: max(.85em, 11.5px); }
 .lb-card { font-size: max(.92em, 12px); }
+/* objective over the square: name, then the countdown while it is held; colour by who stands in it */
+.lb-goal { font-style: italic; color: #4a2a10; }
+.lb-obj { position: absolute; left: 0; top: 0; margin: -1.6em 0 0 -4.5em; width: 9em; text-align: center; font-size: max(.9em, 12px); color: #fff1c8;
+  text-shadow: 0 0 .25em #000, 0 0 .1em #000; }
+.lb-obj b { display: inline-block; padding: .05em .6em; border-radius: .5em; background: rgba(20,12,6,.6); box-shadow: 0 0 0 1px rgba(240,213,138,.6); font-weight: normal; }
+.lb-obj i { display: block; width: 6em; height: .3em; margin: .2em auto 0; background: rgba(0,0,0,.45); border-radius: .2em; overflow: hidden; }
+.lb-obj s { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #b8862c, #ffd050); }
+.lb-obj.held b { color: #ffe08a; box-shadow: 0 0 0 1px #ffd050, 0 0 .8em rgba(255,208,80,.6); }
+.lb-obj.enemy b { color: #ffc2b0; box-shadow: 0 0 0 1px rgba(216,69,47,.8); }
+.lb-obj.contested b { color: #fff; animation: lbBlink .6s ease-in-out infinite alternate; }
+@keyframes lbBlink { to { box-shadow: 0 0 0 1px #fff, 0 0 .8em rgba(255,255,255,.7); } }

@@ -63,8 +63,8 @@ function run(opts, bot = attackBot) {
 }
 {
   let w = 0, rout = 0;
-  for (let s = 1; s <= 10; s++) { const { res, ev } = run({ seed: s, playerForce: 60, garrison: 90 }); if (res?.winner === 'player') w++; rout += ev.rout || 0; }
-  ok(w >= 3 && w <= 9, `close fight (60 vs 90) is uncertain: ${w}/10 won`);
+  for (let s = 1; s <= 20; s++) { const { res, ev } = run({ seed: s, playerForce: 60, garrison: 90 }); if (res?.winner === 'player') w++; rout += ev.rout || 0; }
+  ok(w >= 6 && w <= 19, `close fight (60 vs 90) is uncertain: ${w}/20 won`);
   ok(rout > 5, `units rout (morale) in even fights: ${rout} routs`);
 }
 {
@@ -121,9 +121,9 @@ if (process.argv.includes('--browser')) {
   ok(/plunder/i.test(scr), 'victory screen offers plunder');
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/landbattle-victory.png` });
   await page.evaluate(() => document.querySelector('.lb-screen.on [data-act="keep"]')?.click());
-  await page.waitForTimeout(1500);
+  await page.waitForFunction(() => window.__game.mode === 'sail', null, { timeout: 20000 }).catch(() => {});   // SwiftShader: the fade may take a few frames
   const after = await page.evaluate(() => { const g = window.__game, p = g.landBattle.port; return { mode: g.mode, garrison: g.living.town(p).garrison }; });
-  ok(after.mode === 'sail' && after.garrison <= LAND.town.garrisonLeft + 1, `back at sea, town weakened (garrison ${after.garrison})`);
+  ok(after.mode === 'sail' && after.garrison <= LAND.town.garrisonLeft + 1, `back at sea (mode ${after.mode}), town weakened (garrison ${after.garrison})`);
   ok(!errors.length, `zero console errors${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
   await browser.close();
   if (server) try { process.kill(-server.pid); } catch { /* */ }

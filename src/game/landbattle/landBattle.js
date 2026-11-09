@@ -60,7 +60,7 @@ export class LandBattle {
     this._warmed = true;
     try {
       const sim = new LandSim({ heights: this._sample(port), seed: 7, playerForce: 60, garrison: 60, nation: port.faction, approach: 'land', allies: 0 });
-      const v = new LandView(g).build(sim, { coat: NATION_COATS[port.faction] || '#555', seed: 7 });
+      const v = new LandView(g).build(sim, { coat: NATION_COATS[port.faction] || '#555', seed: 7, nation: port.faction, ships: ['frigate', 'brig'] });
       const r = g.renderer, sh = r.shadowMap.enabled, rt = r.getRenderTarget();
       r.shadowMap.enabled = true; r.setRenderTarget(null);
       r.compile(v.scene, v.camera);
@@ -90,7 +90,7 @@ export class LandBattle {
     const k = t ? `${t.port.id}:${t.haven}` : '';
     if (k === this._promptK) return; this._promptK = k;
     this.prompt.classList.toggle('off', !t);
-    if (t) this.prompt.innerHTML = `<span class="key">V</span><span>${t.haven ? 'Organise an attack from the haven' : `Attack <b>${esc(t.port.name)}</b>`}</span>`;
+    if (t) this.prompt.innerHTML = `${kc('KeyV', 'key')}<span>${t.haven ? 'Organise an attack from the haven' : `Attack <b>${esc(t.port.name)}</b>`}</span>`;
   }
 
   _havenTargets(haven) {
@@ -179,7 +179,8 @@ export class LandBattle {
     this._prevMode = g.mode; this._prevFrozen = this._wasFrozen ?? g.frozen; this._wasFrozen = undefined;
     this._showPrompt(null);
     await this._fadeTo(true);
-    this.view = new LandView(g).build(this.sim, { coat: NATION_COATS[port.faction] || '#555', seed });
+    const pf = p?.faction || 'pirate', ships = [p?.type || 'brig', ...(g.state.fleet || []).map(f => f.type)];
+    this.view = new LandView(g).build(this.sim, { coat: NATION_COATS[port.faction] || '#555', playerCoat: NATION_COATS[pf] || NATION_COATS.pirate, seed, nation: port.faction, playerFaction: pf, ships });
     await precompile(g.renderer, this.view.scene, this.view.camera, { shadows: true });   // programs compiled in parallel under the fade
     g.mode = 'land'; g.frozen = true;
     g.hud?.show?.(false);
@@ -232,9 +233,10 @@ export class LandBattle {
   _onEvent(e) {
     const g = this.game, v = this.view;
     if (e.type === 'volley') {
-      v.puff(e.unit.x, e.unit.z, 3 + Math.min(5, e.unit.n / 5));
+      v.volley(e.unit);
       if ((this._volT || 0) < performance.now()) { this._volT = performance.now() + 220; g.audio?.play?.('cannon', { volume: 0.25 }); }
     } else if (e.type === 'melee') {
+      v.clash(e.x, e.z);
       if ((this._melT || 0) < performance.now()) { this._melT = performance.now() + 700; g.audio?.play?.('hit', { volume: 0.25 }); }
     } else if (e.type === 'rout') this._toast(e.unit.side === 'player' ? `Your ${UNIT_KINDS[e.unit.kind].name.toLowerCase()} are giving way!` : `${UNIT_KINDS[e.unit.kind].name}: they are running!`);
     else if (e.type === 'rally') this._toast(`${UNIT_KINDS[e.unit.kind].name} rallied around the officers.`);
@@ -328,10 +330,10 @@ export class LandBattle {
     const P = this.sim.units.filter(u => u.side === 'player');
     this.hud.classList.remove('off');
     this.hud.innerHTML = `
-      <div class="lb-top tof-parch"><b class="lb-town">${esc(this.port.name)}</b><span class="lb-clock"></span><span class="lb-men"></span><div class="lb-hold"><i></i></div></div>
+      <div class="lb-top tof-parch"><b class="lb-town">${esc(this.port.name)}</b><span class="lb-clock"></span><span class="lb-men"></span><span class="lb-goal"></span><div class="lb-hold"><i></i></div></div>
       <div class="lb-cards">${P.map((u, i) => `<div class="lb-card tof-parch" data-id="${u.id}"><span class="kc">${i + 1}</span><b>${UNIT_KINDS[u.kind].name}</b><span class="n"></span><div class="mor"><i></i></div></div>`).join('')}</div>
-      <div class="lb-help tof-parch">Left click: select (drag = box) · right click: march / charge · ${kc('KeyW')}${kc('KeyA')}${kc('KeyS')}${kc('KeyD')} camera · ${kc('KeyQ')}${kc('KeyE')} rotate · wheel: zoom · <span class="kc">T</span> all · <span class="kc">H</span> halt · <span class="kc">Space</span> pause · <span class="kc">R</span><span class="kc">R</span> retreat</div>
-      <div class="lb-tags"></div><div class="lb-toast"></div><div class="lb-pause">Pause</div>`;
+      <div class="lb-help tof-parch">Left click: select (drag = box) · right click: march / charge · ${kc('KeyW')}${kc('KeyA')}${kc('KeyS')}${kc('KeyD')} camera · ${kc('KeyQ')}${kc('KeyE')} rotate · wheel: zoom · ${kc('KeyT')} all · ${kc('KeyH')} halt · ${kc('Space')} pause · ${kc('KeyR')}${kc('KeyR')} retreat</div>
+      <div class="lb-tags"></div><div class="lb-obj"><b></b><i><s></s></i></div><div class="lb-toast"></div><div class="lb-pause">Pause</div>`;
     this.hud.querySelectorAll('.lb-card').forEach(c => c.onclick = e => { const u = this.sim.units.find(x => x.id === +c.dataset.id); if (!u) return; if (!e.shiftKey) this.sel.clear(); this.sel.add(u); });
     this._tags = new Map();
   }
@@ -342,6 +344,14 @@ export class LandBattle {
     h.querySelector('.lb-men').textContent = `Your men ${s._men('player')} · garrison ${s.units.filter(u => u.side === 'enemy' && s.alive(u) && u.state !== 'rout').reduce((a, u) => a + u.n, 0)}`;
     h.querySelector('.lb-hold i').style.width = `${Math.min(100, s.hold / LAND.holdTime * 100)}%`;
     h.querySelector('.lb-hold').classList.toggle('on', s.hold > 0);
+    // objective: the square, its state and the time it must still be held
+    const sq = this.view.squareState, rest = Math.ceil(Math.max(0, LAND.holdTime - s.hold));
+    h.querySelector('.lb-goal').textContent = sq === 'held' ? `Holding the square: ${rest} s` : sq === 'contested' ? 'The square is contested' : sq === 'enemy' ? 'The garrison holds the square' : s.hold > 0 ? 'Retake the square!' : 'Take the square';
+    const ob = h.querySelector('.lb-obj'), op = this.view.project(s.map.town.x, s.map.town.z, 22);
+    ob.style.display = op.behind ? 'none' : ''; ob.style.transform = `translate(${op.x.toFixed(0)}px, ${op.y.toFixed(0)}px)`;
+    ob.className = `lb-obj ${sq}`;
+    ob.querySelector('b').textContent = sq === 'held' ? `Hold ${rest} s` : 'The square';
+    ob.querySelector('s').style.width = `${Math.min(100, s.hold / LAND.holdTime * 100)}%`;
     h.querySelector('.lb-pause').classList.toggle('on', this.paused);
     for (const c of h.querySelectorAll('.lb-card')) {
       const u = s.units.find(x => x.id === +c.dataset.id);
@@ -409,6 +419,7 @@ export class LandBattle {
       const units = [...this.sel].filter(u => this.sim.alive(u));
       if (!units.length) return;
       const tgt = this.sim.order(units, pt.x, pt.z);
+      this.view.order(pt.x, pt.z, tgt);
       this.game.audio?.play?.('ui:click');
       this._toast(tgt ? `Attack: ${UNIT_KINDS[tgt.kind].name.toLowerCase()}!` : this.sim.cellAt(pt.x, pt.z) === T.WOOD ? 'Into the cover of the woods.' : this.sim.cellAt(pt.x, pt.z) === T.HILL ? 'Take the high ground.' : 'Forward, march.');
     }
