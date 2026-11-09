@@ -146,7 +146,8 @@ in hand, take a town by storm with your crew, or slip past the guards of a hosti
   The sea is split into three levels of danger, from the guarded waters of your home port to the perilous seas.
 - **Duels, town assaults and infiltration** run on pure simulations, separate from the rendering: a duel with
   lines of attack, parries and stamina, a battle on a 48 × 32 grid built from the island's relief with path
-  finding, guards with cones of vision and real cast shadows to hide in.
+  finding, night infiltrations where moon shadows, lanterns and torches decide what the guards see, with patrols
+  drawn again at every attempt and sentries at the exits.
 - **Audio**: synthesised live with the Web Audio API. Melodies are generated from seeds in the modes of each theme
   (sea, battle, storm, tavern of each nation…), plucked strings by physical modelling (Karplus–Strong).
 - **Any keyboard**: keys are read by their physical position and labelled with your layout's real letters (W A S
@@ -222,7 +223,8 @@ title screen.
 | Taunt / surrender (hold) | L / Y |
 
 Town assaults are played with the mouse (select and order companies) and W A S D for the camera; infiltrations
-with W A S D, Shift to run and Space to pick a lock.
+with W A S D, Shift to run, Space to pick a lock, T (or a click) to throw a stone that lures a guard, H to hide in
+a doorway, behind barrels or in a haystack, and K to knock out a guard from behind.
 
 ## Saving, time and graphics
 
