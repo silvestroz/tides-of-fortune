@@ -1,6 +1,6 @@
 // Post-processing pipeline. API: new PostFX(game); render(dt); resize(w,h).
 // Chain (EffectComposer, HalfFloat HDR buffers):
-//   RenderPass (linear HDR) → GodRaysPass (sun shafts, 1/4 res (1/2.5 in ultra), only when the sun is in view)
+//   RenderPass (linear HDR) → GTAOPass (Ultra only, at half resolution) → GodRaysPass (sun shafts, 1/4 res (1/2.5 in ultra), only when the sun is in view)
 //   → UnrealBloomPass (thresholded: only sun, glitter, lanterns, muzzle flashes, lightning glow)
 //   → OutputPass (ACES + exposure + sRGB) → GradePass (lift/gamma/gain, sat, split tone, canvas, vignette, grain)
 //   → FXAA → FsrPass (FSR 1 upscale to the canvas size + sharpening, to screen; only while the dynamic resolution renders
@@ -96,6 +96,11 @@ export class PostFX {
         }
       });
     };
+    // half resolution: the normal/depth pre-pass, the AO and its denoise run at 1/2 x 1/2 (a quarter of the pixels);
+    // the soft result is stretched back when blended over the full-size scene (?aohalf=0 = full size)
+    const half = game.params.get('aohalf') !== '0', setSize = ao.setSize.bind(ao);
+    ao.setSize = (w, h) => setSize(half ? Math.max(1, Math.round(w / 2)) : w, half ? Math.max(1, Math.round(h / 2)) : h);
+    ao.setSize(size.x, size.y);
     // AO only inside a box around the camera (no work or haze on the far sea and sky)
     this._aoBox = new THREE.Box3();
     ao.setSceneClipBox(this._aoBox);
@@ -155,7 +160,7 @@ export class PostFX {
     this._updateParams(dt);
     if (this.ao) {
       const c = g.camera.position;
-      this._aoBox.min.set(c.x - 450, -25, c.z - 450); this._aoBox.max.set(c.x + 450, 160, c.z + 450);
+      this._aoBox.min.set(c.x - 450, -1.5, c.z - 450); this._aoBox.max.set(c.x + 450, 160, c.z + 450);
       this.ao.setSceneClipBox(this._aoBox);
       // menus/duel/mini-games keep AO too (port and duel scenes gain the most); off when the post chain is disabled
     }
