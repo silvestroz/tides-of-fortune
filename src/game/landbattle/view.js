@@ -1,12 +1,23 @@
-// Rendering of the land battle: standalone three.js scene (tilted top-down view), terrain painted with vertex
-// colours, woods / rocks / houses / men as InstancedMesh (≈ 15 draw calls in all).
-//   const v = new LandView(game)  v.build(sim, { coat, nation })  v.update(sim, dt, sel)  v.render()  v.dispose()
-//   v.pick(ndcX, ndcY) -> { x, z } on the terrain    v.project(x, z) -> { x, y } screen pixels
-// Shared materials created once (makeMaterials) and precompiled by game.warmup() via LandView.warmup(game).
+// Rendering of the land battle: standalone three.js scene (tilted top-down view) built with the land art kit
+// (src/game/land/kit.js): painted terrain matching the sim map (woods, hills, rocks, fields, the road from the beach,
+// cobbled square and streets), the town of varied houses around its square with church and fort (on the map's built
+// cells), the beach with the longboats, the sea with the player's ships at anchor. Companies are drawn in tidy ranks
+// with a banner each, squeezed into a column in the streets, scattering when routed; volleys put a line of smoke and
+// muzzle flashes along the front rank, cavalry raises dust. Overlays: selection rings, march paths, order markers,
+// the outline of the square filling up while it is held, and the flag over it changing hands. ≈ 40 draw calls.
+//   const v = new LandView(game).build(sim, { coat, seed, nation, playerFaction, ships })
+//   v.update(sim, dt, selected, visibleFn)  v.render()  v.dispose()
+//   v.volley(unit) (smoke + flashes)  v.clash(x, z) (melee dust)  v.order(x, z, target) (order marker)
+//   v.pick(ndcX, ndcY) -> { x, z } on the terrain    v.project(x, z, y) -> { x, y, behind } screen pixels
+//   v.squareState -> 'free' | 'held' | 'enemy' | 'contested' (updated each frame)
+// Shared materials created once (makeMaterials, kit materials) and precompiled by game.warmup() via LandView.warmup(game).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { T, heightAt } from './sim.js';
+import { T, heightAt, findPath, cellIndex } from './sim.js';
+import { LAND } from '../../data/landbattle.js';
 import { mulberry32 } from '../../core/rng.js';
+import { kitMaterials, kitWarmup, kitTick, GeoBuilder, PALETTE, house, church, fort, lowWall, longboat, anchoredShips,
+  vegGeos, scatter, paintGround, clothGeo, flagUV, waveCloth, PuffPool, KM } from '../land/kit.js';
 
 const MAX_MEN = 520;
 let MATS = null;
@@ -116,171 +127,451 @@ function riderGeo() {
   return mergeGeometries(parts.map(p => (p.deleteAttribute('uv'), p)));
 }
 
+// banner of a company: pole with finial and crossbar, cloth (white = tinted by the side's colour) with a pale cross and
+// a gold fringe, baked in a light wave
+function bannerGeo() {
+  const P = (g, c, t) => painted(g, c, t);
+  const parts = [
+    P(tr(new THREE.CylinderGeometry(0.07, 0.09, 7.6, 5), 0, 3.8, 0), '#4a3727', 0),
+    P(tr(new THREE.ConeGeometry(0.18, 0.5, 5), 0, 7.85, 0), '#d4a843', 0),
+    P(tr(new THREE.CylinderGeometry(0.05, 0.05, 3.1, 4), 1.5, 7.3, 0, 0, 0, Math.PI / 2), '#4a3727', 0),
+    P(tr(new THREE.BoxGeometry(2.9, 2.0, 0.07, 8, 4, 1), 1.55, 6.25, 0), '#ffffff', 1),
+    P(tr(new THREE.BoxGeometry(2.9, 0.34, 0.1, 8, 1, 1), 1.55, 6.25, 0), '#f2ead6', 0),
+    P(tr(new THREE.BoxGeometry(0.34, 2.0, 0.1, 1, 4, 1), 1.25, 6.25, 0), '#f2ead6', 0),
+    P(tr(new THREE.BoxGeometry(2.9, 0.16, 0.11, 8, 1, 1), 1.55, 5.2, 0), '#d4a843', 0),
+  ];
+  const g = mergeGeometries(parts.map(p => (p.deleteAttribute('uv'), p)));
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) { const x = p.getX(i); if (x > 0.12) p.setZ(i, p.getZ(i) + Math.sin((x - 0.1) * 1.8) * 0.28 * Math.min(1, x)); }
+  g.computeVertexNormals();
+  return g;
+}
+// flat chevron lying on the ground, its tip toward -x (order marker)
+function chevronGeo() {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1.4, 0, -1.1, 1.4, 0, -0.5, 0, 0, 0, 1.4, 0, -0.5, 0.65, 0, 0,
+    0, 0, 0, 0.65, 0, 0, 1.4, 0, 0.5, 0, 0, 0, 1.4, 0, 0.5, 1.4, 0, 1.1], 3));
+  return g;
+}
+
+// overlays drawn above everything (selection rings, march paths, order markers, the square's outline): always readable
+let DECAL = null;
+const decalMat = () => DECAL ||= new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+
+const SQUARE_DASHES = 44, MAX_DOTS = 420, MAX_MARK = 12, MAX_BANNERS = 24;
+const COL = {
+  sel: new THREE.Color(0xffe08a), mine: new THREE.Color(0x86acd0).multiplyScalar(0.8), foe: new THREE.Color(0xd8452f), rout: new THREE.Color(0x9a9a9a),
+  move: new THREE.Color(0xffd56a), attack: new THREE.Color(0xff5a3c),
+  held: new THREE.Color(0xffd050), free: new THREE.Color(0xf3e6c2), enemyHeld: new THREE.Color(0xc8553a), contested: new THREE.Color(0xffffff),
+  smoke: 0xf4f0e8, flash: 0xffc46a, dust: 0xcdb48a,
+};
+const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
 export class LandView {
   constructor(game) { this.game = game; this.scene = null; }
 
   static warmup(game) {
-    // precompiles every program of the battle (a miniature scene with each material) to avoid the hitch
+    // precompiles every program of the battle (miniature scenes with each material) to avoid the hitch
     const M = makeMaterials(), s = new THREE.Scene(), g = new THREE.BoxGeometry(1, 1, 1);
     s.add(new THREE.HemisphereLight(0xffffff, 0x445533, 1), new THREE.DirectionalLight(0xffffff, 1));
-    for (const m of Object.values(M)) s.add(new THREE.Mesh(g, m));
-    const im = new THREE.InstancedMesh(g, M.men, 1); im.setColorAt(0, new THREE.Color(1, 1, 1)); s.add(im);
-    for (const k of ['veg', 'rock', 'house', 'ring', 'smoke']) s.add(new THREE.InstancedMesh(g, M[k], 1));
+    for (const mat of [M.men, decalMat()]) { const im = new THREE.InstancedMesh(g, mat, 1); im.setColorAt(0, new THREE.Color(1, 1, 1)); s.add(im); }
     s.fog = new THREE.Fog(0xcfd6d0, 300, 1100);
     const cam = new THREE.PerspectiveCamera(40, 1, 1, 100);
     try { game.renderer.compile(s, cam); } catch (e) { console.warn('warmup landbattle', e); }
     g.dispose();
+    kitWarmup(game.renderer);
   }
 
-  build(sim, { coat = '#2d4c8f', seed = 1 } = {}) {
-    const M = makeMaterials(), m = sim.map, S = this.scene = new THREE.Scene(), r = mulberry32(seed);
-    this.sim = sim; this.disposables = [];
+  // coat: the garrison's colour · nation / playerFaction: their flags (player colours = NATION_COATS of playerFaction,
+  // passed as playerCoat) · ships: types of the player's ships riding at anchor off the beach
+  build(sim, { coat = '#2d4c8f', playerCoat = '#3a3a3a', seed = 1, nation = 'spanish', playerFaction = 'pirate', ships = ['brig'] } = {}) {
+    const M = makeMaterials(), K = kitMaterials(), m = sim.map, S = this.scene = new THREE.Scene(), r = mulberry32(seed);
+    this.sim = sim; this.disposables = []; this.nation = nation; this.playerFaction = playerFaction;
     const keep = o => { this.disposables.push(o); return o; };
-    S.background = new THREE.Color(0xb9c9cf);
-    S.fog = new THREE.Fog(0xc7d0c8, 420, 1150);
-    const hemi = new THREE.HemisphereLight(0xf3ead8, 0x4d5a3a, 1.15); S.add(hemi);
-    const sun = this.sun = new THREE.DirectionalLight(0xffe2b8, 2.3);
-    const cx = m.W * m.cell / 2, cz = m.H * m.cell / 2;
-    sun.position.set(cx - 260, 380, cz - 180); sun.target.position.set(cx, 0, cz); S.add(sun, sun.target);
-    sun.castShadow = true; const sc = sun.shadow.camera; sc.left = -300; sc.right = 300; sc.top = 260; sc.bottom = -260; sc.far = 1200; sc.updateProjectionMatrix();
+    const MW = m.W * m.cell, MH = m.H * m.cell, cx = MW / 2, cz = MH / 2, Y = (x, z) => this._ground(x, z);
+    S.background = new THREE.Color(0xc4d2d6);
+    S.fog = new THREE.Fog(0xc4d2d6, 560, 1400);
+    S.add(new THREE.HemisphereLight(0xe4ecf2, 0x76684a, 1.25));
+    const sun = new THREE.DirectionalLight(0xffdfb0, 2.5);
+    sun.position.set(cx - 380, 340, cz - 90); sun.target.position.set(cx, 0, cz); S.add(sun, sun.target);
+    sun.castShadow = true; const sc = sun.shadow.camera; sc.left = -330; sc.right = 330; sc.top = 300; sc.bottom = -300; sc.far = 1300; sc.updateProjectionMatrix();
     sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.6;
-    // ---- terrain: fine grid, colours painted per cell type + brush noise ----
-    const SUB = 3, GW = m.W * SUB, GH = m.H * SUB, PAD = 18;   // border extended off the map (PAD cells of grass/sea)
-    const geo = keep(new THREE.PlaneGeometry((m.W + PAD * 2) * m.cell, (m.H + PAD * 2) * m.cell, GW + PAD * 2 * SUB, GH + PAD * 2 * SUB));
-    geo.rotateX(-Math.PI / 2); geo.translate(cx, 0, cz);
-    const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color();
-    const PAL = { [T.OPEN]: '#7f9a4c', [T.WOOD]: '#4c6a33', [T.HILL]: '#a39a5e', [T.ROCK]: '#8a8174', [T.TOWN]: '#b59c74', [T.WATER]: '#c9b98a' };
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i), z = pos.getZ(i), inside = x >= 0 && z >= 0 && x <= m.W * m.cell && z <= m.H * m.cell;
-      const xc = Math.max(1, Math.min(m.W * m.cell - 1, x)), zc = Math.max(1, Math.min(m.H * m.cell - 1, z));
-      let y = heightAt(m, xc, zc), t = sim.cellAt(xc, zc);
-      if (!inside) { const d = Math.max(-x, -z, x - m.W * m.cell, z - m.H * m.cell, 0); y = z < 0 ? y - d * 0.09 : y + d * 0.04 + Math.sin(x * 0.02) * d * 0.03; if (z < 0 && y < 0.6) t = T.WATER; else t = T.OPEN; }
-      if (t === T.WATER) y = Math.min(y, -1.2);
-      pos.setY(i, y);
-      c.set(PAL[t]);
-      const n = Math.sin(x * 0.11 + Math.cos(z * 0.07) * 2) * 0.5 + Math.sin(z * 0.13 + x * 0.03) * 0.5;
-      c.offsetHSL(n * 0.015, n * 0.04, n * 0.035 + (y - 6) * 0.004);
-      if (!inside) c.lerp(new THREE.Color('#8fa06a'), 0.25);
-      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+
+    // ---- per-cell paint (colour + sand / paved / field / rock weights) from the sim map; the road from the beach ----
+    const N = m.W * m.H, cellPaint = new Array(N), field = new Uint8Array(N), road = new Uint8Array(N);
+    const route = findPath(m, m.deploy.x, m.deploy.z, m.town.x, m.town.z) || [];
+    let prev = { x: m.deploy.x, z: 0 };
+    for (const p of [{ x: m.deploy.x, z: m.deploy.z }, ...route]) {   // every cell crossed by the polyline
+      const L = Math.hypot(p.x - prev.x, p.z - prev.z), n = Math.ceil(L / 3);
+      for (let q = 0; q <= n; q++) road[cellIndex(m, prev.x + (p.x - prev.x) * q / Math.max(1, n), prev.z + (p.z - prev.z) * q / Math.max(1, n))] = 1;
+      prev = p;
     }
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals();
-    const ground = this.ground = new THREE.Mesh(geo, M.ground); ground.receiveShadow = true; S.add(ground);
-    const wg = keep(new THREE.PlaneGeometry((m.W + PAD * 2) * m.cell * 1.5, 900 + m.H * m.cell)); wg.rotateX(-Math.PI / 2);
-    const water = new THREE.Mesh(wg, M.water); water.position.set(cx, -0.2, (m.H * m.cell - 900) / 2); S.add(water);   // sea to the south and the map's inlets
-    // ---- woods: trees (foliage cone + trunk), 3 to 4 per cell ----
-    const treeG = keep(mergeGeometries([painted(tr(new THREE.CylinderGeometry(0.35, 0.5, 3, 5), 0, 1.5, 0), '#5a4330'),
-      painted(tr(new THREE.ConeGeometry(3.2, 7, 7), 0, 6.2, 0), '#3f6a2c'), painted(tr(new THREE.ConeGeometry(2.4, 5, 7), 0, 9, 0), '#527c35')].map(p => (p.deleteAttribute('uv'), p))));
-    const rockG = keep(painted(new THREE.DodecahedronGeometry(3, 0), '#8c8476'));
-    const trees = [], rocks = [];
+    const tcx = m.town.x / m.cell, tcz = m.town.z / m.cell, edge = (i, j) => i === 0 || j === 0 || i === m.W - 1 || j === m.H - 1;
+    // woods around the map: dense along its edge (the edge cells are an impassable thicket), patchy further out
+    const forest = (x, z) => { const o = Math.max(-x, -z, x - MW, z - MH, 0), n = 0.5 + 0.25 * (Math.sin(x * 0.013 + Math.cos(z * 0.011) * 2) + Math.sin(z * 0.017 + x * 0.006));
+      return Math.max(0, Math.min(1, n * 0.9 + Math.max(0, 1 - o / 45) * 0.45 - 0.15)); };
     for (let j = 0; j < m.H; j++) for (let i = 0; i < m.W; i++) {
-      const t = m.type[j * m.W + i];
-      if (t === T.WOOD) for (let q = 0; q < 3; q++) trees.push([(i + r()) * m.cell, (j + r()) * m.cell, 0.75 + r() * 0.5]);
-      else if (t === T.OPEN && r() < 0.03) trees.push([(i + r()) * m.cell, (j + r()) * m.cell, 0.8 + r() * 0.3]);
-      else if (t === T.ROCK && m.h[j * m.W + i] > 0) for (let q = 0; q < 2; q++) rocks.push([(i + r()) * m.cell, (j + r()) * m.cell, 0.9 + r() * 1.1]);
+      const k = j * m.W + i, dT = Math.hypot((i + 0.5 - tcx) / 1.3, j + 0.5 - tcz);
+      if (m.type[k] === T.OPEN && !m.street[k] && !road[k] && dT > 8.5 && dT < 17 && hash(Math.floor(i / 3), Math.floor(j / 2)) > 0.6) field[k] = 1;
     }
-    for (let q = 0; q < 140; q++) { const x = (r() * (m.W + 16) - 8) * m.cell, z = (m.H + 1 + r() * 14) * m.cell; trees.push([x, z, 0.8 + r() * 0.6]); }
-    const dummy = new THREE.Object3D();
-    const inst = (g, mat, list, f) => { const im = new THREE.InstancedMesh(g, mat, Math.max(1, list.length)); list.forEach((p, k) => { f(p); dummy.updateMatrix(); im.setMatrixAt(k, dummy.matrix); }); im.count = list.length; im.castShadow = true; im.receiveShadow = true; S.add(im); return im; };
-    inst(treeG, M.veg, trees, ([x, z, s]) => { dummy.position.set(x, this._h(x, z) - 0.3, z); dummy.scale.setScalar(s); dummy.rotation.set(0, r() * 6, 0); });
-    inst(rockG, M.rock, rocks, ([x, z, s]) => { dummy.position.set(x, this._h(x, z) + s * 0.6, z); dummy.scale.set(s, s * 0.8, s); dummy.rotation.set(r(), r() * 6, r()); });
-    // ---- town: houses (rendered walls, tiled roofs) around the square, palisade, flagpole ----
-    const houseG = keep(mergeGeometries([painted(tr(new THREE.BoxGeometry(8, 5, 6), 0, 2.5, 0), '#e2d3b4'),
-      painted(tr(new THREE.CylinderGeometry(0.01, 6.2, 3.4, 4, 1), 0, 6.7, 0, 0, Math.PI / 4), '#a24f2f')].map(p => (p.deleteAttribute('uv'), p))));
-    const houses = [];
-    for (let k = 0; k < 18; k++) {
-      const a = k / 18 * Math.PI * 2 + r() * 0.2, d = 46 + r() * 22;
-      const x = m.town.x + Math.cos(a) * d * 1.3, z = m.town.z + Math.sin(a) * d;
-      if (sim.cellAt(x, z) === T.ROCK || sim.cellAt(x, z) === T.WATER) continue;
-      houses.push([x, z, -a + Math.PI / 2, 0.8 + r() * 0.5]);
+    for (let j = 0; j < m.H; j++) for (let i = 0; i < m.W; i++) {
+      const k = j * m.W + i, t = m.type[k], n = hash(i, j);
+      let o;
+      if (m.built[k]) o = { color: '#a8977a', paved: 0.7 };
+      else if (t === T.TOWN) o = { color: '#d0b88e', paved: 1 };
+      else if (m.street[k]) o = { color: '#bfa784', paved: 1 };
+      else if (road[k]) o = { color: '#b69b6b', sand: 0.75 };
+      else if (field[k]) o = { color: hash(Math.floor(i / 3) + 5, Math.floor(j / 2)) > 0.5 ? '#c7af5e' : '#97a84a', field: 1 };
+      else if (t === T.WOOD) o = { color: n > 0.5 ? '#5b7a37' : '#557334' };
+      else if (t === T.HILL) o = { color: n > 0.5 ? '#aaa263' : '#a19a5a', rock: 0.15 };
+      else if (t === T.ROCK) o = edge(i, j) ? { color: '#5e7b39', rock: 0.2 } : { color: '#9a9180', rock: 0.85 };
+      else if (t === T.WATER) o = { color: '#cdb98a', sand: 1 };
+      else o = { color: n > 0.5 ? '#87a34f' : '#809e4a' };
+      const c = new THREE.Color(o.color); c.offsetHSL((n - 0.5) * 0.02, 0, (n - 0.5) * 0.04);
+      cellPaint[k] = [c.r, c.g, c.b, o.sand || 0, o.paved || 0, o.field || 0, o.rock || 0];
     }
-    const hm = inst(houseG, M.house, houses, ([x, z, a, s]) => { dummy.position.set(x, this._h(x, z) - 0.2, z); dummy.scale.set(s, s * (0.9 + r() * 0.4), s); dummy.rotation.set(0, a, 0); });
-    const tint = new THREE.Color(); houses.forEach((_, k) => hm.setColorAt(k, tint.setHSL(0.08 + r() * 0.05, 0.25, 0.75 + r() * 0.25)));
-    const pole = new THREE.Mesh(keep(painted(new THREE.CylinderGeometry(0.2, 0.25, 14, 5), '#4a3727')), M.house);
-    pole.position.set(m.town.x, this._h(m.town.x, m.town.z) + 7, m.town.z); S.add(pole);
-    const flag = this.flag = new THREE.Mesh(keep(new THREE.PlaneGeometry(5, 3.2, 6, 2)), M.flag.clone()); keep(flag.material);
-    flag.position.set(m.town.x + 2.6, this._h(m.town.x, m.town.z) + 12.2, m.town.z); flag.material.color.set(coat); S.add(flag);
-    // square to hold: ring on the ground
-    const sq = new THREE.Mesh(keep(new THREE.RingGeometry(40, 42, 48)), M.ring.clone()); keep(sq.material);
-    sq.rotation.x = -Math.PI / 2; sq.position.set(m.town.x, this._h(m.town.x, m.town.z) + 0.4, m.town.z); sq.material.color.set(0xf0d58a); sq.material.opacity = 0.45; S.add(sq); this.square = sq;
-    // ---- hommes : trois InstancedMesh (fantassins sabre, fantassins mousquet, cavaliers) ----
-    const mk = g => { keep(g); const im = new THREE.InstancedMesh(g, M.men, MAX_MEN); im.castShadow = true; im.count = 0; im.frustumCulled = false; im.setColorAt(0, new THREE.Color()); S.add(im); return im; };
-    this.menBlade = mk(manGeo('blade')); this.menGun = mk(manGeo('musket')); this.menHorse = mk(riderGeo());
-    this.rings = new THREE.InstancedMesh(keep(new THREE.RingGeometry(0.86, 1, 32).rotateX(-Math.PI / 2)), M.ring, 32);
-    this.rings.count = 0; this.rings.frustumCulled = false; this.rings.setColorAt(0, new THREE.Color()); S.add(this.rings);
-    this.puffs = new THREE.InstancedMesh(keep(new THREE.IcosahedronGeometry(1, 1)), M.smoke, 160);
-    this.puffs.count = 0; this.puffs.frustumCulled = false; S.add(this.puffs);
-    this.smoke = [];
+    const sand = new THREE.Color(PALETTE.sand), bed = new THREE.Color('#bda877'), meadow = new THREE.Color('#84a04d'), floor = new THREE.Color('#5a7937'), og = new THREE.Color();
+    const paintAt = (x, z, y) => {
+      let v;
+      if (x >= 0 && z >= 0 && x <= MW && z <= MH) {   // bilinear blend of the four nearest cells
+        const fx = Math.max(0, Math.min(m.W - 1.001, x / m.cell - 0.5)), fz = Math.max(0, Math.min(m.H - 1.001, z / m.cell - 0.5)), i = Math.floor(fx), j = Math.floor(fz), u = fx - i, w = fz - j;
+        const a = cellPaint[j * m.W + i], b = cellPaint[j * m.W + i + 1], c = cellPaint[(j + 1) * m.W + i], d = cellPaint[(j + 1) * m.W + i + 1];
+        v = a.map((_, q) => (a[q] * (1 - u) + b[q] * u) * (1 - w) + (c[q] * (1 - u) + d[q] * u) * w);
+      } else { og.copy(meadow).lerp(floor, smooth(0.3, 0.75, forest(x, z))); v = [og.r, og.g, og.b, 0, 0, 0, 0]; }
+      const sx = x - m.town.x, sz = z - m.town.z, rr = Math.hypot(sx, sz);
+      if (rr < LAND.squareR + 4) {   // the square: a compass rose of darker paving (rings and rays)
+        const a = Math.atan2(sz, sx), band = Math.max(1 - Math.abs(rr - 13) / 2.2, 1 - Math.abs(rr - 30) / 1.8, rr > 4 && rr < 30 ? 1 - Math.abs(Math.sin(a * 4)) * rr / 4 : 0, 0);
+        const k = 1 - 0.28 * Math.min(1, band) * v[4];
+        v = [v[0] * k, v[1] * k, v[2] * k * 0.97, v[3], v[4], v[5], v[6]];
+      }
+      if (y < 2.4) {   // beach, then the seabed
+        const s = Math.min(1, (2.4 - y) / 1.4), c = y < 0 ? bed : sand;
+        v = [v[0] * (1 - s) + c.r * s, v[1] * (1 - s) + c.g * s, v[2] * (1 - s) + c.b * s, Math.max(v[3], s), v[4] * (1 - s), v[5] * (1 - s), v[6] * (1 - s)];
+      }
+      const lift = 1 + Math.max(-0.08, Math.min(0.08, (y - 8) * 0.006));
+      return { color: new THREE.Color(v[0] * lift, v[1] * lift, v[2] * lift), sand: v[3], paved: v[4], field: v[5], rock: v[6] };
+    };
+
+    // ---- terrain: the battle map and a painted border (beach and sea to the south, the harbour shore to the north) ----
+    const SUB = 3, PAD = 24;
+    const geo = keep(new THREE.PlaneGeometry((m.W + PAD * 2) * m.cell, (m.H + PAD * 2) * m.cell, (m.W + PAD * 2) * SUB, (m.H + PAD * 2) * SUB));
+    geo.rotateX(-Math.PI / 2); geo.translate(cx, 0, cz);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) pos.setY(i, Y(pos.getX(i), pos.getZ(i)));
+    paintGround(geo, paintAt); geo.computeVertexNormals();
+    const ground = this.ground = new THREE.Mesh(geo, K.paint); ground.receiveShadow = true; S.add(ground);
+    {   // sea: depth-tinted, foam along the shore
+      const wW = (m.W + PAD * 2) * m.cell, wH = (m.H + PAD * 2) * m.cell, wg = keep(new THREE.PlaneGeometry(wW, wH, Math.round(wW / 6), Math.round(wH / 6)));
+      wg.rotateX(-Math.PI / 2); wg.translate(cx, 0.15, cz);
+      const p = wg.attributes.position, col = new Float32Array(p.count * 3), foam = new Float32Array(p.count), c = new THREE.Color();
+      const shallow = new THREE.Color('#63bcb2'), mid = new THREE.Color('#2f8aa0'), deep = new THREE.Color('#215f80');
+      for (let i = 0; i < p.count; i++) {
+        const depth = -Y(p.getX(i), p.getZ(i));
+        c.copy(shallow).lerp(mid, Math.min(1, Math.max(0, depth / 5))).lerp(deep, Math.min(1, Math.max(0, (depth - 5) / 12)));
+        col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+        foam[i] = Math.max(0, 1 - Math.abs(depth - 0.3) / 1.6);
+      }
+      wg.setAttribute('color', new THREE.BufferAttribute(col, 3)); wg.setAttribute('aFoam', new THREE.BufferAttribute(foam, 1));
+      S.add(new THREE.Mesh(wg, K.water));
+    }
+
+    // ---- town (houses on the built cells, church, fort), field walls, square, longboats, ships: merged ----
+    const B = new GeoBuilder();
+    const cellC = k => [((k % m.W) + 0.5) * m.cell, (Math.floor(k / m.W) + 0.5) * m.cell];
+    const footY = (x, z, rad) => Math.min(Y(x - rad, z - rad), Y(x + rad, z - rad), Y(x - rad, z + rad), Y(x + rad, z + rad), Y(x, z));
+    const nave = [];
+    for (let k = 0; k < N; k++) {
+      if (m.built[k] === 2) nave.push(cellC(k));
+      if (m.built[k] !== 1) continue;
+      const [x0, z0] = cellC(k), x = x0 + (r() - 0.5) * 1.4, z = z0 + (r() - 0.5) * 1.4, dT = Math.hypot((x - m.town.x) / 1.3, z - m.town.z) / m.cell;
+      const rot = Math.round(Math.atan2(m.town.x - x, m.town.z - z) / (Math.PI / 8)) * (Math.PI / 8) + (r() - 0.5) * 0.08, fr = r();
+      house(B, { x, z, y: footY(x, z, 4), w: 7.8 + r() * 1.9, d: 6.8 + r() * 2.3, rot, floors: dT < 6 ? (fr < 0.2 ? 3 : fr < 0.75 ? 2 : 1) : (fr < 0.4 ? 2 : 1), hip: r() < 0.4, rand: r });
+    }
+    if (nave.length) {
+      const x = nave.reduce((a, c) => a + c[0], 0) / nave.length, z = nave.reduce((a, c) => a + c[1], 0) / nave.length;
+      church(B, { x, z, y: footY(x, z, 10), rot: Math.PI, roof: PALETTE.roofs[0], spire: nation === 'english' || nation === 'dutch' });
+    }
+    const fy = Math.max(1.5, footY(m.fort.x, m.fort.z - 6, 14)), F = fort(B, { x: m.fort.x, z: m.fort.z, y: fy });
+    {   // the square: a well at the foot of the flagpole, market stalls
+      const y = Y(m.town.x, m.town.z);
+      B.ground = y; B.aoH = 1;
+      B.cyl(m.town.x, y - 0.5, m.town.z, 2.4, 2.4, 1.4, 14, PALETTE.stone, KM.STONE);
+      B.cyl(m.town.x, y + 0.9, m.town.z, 2.6, 2.6, 0.25, 14, '#cbbd9c', KM.STONE);
+      B.cyl(m.town.x, y + 1.1, m.town.z, 0.22, 0.14, 15, 6, '#4a3727', KM.WOOD);
+      this._pole = { x: m.town.x, y: y + 16, z: m.town.z };
+      const awn = ['#b8402e', '#e8dcc0', '#3a6a8a', '#d8a040', '#5a7a3a', '#a8603a'];
+      for (const sg of [-1, 1]) for (let q = 0; q < 3; q++) {   // market stalls on the east and west rims, outside the circle to hold
+        const x = m.town.x + sg * (LAND.squareR + 6), z = m.town.z + (q - 1) * 14 + (r() - 0.5) * 3, sy = Y(x, z), rot = sg * Math.PI / 2;
+        B.ground = sy; B.aoH = 1.5;
+        B.block(x, sy - 0.4, z, 3.2, 1.3, 1.8, '#7a5a3a', KM.WOOD, rot);
+        for (const [ox, oz] of [[-1.5, -0.8], [1.5, -0.8], [-1.5, 0.8], [1.5, 0.8]]) B.cyl(x + oz * sg, sy, z + ox, 0.07, 0.07, 2.6, 4, '#3a2a1a', KM.WOOD);
+        B.gable(x, sy + 2.6, z, 3.4, 2.2, 0.6, awn[(q + (sg > 0 ? 3 : 0)) % awn.length], KM.CLOTH, rot, 0.2);
+        for (let c = 0; c < 3; c++) B.cyl(x + (r() - 0.5) * 2, sy + 0.9, z + (r() - 0.5) * 2.4, 0.3, 0.3, 0.4, 7, ['#c8a050', '#8a4a2a', '#5a7a3a'][c], KM.WOOD);
+        B.block(x + sg * 2.4, sy - 0.1, z + 1.4, 1.1, 1.0, 1.1, '#a07a4a', KM.WOOD, r() * 3);
+        B.cyl(x + sg * 2.3, sy - 0.1, z - 1.5, 0.5, 0.5, 1.1, 8, '#7a5232', KM.WOOD);
+      }
+    }
+    for (let k = 0; k < N; k++) if (field[k]) {   // dry-stone walls around the fields
+      const [x, z] = cellC(k), h = m.cell / 2, i = k % m.W, j = Math.floor(k / m.W);
+      if (i > 0 && !field[k - 1]) lowWall(B, x - h, z - h, x - h, z + h, Y);
+      if (i < m.W - 1 && !field[k + 1]) lowWall(B, x + h, z - h, x + h, z + h, Y);
+      if (j > 0 && !field[k - m.W]) lowWall(B, x - h, z - h, x + h, z - h, Y);
+      if (j < m.H - 1 && !field[k + m.W]) lowWall(B, x - h, z + h, x + h, z + h, Y);
+    }
+    const shoreZ = x => { let z = 0; while (z > -200 && Y(x, z) > 0.7) z -= 2; return z; };
+    for (let q = 0; q < 4; q++) {   // the longboats pulled up on the beach
+      const x = m.deploy.x + (q - 1.5) * 15 + (r() - 0.5) * 5, z = shoreZ(x) + 3.5;
+      longboat(B, { x, z, y: Y(x, z), rot: (r() - 0.5) * 0.5 });
+    }
+    const ancho = [], fleet = ships.slice(0, 3);
+    fleet.forEach((type, q) => {
+      const x = m.deploy.x + (q - (fleet.length - 1) / 2) * 85 + (r() - 0.5) * 20;
+      let z = shoreZ(x); while (z > -400 && Y(x, z) > -3) z -= 4;
+      ancho.push({ type, x, z: z - 12 - r() * 12, rot: Math.PI / 2 + (r() - 0.5) * 0.6 });
+    });
+    const hulls = anchoredShips(B, ancho, playerFaction);
+    if (hulls) { keep(hulls.geometry); S.add(hulls); }
+    const town = new THREE.Mesh(keep(B.build()), K.paint); town.castShadow = true; town.receiveShadow = true; S.add(town);
+
+    // ---- vegetation and rocks (instanced), on the sim's cells and over the border ----
+    const V = vegGeos(), inner = { broadleaf: [], palm: [], bush: [], rock: [] }, border = { broadleaf: [], palm: [], bush: [], rock: [] };
+    let veg = inner;
+    const tint = () => new THREE.Color(0.88 + r() * 0.22, 0.88 + r() * 0.2, 0.84 + r() * 0.16);
+    const add = (kind, x, z, s) => veg[kind].push({ x, y: Y(x, z) - (kind === 'rock' ? 0.3 : 0.15), z, s, r: r() * 6.283, tint: kind === 'rock' ? 0xffffff : tint() });
+    const deployR = (x, z) => Math.hypot((x - m.deploy.x) / 2.2, z - m.deploy.z) < 3.2 * m.cell;
+    for (let j = 0; j < m.H; j++) for (let i = 0; i < m.W; i++) {
+      const k = j * m.W + i, t = m.type[k], at = () => [(i + 0.1 + r() * 0.8) * m.cell, (j + 0.1 + r() * 0.8) * m.cell];
+      if (m.built[k] || m.street[k] || road[k] || field[k] || t === T.TOWN || t === T.WATER) continue;
+      if (t === T.WOOD) {
+        for (let q = 0; q < 2; q++) { const [x, z] = at(); add(j < 7 || r() < 0.18 ? 'palm' : 'broadleaf', x, z, 0.8 + r() * 0.45); }
+        const [x, z] = at(); add('bush', x, z, 0.8 + r() * 0.5);
+      } else if (t === T.ROCK && edge(i, j)) {   // the thicket along the map's edge
+        for (let q = 0; q < 2; q++) { const [x, z] = at(); add(j < 3 || j > m.H - 3 ? 'palm' : 'broadleaf', x, z, 0.85 + r() * 0.45); }
+        const [x, z] = at(); add(r() < 0.25 ? 'rock' : 'bush', x, z, 0.8 + r() * 0.5);
+      } else if (t === T.ROCK) {
+        for (let q = 0; q < 1 + (r() < 0.6); q++) { const [x, z] = at(); add('rock', x, z, 0.9 + r() * 1.1); }
+        if (r() < 0.5) { const [x, z] = at(); add('bush', x, z, 0.7 + r() * 0.4); }
+      } else {
+        const [x, z] = at(); if (deployR(x, z)) continue;
+        const q = r();
+        if (t === T.HILL) { if (q < 0.1) add('bush', x, z, 0.7 + r() * 0.5); else if (q < 0.16) add('rock', x, z, 0.6 + r() * 0.6); }
+        else if (q < 0.045) add('palm', x, z, 0.85 + r() * 0.3); else if (q < 0.11) add('bush', x, z, 0.7 + r() * 0.5); else if (q < 0.135) add('broadleaf', x, z, 0.8 + r() * 0.3);
+      }
+    }
+    veg = border;   // the border: woods on the hills, palms on the shores (outside the shadow box: no shadows)
+    for (let x = -160; x <= MW + 160; x += 12) for (let z = -160; z <= MH + 160; z += 12) {
+      if (x >= -4 && z >= -4 && x <= MW + 4 && z <= MH + 4) continue;
+      const px = x + (r() - 0.5) * 9, pz = z + (r() - 0.5) * 9, y = Y(px, pz);
+      if (y < 0.8 || (Math.abs(px - m.fort.x) < 40 && Math.abs(pz - m.fort.z) < 32)) continue;
+      if (y < 4) { if (r() < 0.3) add('palm', px, pz, 0.8 + r() * 0.35); }
+      else if (r() < forest(px, pz) * 1.1) add(r() < 0.2 ? 'palm' : 'broadleaf', px, pz, 0.85 + r() * 0.5);
+      else if (r() < 0.15) add('bush', px, pz, 0.8 + r() * 0.5);
+    }
+    for (const kind of ['broadleaf', 'palm', 'bush', 'rock']) {
+      S.add(scatter(V[kind], K.paint, inner[kind]));
+      if (border[kind].length) S.add(scatter(V[kind], K.paint, border[kind], { shadow: false }));
+    }
+
+    // ---- flags: over the square (changes hands as it is held) and over the fort ----
+    const flag = (w, h, faction) => { const g = keep(clothGeo(w, h, 10, 4)); flagUV(g, faction); const f = new THREE.Mesh(g, K.flag); f.castShadow = true; S.add(f); return f; };
+    this.sqFlag = flag(5.4, 3.4, nation); this._sqFaction = nation;
+    this.fortFlag = flag(6.5, 4.2, nation); this.fortFlag.position.set(F.flag[0] + 0.2, F.flag[1] - 2.1, F.flag[2]);
+
+    // ---- men: three InstancedMesh (swordsmen, musketeers, riders), banners ----
+    const mk = (g, n) => { keep(g); const im = new THREE.InstancedMesh(g, M.men, n); im.castShadow = true; im.count = 0; im.frustumCulled = false; im.setColorAt(0, new THREE.Color()); S.add(im); return im; };
+    this.menBlade = mk(manGeo('blade'), MAX_MEN); this.menGun = mk(manGeo('musket'), MAX_MEN); this.menHorse = mk(riderGeo(), MAX_MEN);
+    this.banners = mk(bannerGeo(), MAX_BANNERS);
     this.coats = { player: { sabreurs: new THREE.Color('#8a2a1f'), mousquetaires: new THREE.Color('#5a6a32'), officiers: new THREE.Color('#2b2f4a') }, enemy: new THREE.Color(coat) };
+    this.flagCols = { player: new THREE.Color(playerCoat), enemy: new THREE.Color(coat) };
+    // ---- overlays and effects ----
+    const ov = (g, n) => { keep(g); const im = new THREE.InstancedMesh(g, decalMat(), n); im.count = 0; im.frustumCulled = false; im.renderOrder = 5; im.setColorAt(0, new THREE.Color()); S.add(im); return im; };
+    this.rings = ov(new THREE.RingGeometry(0.94, 1, 48).rotateX(-Math.PI / 2), 64);
+    this.dots = ov(new THREE.CircleGeometry(1, 10).rotateX(-Math.PI / 2), MAX_DOTS);
+    this.marks = ov(chevronGeo(), MAX_MARK);
+    this.dashes = ov(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), SQUARE_DASHES);
+    this.smoke = new PuffPool(S, 700); this.flashes = new PuffPool(S, 240, { additive: true });
+    this._vs = new Map(); this._orders = []; this._d = new THREE.Object3D(); this._c = new THREE.Color();
+    this.squareState = 'free';
     // ---- camera ----
-    this.camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 2, 2600);
+    this.camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 2, 2800);
     this.cam = { x: m.deploy.x, z: m.deploy.z + 90, dist: 330, yaw: 0 };
     this._t = 0;
     return this;
   }
 
-  _h(x, z) { return Math.max(0, heightAt(this.sim.map, x, z)); }
+  // render height everywhere: the sim's relief on the map; outside it, hills to the east and west, the beach and the
+  // sea to the south, the harbour shore to the north (wavy coast lines)
+  _ground(x, z) {
+    const m = this.sim.map, MW = m.W * m.cell, MH = m.H * m.cell;
+    let y = heightAt(m, Math.max(0, Math.min(MW, x)), Math.max(0, Math.min(MH, z)));
+    if (x >= 0 && z >= 0 && x <= MW && z <= MH) return y;
+    const dE = Math.max(0, -x, x - MW);
+    y += dE * (0.06 + 0.035 * Math.sin(z * 0.017 + x * 0.004)) + Math.sin(x * 0.021) * Math.cos(z * 0.017) * Math.min(1, dE / 60) * 5;
+    const dS = -z + (9 * Math.sin(x * 0.013) + 5 * Math.sin(x * 0.041 + 1)) * Math.min(1, Math.max(0, -z / 25));
+    const dN = z - MH + 7 * Math.sin(x * 0.017 + 2) * Math.min(1, Math.max(0, (z - MH) / 25));
+    if (dS > 0) { const s = smooth(0, 45, dS); y = y * (1 - s) + (-0.6 - dS * 0.05) * s; }
+    if (dN > 0) { const s = smooth(0, 60, dN); y = y * (1 - s) + (-0.8 - dN * 0.06) * s; }
+    return y;
+  }
+  _h(x, z) { return Math.max(-0.4, this._ground(x, z)); }
 
-  puff(x, z, n = 4, big = 1) {
-    for (let k = 0; k < n; k++) this.smoke.push({ x: x + (Math.random() - 0.5) * 8, y: this._h(x, z) + 1.8, z: z + (Math.random() - 0.5) * 8, s: (1.2 + Math.random()) * big, t: 0, life: 2.2 + Math.random() });
-    if (this.smoke.length > 160) this.smoke.splice(0, this.smoke.length - 160);
+  // lateral clear half-width at (x, z) across the heading (houses, rocks, water): squeezes a company into a column
+  _clear(x, z, ch, sh, max) {
+    const m = this.sim.map;
+    for (let s = 2.5; s <= max; s += 2.5) for (const sg of [-1, 1]) {
+      const t = m.type[cellIndex(m, x + sg * s * ch, z - sg * s * sh)];
+      if (t === T.ROCK || t === T.WATER) return s - 1.3;
+    }
+    return max;
   }
 
-  // places each company's men in ranks (formation centred on the company, oriented by its heading)
+  // per-company view state: smoothed position of each man, rout and dust timers, last formation
+  _state(u) {
+    let vs = this._vs.get(u.id);
+    if (!vs) this._vs.set(u.id, vs = { px: new Float32Array(u.maxN), pz: new Float32Array(u.maxN), tx: new Float32Array(u.maxN), tz: new Float32Array(u.maxN), init: false, rout: 0, dust: 0, ux: u.x, uz: u.z, speed: 0, f: null });
+    return vs;
+  }
+  // target slot of each man: ranks of `cols` men (front rank at the company's point, the others behind), squeezed in
+  // the streets; routed men scatter further and further around the fleeing company
+  _formation(u, vs) {
+    const mounted = u.K.mounted, sp = mounted ? 4.6 : 2.6, ch = Math.cos(u.heading), sh = Math.sin(u.heading), rout = u.state === 'rout';
+    let cols = Math.max(3, Math.ceil(Math.sqrt(u.n * (mounted ? 1 : 2.2))));
+    cols = Math.max(2, Math.min(cols, Math.floor(this._clear(u.x, u.z, ch, sh, (cols - 1) / 2 * sp + 1.5) * 2 / sp) + 1));
+    const rows = Math.ceil(u.n / cols);
+    for (let k = 0; k < u.n; k++) {
+      const rI = Math.floor(k / cols), inRow = Math.min(cols, u.n - rI * cols), cI = k - rI * cols;
+      let lx = (cI - (inRow - 1) / 2) * sp + (hash(u.id, k) - 0.5) * 0.3, lz = -rI * sp * 1.1 + (hash(k, u.id) - 0.5) * 0.3;
+      if (rout) { const a = hash(u.id + 3, k) * 6.283, rr = Math.min(18, 2 + vs.rout * 4.5) * (0.35 + 0.65 * hash(k, u.id + 9)); lx = lx * 0.5 + Math.cos(a) * rr; lz = lz * 0.5 + Math.sin(a) * rr; }
+      vs.tx[k] = u.x + lx * ch + lz * sh; vs.tz[k] = u.z - lx * sh + lz * ch;
+    }
+    return (vs.f = { cols, rows, sp, ch, sh });
+  }
+
+  // a volley: muzzle flashes and a line of smoke along the front rank, drifting toward the target
+  volley(u) {
+    const vs = this._vs.get(u.id), f = vs?.f;
+    if (!f) { for (let q = 0; q < 4; q++) this.smoke.spawn({ x: u.x + (Math.random() - 0.5) * 10, y: this._h(u.x, u.z) + 2.6, z: u.z + (Math.random() - 0.5) * 10, size: 2.2, grow: 1.8, life: 4, color: COL.smoke, alpha: 0.55, rise: 0.5 }); return; }
+    const n = Math.min(f.cols, u.n), small = u.kind === 'officiers' ? 0.7 : 1;
+    for (let k = 0; k < n; k++) {
+      const x = vs.px[k] + f.sh * 2.2, z = vs.pz[k] + f.ch * 2.2, y = this._h(x, z) + 2.9;
+      this.flashes.spawn({ x, y, z, size: (2.6 + Math.random() * 0.9) * small, grow: 0.5, life: 0.28 + Math.random() * 0.1, color: COL.flash, alpha: 1, fadeIn: 200 });
+      this.flashes.spawn({ x, y, z, size: 1.2 * small, grow: 0.2, life: 0.18, color: 0xfff2c0, alpha: 1, fadeIn: 200 });
+      for (let q = 0; q < 2; q++) this.smoke.spawn({ x: x + f.sh * (0.8 + q * 1.8), y: y - 0.3 + q * 0.4, z: z + f.ch * (0.8 + q * 1.8), vx: f.sh * (4 + q * 2) + (Math.random() - 0.5), vz: f.ch * (4 + q * 2) + (Math.random() - 0.5),
+        size: (2.8 + Math.random() * 1.0) * small, grow: 1.9, life: 4 + Math.random() * 2, color: COL.smoke, alpha: 0.72, rise: 0.45 });
+    }
+  }
+  // melee: dust kicked up where the companies meet
+  clash(x, z) {
+    for (let q = 0; q < 3; q++) this.smoke.spawn({ x: x + (Math.random() - 0.5) * 9, y: this._h(x, z) + 1, z: z + (Math.random() - 0.5) * 9, size: 2.4, grow: 1.5, life: 1.6, color: COL.dust, alpha: 0.38, rise: 1 });
+  }
+  // order given: chevrons closing on the point (gold march) or on the targeted company (red)
+  order(x, z, target = null) {
+    this._orders.push({ x, z, target, t: 0 });
+    if (this._orders.length > MAX_MARK / 4) this._orders.shift();
+  }
+
   update(sim, dt, selected = new Set(), visibleFn = () => true) {
-    this._t += dt;
-    const d = new THREE.Object3D(), col = new THREE.Color(), cnt = { b: 0, g: 0, h: 0 };
-    let ri = 0;
+    this._t += dt; kitTick(dt);
+    const d = this._d, col = this._c, cnt = { b: 0, g: 0, h: 0 }, k8 = Math.min(1, dt * 7), t = this._t;
+    let ri = 0, bi = 0, di = 0;
+    const ring = (x, z, rot, sx, sz, c) => {   // ellipse outline on the ground
+      if (ri >= this.rings.instanceMatrix.count) return;
+      d.position.set(x, this._h(x, z) + 0.4, z); d.rotation.set(0, rot, 0); d.scale.set(sx, 1, sz); d.updateMatrix();
+      this.rings.setMatrixAt(ri, d.matrix); this.rings.setColorAt(ri++, c);
+    };
     for (const u of sim.units) {
-      if (!sim.alive(u) || !visibleFn(u)) continue;
+      const vs = this._vs.get(u.id);
+      if (!sim.alive(u) || !visibleFn(u)) { if (vs) vs.init = false; continue; }
+      const st = this._state(u), rout = u.state === 'rout';
+      st.rout = rout ? st.rout + dt : 0;
+      if (dt > 0) { st.speed = Math.hypot(u.x - st.ux, u.z - st.uz) / dt; st.ux = u.x; st.uz = u.z; }
+      const f = this._formation(u, st), moving = st.speed > 0.5;
       const mounted = u.K.mounted, gun = u.K.fire > 0 && !mounted && u.kind !== 'officiers';
       const im = mounted ? this.menHorse : gun ? this.menGun : this.menBlade, key = mounted ? 'h' : gun ? 'g' : 'b';
-      const cols = Math.max(3, Math.ceil(Math.sqrt(u.n * (mounted ? 1 : 2.2)))), sp = mounted ? 4.6 : 2.6;   // figures ×1.45: readable from above
-      const ch = Math.cos(u.heading), sh = Math.sin(u.heading), rout = u.state === 'rout';
       if (u.side === 'player') col.copy(this.coats.player[u.kind] || this.coats.player.sabreurs); else col.copy(this.coats.enemy);
-      if (rout) col.lerp(new THREE.Color(0x9a9a9a), 0.45);
+      if (rout) col.lerp(COL.rout, 0.45);
+      const sc = (u.kind === 'officiers' ? 1.65 : 1.45) * (mounted ? 1.15 : 1.25);
       for (let k = 0; k < u.n && cnt[key] < MAX_MEN; k++) {
-        const cI = k % cols, rI = Math.floor(k / cols);
-        let lx = (cI - (cols - 1) / 2) * sp, lz = -rI * sp * 1.1;
-        const jit = Math.sin(u.id * 13.1 + k * 7.7), jit2 = Math.cos(u.id * 5.3 + k * 3.1);
-        lx += jit * (rout ? 2.5 : 0.35); lz += jit2 * (rout ? 2.5 : 0.35);
-        const x = u.x + lx * ch + lz * sh, z = u.z - lx * sh + lz * ch;
-        const bob = (u.path?.length || rout) ? Math.abs(Math.sin(this._t * 9 + k)) * 0.25 : 0;
+        if (!st.init) { st.px[k] = st.tx[k]; st.pz[k] = st.tz[k]; }
+        else { st.px[k] += (st.tx[k] - st.px[k]) * k8; st.pz[k] += (st.tz[k] - st.pz[k]) * k8; }
+        const x = st.px[k], z = st.pz[k], bob = moving ? Math.abs(Math.sin(t * (rout ? 12 : 9) + k)) * (rout ? 0.4 : 0.25) : 0;
         d.position.set(x, this._h(x, z) + bob, z);
-        d.rotation.set(0, (rout ? u.heading + Math.PI * 0 : u.heading) + jit * 0.15, u.engaged ? Math.sin(this._t * 10 + k) * 0.12 : 0);
-        d.scale.setScalar((u.kind === 'officiers' ? 1.65 : 1.45) * (mounted ? 1.15 : 1.25));   // bigger figurines (read at 15–20 px)
-        d.updateMatrix(); im.setMatrixAt(cnt[key], d.matrix); im.setColorAt(cnt[key], col); cnt[key]++;
+        d.rotation.set(0, u.heading + (hash(k, u.id + 5) - 0.5) * (rout ? 1.4 : 0.08), u.engaged ? Math.sin(t * 10 + k) * 0.12 : 0);
+        d.scale.setScalar(sc); d.updateMatrix(); im.setMatrixAt(cnt[key], d.matrix); im.setColorAt(cnt[key], col); cnt[key]++;
       }
-      // selection / side ring
-      const R = Math.max(5, Math.sqrt(u.n) * (mounted ? 3.6 : 2.4));
-      d.position.set(u.x, this._h(u.x, u.z) + 0.35, u.z); d.rotation.set(0, 0, 0); d.scale.set(R, 1, R); d.updateMatrix();
-      this.rings.setMatrixAt(ri, d.matrix);
-      this.rings.setColorAt(ri, col.set(u.side === 'enemy' ? 0xc0392b : selected.has(u) ? 0xffe9a0 : 0x6f8fb0).multiplyScalar(selected.has(u) || u.side === 'enemy' ? 1 : 0.7));
-      ri++;
+      st.init = true;
+      const back = -(f.rows - 1) * f.sp * 1.1;   // depth of the block (behind the front rank)
+      if (!rout && bi < MAX_BANNERS) {   // the company's banner, behind the front rank
+        const bz = Math.max(back, -f.sp * 1.1), x = u.x + bz * f.sh, z = u.z + bz * f.ch;
+        d.position.set(x, this._h(x, z) + (moving ? Math.abs(Math.sin(t * 9)) * 0.2 : 0), z);
+        d.rotation.set(0, u.heading + Math.PI / 2 + Math.sin(t * 1.3 + u.id) * 0.15, 0); d.scale.setScalar(u.kind === 'officiers' ? 1.6 : 1.4); d.updateMatrix();
+        this.banners.setMatrixAt(bi, d.matrix); this.banners.setColorAt(bi++, this.flagCols[u.side]);
+      }
+      if (mounted && moving && dt > 0 && (st.dust -= dt) <= 0) {   // cavalry dust
+        st.dust = 0.06; const k = Math.floor(Math.random() * u.n), x = st.px[k] - f.sh * 3, z = st.pz[k] - f.ch * 3;
+        this.smoke.spawn({ x, y: this._h(x, z) + 0.8, z, size: 2.6, grow: 2.2, life: 1.7, color: COL.dust, alpha: 0.34, rise: 0.9 });
+      }
+      // ring around the block: gold = selected, blue = yours, red = the enemy's, grey = routed
+      const sel = selected.has(u), cx = u.x + back / 2 * f.sh, cz = u.z + back / 2 * f.ch;
+      const c = rout ? COL.rout : sel ? col.copy(COL.sel).multiplyScalar(0.85 + 0.15 * Math.sin(t * 5)) : u.side === 'enemy' ? COL.foe : COL.mine;
+      const hw = (f.cols - 1) / 2 * f.sp + (mounted ? 5 : 3.5), hd = -back / 2 + (mounted ? 5 : 3.5);
+      ring(cx, cz, u.heading, hw, hd, c);
+      if (sel) ring(cx, cz, u.heading, hw + 1.6, hd + 1.6, c);   // selected: a double outline
     }
-    for (const [im, k] of [[this.menBlade, 'b'], [this.menGun, 'g'], [this.menHorse, 'h']]) { im.count = cnt[k]; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; }
-    this.rings.count = ri; this.rings.instanceMatrix.needsUpdate = true; if (this.rings.instanceColor) this.rings.instanceColor.needsUpdate = true;
-    // powder smoke
-    let pi = 0;
-    this.smoke = this.smoke.filter(p => (p.t += dt) < p.life);
-    for (const p of this.smoke) {
-      const k = p.t / p.life; d.position.set(p.x + k * 6, p.y + k * 5, p.z + k * 2); d.rotation.set(0, 0, 0); d.scale.setScalar(p.s * (1 + k * 2.2)); d.updateMatrix();
-      this.puffs.setMatrixAt(pi++, d.matrix);
+    for (const u of this._vs.keys()) if (!sim.units.some(v => v.id === u && sim.alive(v))) this._vs.delete(u);
+    // march paths of the selected companies (gold dots to the destination, red toward a targeted company)
+    const dot = (x, z, c, s) => { if (di >= MAX_DOTS) return; d.position.set(x, this._h(x, z) + 0.4, z); d.rotation.set(0, 0, 0); d.scale.setScalar(s); d.updateMatrix(); this.dots.setMatrixAt(di, d.matrix); this.dots.setColorAt(di++, c); };
+    for (const u of selected) {
+      if (!sim.alive(u) || u.state === 'rout') continue;
+      const tgt = u.target && sim.alive(u.target) ? u.target : null, pts = tgt ? [{ x: tgt.x, z: tgt.z }] : u.path || [];
+      if (!pts.length) continue;
+      let px = u.x, pz = u.z, acc = -8 + ((t * 6) % 5);
+      for (const p of pts) {
+        const L = Math.hypot(p.x - px, p.z - pz);
+        for (; acc < L; acc += 5) if (acc > 0) dot(px + (p.x - px) * acc / L, pz + (p.z - pz) * acc / L, tgt ? COL.attack : COL.move, 0.75);
+        acc -= L; px = p.x; pz = p.z;
+      }
+      if (!tgt) ring(px, pz, 0, 3, 3, COL.move);
     }
-    this.puffs.count = pi; this.puffs.instanceMatrix.needsUpdate = true;
-    // flag flying
-    const fp = this.flag.geometry.attributes.position;
-    for (let i = 0; i < fp.count; i++) { const x = fp.getX(i) + 2.5; fp.setZ(i, Math.sin(this._t * 4 + x * 1.2) * 0.25 * x); }
-    fp.needsUpdate = true;
-    this.square.material.opacity = 0.3 + 0.2 * (0.5 + 0.5 * Math.sin(this._t * 2.5));
+    // order markers
+    let mi = 0;
+    this._orders = this._orders.filter(o => (o.t += dt) < 1.3);
+    for (const o of this._orders) {
+      if (o.target && sim.alive(o.target)) { o.x = o.target.x; o.z = o.target.z; }
+      const k = o.t / 1.3, R = (o.target ? 14 : 9) * (1 - k * 0.7) + 2, s = (k < 0.75 ? 1.7 : 1.7 * (1 - k) / 0.25);
+      for (let q = 0; q < 4; q++) {
+        const a = q * Math.PI / 2 + Math.PI / 4 + k * 0.6, x = o.x + Math.cos(a) * R, z = o.z + Math.sin(a) * R;
+        d.position.set(x, this._h(x, z) + 0.5, z); d.rotation.set(0, -a, 0); d.scale.setScalar(s); d.updateMatrix();
+        this.marks.setMatrixAt(mi, d.matrix); this.marks.setColorAt(mi++, o.target ? COL.attack : COL.move);
+      }
+    }
+    // the square: outline filling up clockwise while it is held, coloured by who stands in it
+    const m = sim.map, inSq = s => sim.units.some(u => u.side === s && sim.alive(u) && u.state !== 'rout' && Math.hypot(u.x - m.town.x, u.z - m.town.z) < LAND.squareR);
+    const P = inSq('player'), E = inSq('enemy'), frac = sim.over && sim.result?.winner === 'player' ? 1 : Math.min(1, sim.hold / LAND.holdTime);
+    this.squareState = P && E ? 'contested' : P ? 'held' : E ? 'enemy' : 'free';
+    const base = this.squareState === 'contested' ? col.copy(COL.contested).multiplyScalar(0.7 + 0.3 * Math.sin(t * 8)) : this.squareState === 'enemy' ? COL.enemyHeld : COL.free;
+    for (let k = 0; k < SQUARE_DASHES; k++) {
+      const a = Math.PI / 2 - (k + 0.5) / SQUARE_DASHES * Math.PI * 2, x = m.town.x + Math.cos(a) * LAND.squareR, z = m.town.z + Math.sin(a) * LAND.squareR;
+      d.position.set(x, this._h(x, z) + 0.4, z); d.rotation.set(0, -a - Math.PI / 2, 0); d.scale.set(3.6, 1, k < frac * SQUARE_DASHES ? 1.9 : 1.1); d.updateMatrix();
+      this.dashes.setMatrixAt(k, d.matrix); this.dashes.setColorAt(k, k < frac * SQUARE_DASHES ? COL.held : base);
+    }
+    for (const [im, n] of [[this.menBlade, cnt.b], [this.menGun, cnt.g], [this.menHorse, cnt.h], [this.banners, bi], [this.rings, ri], [this.dots, di], [this.marks, mi], [this.dashes, SQUARE_DASHES]]) {
+      im.count = n; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    }
+    // the flag over the square comes down while the square is held, the player's colours go up in its place
+    const pole = this._pole, top = pole.y - 1.8, low = pole.y - 12, faction = frac >= 0.5 ? this.playerFaction : this.nation;
+    if (faction !== this._sqFaction) { flagUV(this.sqFlag.geometry, faction); this._sqFaction = faction; }
+    this.sqFlag.position.set(pole.x + 0.2, frac < 0.5 ? top - (top - low) * frac * 2 : low + (top - low) * (frac - 0.5) * 2, pole.z);
+    waveCloth(this.sqFlag.geometry, t, 0.35); waveCloth(this.fortFlag.geometry, t + 1.7, 0.4);
+    this.smoke.update(dt); this.flashes.update(dt);
   }
-
-  setFlag(color) { this.flag.material.color.set(color); }
 
   render() {
     const g = this.game, r = g.renderer, c = this.cam, cam = this.camera, m = this.sim.map;
     const W = innerWidth, H = innerHeight; if (cam.aspect !== W / H) { cam.aspect = W / H; cam.updateProjectionMatrix(); }
-    c.x = Math.max(-40, Math.min(m.W * m.cell + 40, c.x)); c.z = Math.max(-60, Math.min(m.H * m.cell + 20, c.z));
-    c.dist = Math.max(120, Math.min(560, c.dist));
+    c.x = Math.max(-60, Math.min(m.W * m.cell + 60, c.x)); c.z = Math.max(-120, Math.min(m.H * m.cell + 40, c.z));
+    c.dist = Math.max(90, Math.min(600, c.dist));
     const pitch = 0.95 - (c.dist - 120) / 440 * 0.12;   // higher when zoomed out
     cam.position.set(c.x - Math.sin(c.yaw) * Math.cos(pitch) * c.dist, Math.sin(pitch) * c.dist + 10, c.z - Math.cos(c.yaw) * Math.cos(pitch) * c.dist);
     cam.lookAt(c.x, 8, c.z);
@@ -302,6 +593,7 @@ export class LandView {
 
   dispose() {
     for (const o of this.disposables || []) o.dispose?.();
+    this.smoke?.dispose(); this.flashes?.dispose();
     this.scene?.traverse(o => { if (o.isInstancedMesh) o.dispose?.(); if (o.isLight) o.dispose?.(); });
     this.scene = null;
   }
