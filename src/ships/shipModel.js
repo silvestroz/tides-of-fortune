@@ -231,9 +231,10 @@ export function buildShipModel(type, opts = {}) {
   poseCrew(0);
   crew.computeBoundingSphere();
 
-  // lantern glow points
+  // lantern glow points (stern lanterns + the deck lantern)
   const glowPos = [], glowSize = [];
   for (const l of info.sternLanterns) { glowPos.push(l.x, l.y, l.z); glowSize.push(0.9 + spec.length * 0.012); }
+  for (const l of info.lights) { glowPos.push(l.x, l.y, l.z); glowSize.push(0.55 + spec.length * 0.006); }
   const glowGeo = new THREE.BufferGeometry();
   glowGeo.setAttribute('position', new THREE.Float32BufferAttribute(glowPos, 3));
   glowGeo.setAttribute('aSize', new THREE.Float32BufferAttribute(glowSize, 1));
@@ -263,6 +264,13 @@ export function buildShipModel(type, opts = {}) {
   sailMat.userData.u.uFac.value.set(FAC_SAIL[faction] || '#b3262e');
   sailMat.userData.u.uEmbIdx.value = EMBLEM_INDEX[faction] ?? 0;
   const hu = hullMat.userData.u, su = sailMat.userData.u, fu = flagMat.userData.u;
+  // lantern light pools at night: A = centre of the stern lanterns, B = deck lantern (w = reach in m)
+  if (info.sternLanterns.length) {
+    const c = new THREE.Vector3(); for (const l of info.sternLanterns) c.add(l); c.divideScalar(info.sternLanterns.length);
+    hu.uLampA.value.set(c.x, c.y, c.z, 4.5 + spec.length * 0.09);
+  }
+  if (info.lights[0]) hu.uLampB.value.set(info.lights[0].x, info.lights[0].y, info.lights[0].z, 5 + spec.length * 0.08);
+  su.uLampA.value = hu.uLampA.value; su.uLampB.value = hu.uLampB.value;
   const piv = hu.uPiv.value;
   for (let i = 0; i < 8; i++) piv[i].copy(rig.pivots[i]);
   const st = { set: opts.sailSetting ?? 0.5, brace: 0, boom: 0, fill: 1, side: 1, luff: 0, strike: 0, strikeTarget: 0, flagYaw: 0, hullD: 0, sailD: 0, far: false };
@@ -327,7 +335,11 @@ export function buildShipModel(type, opts = {}) {
       // hull LOD with hysteresis (far: no guns, rails, beads, ratlines or running rigging; coarse skin).
       // Only for models in the world scene: port stages (shipyard) render their own camera -> always the full model.
       let root = group; while (root.parent) root = root.parent;
-      const far = !!cam && root === window.__game.scene && (st.far ? camD > lodNearM() : camD > lodFarM());
+      const inWorld = !!cam && root === window.__game.scene;
+      const far = inWorld && (st.far ? camD > lodNearM() : camD > lodFarM());
+      // sea-only shading (day glass, gilding glints, lantern pools, flag folds): off on port stages and the duel deck
+      hu.uSea.value = su.uSea.value = fu.uSea.value = inWorld && !hu.uDuel.value ? 1 : 0;
+      glowGeo.setDrawRange(0, hu.uSea.value ? Infinity : info.sternLanterns.length);   // deck lantern: sea only
       if (far !== st.far) { st.far = far; hull.geometry = far ? T.hullGeoFar : T.hullGeo; }
       // sails are never frustum-culled (vertex-animated), so only ships near the camera (inside the ±90–150 m shadow
       // box around it) draw them into the shadow map

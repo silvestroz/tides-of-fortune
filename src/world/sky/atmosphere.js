@@ -4,7 +4,10 @@
 //   - sun-direction in-scattering (fog warms/brightens toward the sun, matching the sky dome's horizon glow).
 // Extra uniforms are shared by reference (plain {x,y,z} objects are not cloned by UniformsUtils), so they update
 // globally. A ShaderMaterial built without them simply gets zeros and falls back to plain exp fog.
-//   ATMOS.sunDir {x,y,z}, ATMOS.sunGlow {x,y,z} (linear rgb), ATMOS.params {x: heightFalloff, y: glowPower, z: minFog, w: unused}
+//   - layered aerial perspective: land and ships above the waterline turn cooler / bluer at mid fog depth (painted
+//     receding ridges) before dissolving into the horizon colour; the sea itself (near y = 0) is left alone.
+//   ATMOS.sunDir {x,y,z}, ATMOS.sunGlow {x,y,z} (linear rgb),
+//   ATMOS.params {x: heightFalloff, y: glowPower, z: minFog, w: layered-haze strength (set by PostFX for the sea scene only)}
 import * as THREE from 'three';
 
 export const ATMOS = {
@@ -76,6 +79,12 @@ THREE.ShaderChunk.fog_fragment = /* glsl */`
 		#endif
 		float fogMu = max( dot( fogV, fogSunDir ), 0.0 );
 		vec3 fogCol = fogColor + fogSunGlow * ( pow( fogMu, max( fogAtmos.y, 1.0 ) ) * 0.8 + pow( fogMu, 48.0 ) * 0.6 );
+		if ( fogAtmos.w > 0.0 ) {
+			// receding layers: a cool, slightly darker veil peaking at mid fog depth, strongest away from the sun
+			float fogY = cameraPosition.y + vFogWorldDelta.y;
+			float fogLayer = fogFactor * ( 1.0 - fogFactor ) * 4.0 * smoothstep( 1.5, 12.0, fogY ) * ( 1.0 - fogMu * fogMu );
+			fogCol = mix( fogCol, fogColor * vec3( 0.58, 0.74, 0.98 ) + vec3( 0.0, 0.005, 0.016 ), clamp( fogLayer * fogAtmos.w, 0.0, 1.0 ) );
+		}
 		gl_FragColor.rgb = mix( gl_FragColor.rgb, fogCol, clamp( fogFactor, 0.0, 1.0 ) );
 	}
 #endif

@@ -1,5 +1,6 @@
 // Painterly sky dome: zenith→horizon gradient with brush-noise variation, horizon haze, Mie halo + sun disc,
-// sun-side horizon band, belt-of-Venus anti-twilight, cirrus streaks, storm overcast deck, stars, milky way, moon.
+// sun-side horizon band, belt-of-Venus anti-twilight, cirrus streaks, storm overcast deck with distant squall curtains,
+// stars, milky way, moon.
 // createSkyUniforms() -> shared uniforms object; createSkyMaterial(uniforms, { env }) -> ShaderMaterial.
 // The `env` variant (for PMREM capture) clamps the sun disc so reflections don't get fireflies.
 import * as THREE from 'three';
@@ -68,6 +69,8 @@ void main() {
   float warmSky = ( 1.0 - smoothstep( 0.05, 0.75, sd.y ) ) * sunUp;
   float g = pow( yh, 0.5 - 0.28 * warmSky );
   vec3 col = mix( uHorizon, uZenith, g );
+  // a warm horizon and a blue zenith average to a dull lavender grey in between: lean that band toward a clear aqua
+  col *= mix( vec3( 1.0 ), vec3( 0.84, 1.03, 1.06 ), 4.0 * g * ( 1.0 - g ) * warmSky * 0.75 * ( 1.0 - uOvercast ) );
   // brushy low-frequency variation (oil-paint feel, also kills banding)
   vec2 dirUV = v.xz / ( yh + 0.35 );
   float brush = fbm( dirUV * 0.18 + vec2( 0.13, 0.71 ) ) - 0.5;
@@ -133,6 +136,17 @@ void main() {
     deck = mix( deck, uHorizon * 1.08, exp( -yh * 9.0 ) * 0.75 );
     float cover = smoothstep( 0.0, 0.6, uOvercast ) * smoothstep( -0.02, 0.05, y );
     col = mix( col, deck, cover * 0.97 );
+    // distant squall curtains: dark, slanted rain shafts hanging from the deck down to the sea horizon
+    float az = atan( v.z, v.x ) * 0.15915494;   // 0..1 around the horizon (integer noise scales: no seam)
+    vec2 drift = uWindOff * 0.000004;
+    // wind-slanted (azimuth sheared with height), soft-edged, each curtain fraying out at its own height under the deck
+    float saz = az + yh * 0.06;
+    float sn = texture2D( uNoise, vec2( saz * 10.0, 0.13 ) + drift ).r * 0.7 + texture2D( uNoise, vec2( saz * 23.0, 0.61 ) + drift ).g * 0.3;
+    float shaft = smoothstep( 0.5, 0.82, sn );
+    float streak = 0.75 + 0.25 * texture2D( uNoise, vec2( saz * 300.0, yh * 4.0 ) ).g;
+    float top = 0.05 + 0.12 * texture2D( uNoise, vec2( az * 17.0, 0.83 ) ).b;
+    float hang = ( 1.0 - smoothstep( top * 0.35, top, yh ) ) * smoothstep( -0.012, 0.004, y );
+    col = mix( col, uCloudShade * 0.8 + uHorizon * 0.32, shaft * shaft * streak * hang * 0.5 * smoothstep( 0.4, 0.9, uOvercast ) );
   }
 
   // --- stars & milky way
@@ -153,7 +167,7 @@ void main() {
     float mwd = abs( dot( v, mwN ) );
     float mw = exp( -mwd * mwd * 30.0 ) * ( 0.4 + 0.9 * fbm( v.xy * 1.8 + v.z ) );
     float vis = uStars * smoothstep( 0.0, 0.18, y ) * ( 1.0 - uOvercast );
-    col += ( sc * star * 2.2 + vec3( 0.16, 0.18, 0.28 ) * mw * 0.35 ) * vis;
+    col += ( sc * star * 2.2 + vec3( 0.16, 0.18, 0.28 ) * mw * 0.24 ) * vis;
   }
 
   // --- moon (disc with maria + halo)
