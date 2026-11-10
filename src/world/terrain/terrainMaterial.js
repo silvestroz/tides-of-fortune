@@ -1,8 +1,10 @@
 // Painterly splat terrain material (MeshStandardMaterial + onBeforeCompile so lights/shadows/fog stay standard).
 // Layers by height + slope + baked moisture/curvature: seabed sand, coral, wet sand, dry sand, grass, jungle,
 // dry scrub, rock, cliff (triplanar). Uses one shared tileable detail texture for all brush/grain detail.
+// Direct light is dimmed under drifting cloud shadows (../sky/cloudShadow.js).
 import * as THREE from 'three';
 import { getDetailTexture } from './textures.js';
+import { CLOUD_SHADOW, cloudShadowPars, cloudShadowApply } from '../sky/cloudShadow.js';
 
 export function createTerrainMaterial() {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 });
@@ -14,7 +16,7 @@ export function createTerrainMaterial() {
   };
   mat.userData.uniforms = uniforms;
   mat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, uniforms);
+    Object.assign(sh.uniforms, uniforms, CLOUD_SHADOW.uniforms);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
         attribute vec4 aTerr;
@@ -33,6 +35,7 @@ export function createTerrainMaterial() {
         varying vec3 vWPos;
         varying vec3 vWNrm;
         float vTerrRock = 0.0; vec3 vBumpW = vec3(0.0);
+        ${cloudShadowPars}
         vec3 srgb(vec3 c){ return pow(c, vec3(2.2)); }
         vec4 tri(vec3 p, vec3 n, float s){
           vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y + w.z);
@@ -193,11 +196,13 @@ export function createTerrainMaterial() {
         }`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         normal = normalize(normal + (viewMatrix * vec4(vBumpW, 0.0)).xyz * 0.9);`)
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        ${cloudShadowApply('vWPos')}`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         totalEmissiveRadiance += diffuseColor.rgb * vec3(0.05, 0.075, 0.13) * uNight;`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         roughnessFactor = mix(0.55, 0.95, smoothstep(0.0, 1.2, vWPos.y));`);
   };
-  mat.customProgramCacheKey = () => 'terrain-v8';
+  mat.customProgramCacheKey = () => 'terrain-v9';
   return mat;
 }
