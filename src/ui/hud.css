@@ -201,9 +201,9 @@
 .target .meta { display: flex; justify-content: space-between; font-size: 1em; font-style: italic; color: var(--ink-soft);
   border-top: 1px solid rgba(60,36,14,0.3); margin-top: 0.3em; padding-top: 0.25em; }
 
-/* ---------- port prompt (upper third, distance-faded) ---------- */
-.prompt { position: absolute; left: 50%; top: 21%; transform: translateX(-50%); padding: 0.4em 1.1em 0.45em; border-radius: 2em;
-  display: flex; align-items: center; gap: 0.6em; white-space: nowrap; font-size: 1.1em; opacity: var(--near, 1);
+/* ---------- port prompt (top, under the goal line; distance-faded, never below 0.85) ---------- */
+.prompt { position: absolute; left: 50%; top: var(--prompt-top, 3.1em); transform: translateX(-50%); padding: 0.3em 0.95em 0.34em; border-radius: 2em;
+  display: flex; align-items: center; gap: 0.55em; white-space: nowrap; font-size: max(0.98em, 13px); opacity: var(--near, 1);
   box-shadow: inset 0 0 0.8em rgba(110,66,18,0.5), 0 0.2em 0.6em rgba(0,0,0,0.4), 0 0 0 0.12em #5a3c14, 0 0 0 0.2em rgba(201,162,74,0.7);
   transition: opacity 0.4s, transform 0.4s cubic-bezier(.2,.8,.2,1); animation: tofPromptPulse 2.4s ease-in-out infinite; }
 .prompt.off { opacity: 0; transform: translate(-50%, -0.8em); animation: none; }
@@ -219,12 +219,10 @@
   clip-path: polygon(0 3%, 6% 0, 21% 2%, 40% 0, 63% 2.5%, 82% 0.5%, 100% 2%, 99.3% 30%, 100% 62%, 99% 100%, 77% 97.5%, 50% 100%, 28% 97%, 9% 100%, 0 98%, 0.7% 55%);
   animation: tofToastIn 0.55s cubic-bezier(.2,.9,.25,1.1) both; }
 .toast.out { animation: tofToastOut 0.6s ease-in both; }
-.toast .stamp { display: block; font-style: italic; font-size: 1em; color: var(--ink-faded); }
 .toast .mark { position: absolute; left: 0.6em; top: 50%; transform: translateY(-50%); width: 1.35em; height: 1.35em; }
 .toast.bad .mark { color: var(--blood); } .toast.good .mark { color: #2f5d2a; } .toast.info .mark { color: var(--ink-soft); }
 .toast.bad { box-shadow: inset 0.25em 0 0 rgba(142,27,27,0.75), inset 0 0 1em rgba(110,66,18,0.5); }
 .toast.good { box-shadow: inset 0.25em 0 0 rgba(47,93,42,0.75), inset 0 0 1em rgba(110,66,18,0.5); }
-.toast + .toast { opacity: 0.82; } .toast + .toast + .toast { opacity: 0.6; }
 @keyframes tofToastIn { from { opacity: 0; transform: translateX(-2.5em) rotate(-1.5deg); } }
 @keyframes tofToastOut { to { opacity: 0; transform: translateX(-1.5em); } }
 
@@ -368,8 +366,9 @@
 .fade-black { position: absolute; inset: 0; background: #050302; opacity: 0; pointer-events: none; transition: opacity 0.9s ease; }
 .fade-black.on { opacity: 1; }
 
-/* boarding prompt (B) — sits just under the port prompt; glows red when alongside */
-.prompt.board { top: 27%; }
+/* boarding prompt (B) — same place as the port prompt (top centre); glows red when alongside; when both show,
+   the port prompt steps under it */
+.prompt.board:not(.off) ~ .prompt:not(.off) { top: calc(var(--prompt-top, 3.1em) + 2.6em); }
 .prompt.board b { color: var(--blood); }
 .prompt.board:not(.ready) { filter: saturate(0.6); opacity: 0.85; }
 .prompt.board.ready { box-shadow: 0 0 0 0.12em #6e1010, 0 0 1.4em rgba(200, 40, 30, 0.55); }
@@ -486,39 +485,36 @@
 /* ---------- toasts ---------- */
 #hud .log { display: none; }
 .toasts { position: absolute; left: 1.2em; top: 8.4em; width: 21em; display: flex; flex-direction: column; gap: 0.35em; transition: opacity 0.4s; }
-.toasts.dim { opacity: 0.45; }
 .toasts .toast { position: relative; padding: 0.38em 0.8em 0.42em 2.55em; border-radius: 0.2em; font-size: 0.94em; line-height: 1.25; color: var(--ink);
   box-shadow: inset 0 0 1em rgba(110,66,18,0.45), 0 0.15em 0.5em rgba(0,0,0,0.35); animation: tofToastIn 0.45s cubic-bezier(.2,.9,.3,1.2) both; }
-.toasts .toast + .toast { opacity: 0.86; }
-.toasts .toast + .toast + .toast { opacity: 0.7; }
 .toasts .toast .mark { left: 0.5em; width: 1.6em; height: 1.6em; }
 .toasts .toast .mark svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 0.05em 0.05em rgba(0,0,0,0.35)); }
-.toasts .toast .stamp { font-size: 0.78em; line-height: 1.1; }
 .toasts .toast .cnt { position: absolute; right: 0.35em; bottom: 0.3em; min-width: 1.6em; height: 1.6em; padding: 0 0.3em; border-radius: 0.8em; display: grid; place-items: center;
   font-family: var(--sc); font-size: 0.78em; color: #f6e3c4; background: radial-gradient(circle at 40% 30%, #c0463a, #8e1b1b 60%, #5a0c0c); box-shadow: 0 0.1em 0.2em rgba(0,0,0,0.5); }
-.toasts .toast.info { opacity: 0.9; font-size: 0.88em; }
+.toasts .toast.info { font-size: 0.88em; }
 .toasts .toast.good { box-shadow: inset 0.28em 0 0 rgba(47,93,42,0.8), inset 0 0 1em rgba(110,66,18,0.45), 0 0.15em 0.5em rgba(0,0,0,0.35); }
 .toasts .toast.bad { box-shadow: inset 0.28em 0 0 rgba(142,27,27,0.85), inset 0 0 1em rgba(110,66,18,0.45), 0 0.15em 0.5em rgba(0,0,0,0.35); }
 .toasts .toast.bump { animation: toastBump 0.4s ease-out; }
 .toasts .toast.out { animation: tofToastOut 0.5s ease-in both; }
 @keyframes toastBump { 40% { transform: scale(1.04); filter: brightness(1.08); } }
 
-/* ---------- central banner (major announcements) ---------- */
-.banner { position: absolute; left: 50%; top: 13%; transform: translateX(-50%); width: max-content; max-width: min(44em, 86vw); transition: opacity 0.5s, transform 0.6s cubic-bezier(.2,.9,.3,1.1); }
+/* ---------- banner (major announcements): top centre, just under the goal line, compact; the prompts step under it ---------- */
+.banner { position: absolute; left: 50%; top: 3em; transform: translateX(-50%); width: max-content; max-width: min(46em, 72vw); transition: opacity 0.5s, transform 0.6s cubic-bezier(.2,.9,.3,1.1); }
+#hud.banner-on { --prompt-top: calc(3.6em + var(--bh, 3.4em)); }
 .banner.off { opacity: 0; transform: translate(-50%, -0.8em) scale(0.96); }
 .banner.on { opacity: 1; animation: bannerIn 0.7s cubic-bezier(.2,.9,.3,1.15) both; }
 @keyframes bannerIn { from { opacity: 0; transform: translate(-50%, -1em) scaleX(0.6); } }
-.banner .b-inner { position: relative; display: flex; align-items: center; gap: 0.8em; padding: 0.55em 2.6em 0.6em; border-radius: 0.2em; color: var(--ink);
-  box-shadow: inset 0 0 1.4em rgba(110,66,18,0.55), 0 0 0 0.14em #6e4f1a, 0 0 0 0.3em rgba(246,224,154,0.65), 0 0 0 0.42em #4a3108, 0 0.6em 1.6em rgba(0,0,0,0.55); }
-.banner .b-ico { width: 2.6em; height: 2.6em; flex: none; }
+.banner .b-inner { position: relative; display: flex; align-items: center; gap: 0.6em; padding: 0.32em 1.7em 0.36em; border-radius: 0.2em; color: var(--ink);
+  box-shadow: inset 0 0 1.2em rgba(110,66,18,0.55), 0 0 0 0.12em #6e4f1a, 0 0 0 0.24em rgba(246,224,154,0.65), 0 0 0 0.34em #4a3108, 0 0.4em 1.1em rgba(0,0,0,0.5); }
+.banner .b-ico { width: 1.9em; height: 1.9em; flex: none; }
 .banner .b-ico svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 0.1em 0.1em rgba(0,0,0,0.4)); }
-.banner .b-head { font-family: var(--sc); font-size: 1.6em; letter-spacing: 0.06em; line-height: 1.05; }
-.banner .b-sub { font-style: italic; font-size: 1.02em; color: var(--ink-soft); margin-top: 0.15em; max-width: 34em; }
+.banner .b-head { font-family: var(--sc); font-size: 1.22em; letter-spacing: 0.05em; line-height: 1.1; }
+.banner .b-sub { font-style: italic; font-size: max(0.95em, 13px); line-height: 1.25; color: var(--ink-soft); margin-top: 0.08em; max-width: 40em; }
 .banner.bad .b-head { color: var(--blood); }
 .banner.good .b-head { color: #5a3a08; }
-.banner .b-orn { position: absolute; top: 50%; width: 1.4em; height: 1.4em; transform: translateY(-50%) rotate(45deg); background: var(--brass-grad);
+.banner .b-orn { position: absolute; top: 50%; width: 1em; height: 1em; transform: translateY(-50%) rotate(45deg); background: var(--brass-grad);
   box-shadow: 0 0 0 0.1em #4a3108, 0 0.1em 0.3em rgba(0,0,0,0.5); }
-.banner .b-orn.l { left: -0.75em; } .banner .b-orn.r { right: -0.75em; }
+.banner .b-orn.l { left: -0.55em; } .banner .b-orn.r { right: -0.55em; }
 
 /* ---------- journal (J) ---------- */
 .journal-layer { position: absolute; inset: 0; display: none; pointer-events: auto; background: radial-gradient(90% 80% at 50% 50%, rgba(8,10,14,0.35), rgba(4,4,6,0.78)); z-index: 25; }
@@ -553,13 +549,8 @@
    ====================================================================================================== */
 /* resource band: “gold, provisions…” captions */
 .res-band .res small { font-size: max(0.72em, 11px); }
-/* messages: 13 px minimum, timestamp 11 px; dimming during a banner no longer makes them unreadable */
+/* messages: 13 px minimum, fully opaque (no fading stack, no dimming under a banner) */
 .toasts .toast, .toasts .toast.info { font-size: max(0.94em, 13px); }
-.toasts .toast .stamp { font-size: max(0.78em, 11px); }
-.toasts .toast.info { opacity: 1; }
-.toasts .toast + .toast { opacity: 0.94; }
-.toasts .toast + .toast + .toast { opacity: 0.84; }
-.toasts.dim { opacity: 0.82; }
 /* helm bar: 14 px base instead of 13 on short screens, no caption below 11 px */
 .helm { font-size: max(1em, 14px); }
 .helm .gauge .lbl, .helm .gauge .val { font-size: 0.84em; }

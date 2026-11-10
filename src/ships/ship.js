@@ -301,7 +301,8 @@ export class Ship {
       this.scrape = Math.min(1, 0.25 + impact / 8);
       this._groundCd = 1.5;
       this.game.events?.emit('ship:grounded', { ship: this, impact });
-      if (this.isPlayer) this.game.events?.emit('notify', { text: 'We have run aground!', kind: 'bad' });
+      // one coalesced 'aground' message (the shoal alert and the shaking already say it): not more than every 10 s
+      if (this.isPlayer && (this._groundMsgT || 0) < (this.game.time || 0)) { this._groundMsgT = (this.game.time || 0) + 10; this.game.events?.emit('notify', { text: 'We have run aground!', kind: 'bad', key: 'aground' }); }
     }
     this.scrape = Math.max(this.scrape, Math.min(0.5, Math.abs(this.speed) * 0.08));
     // a deep hull dragged over a submerged shoal (reef, sand bar) keeps tearing its planking
@@ -309,8 +310,8 @@ export class Ship {
       const rate = (SHOAL_DMG + Math.abs(this.speed) * 0.5) * Math.sqrt(this.handling.mass) * Math.min(2, this.draft / 3) * (this.shoalDmgF ?? 1);   // navigator
       this.hull = Math.max(1, this.hull - rate * dt);
       if (this.isPlayer && (this._reefMsgT || 0) < this.game.time) {
-        this._reefMsgT = this.game.time + 6;
-        this.game.events?.emit('notify', { text: 'The hull scrapes the reef!', kind: 'bad' });
+        this._reefMsgT = this.game.time + 10;
+        this.game.events?.emit('notify', { text: 'The hull scrapes the reef!', kind: 'bad', key: 'aground' });
       }
     }
     if (this._groundBow) this.speed *= Math.max(0, 1 - dt * 3.5);

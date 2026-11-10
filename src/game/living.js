@@ -95,7 +95,7 @@ export class LivingWorld {
     this.news(text, v < 0 ? 'war' : 'peace');
     this.game.events.emit('diplomacy:change', { a, b, from, to: v, why });
     this._envoysOnChange(a, b, v, why);
-    this.game.events.emit('notify', { text, kind: v < 0 ? 'bad' : 'info', major: v !== 0, tone: v < 0 ? 'bad' : 'good', topic: 'diplomacy' });
+    this.game.events.emit('notify', { text, kind: v < 0 ? 'bad' : 'info', major: v !== 0, tone: v < 0 ? 'bad' : 'good', topic: 'diplomacy', defer: 'prologue' });   // held back until the prologue ends
     this._checkLetters();
   }
 
@@ -365,7 +365,7 @@ export class LivingWorld {
       if (charge.ai) charge.ai.waypoint = { x: to.harborPoint.x, z: to.harborPoint.z, port: to };
       this.convoyShips.set(c.id, charge);
       g.events.emit('convoy:spawn', { convoy: c, ship: charge });
-      if (c.known) g.events.emit('notify', { text: `Sails on the horizon: the ${nationAdj(c.faction)} convoy announced at the tavern is heading for ${to.name}.`, kind: 'info', topic: 'rumour' });
+      if (c.known) g.events.emit('notify', { text: `Sails on the horizon: the ${nationAdj(c.faction)} convoy announced at the tavern is heading for ${to.name}.`, kind: 'info', topic: 'rumour', defer: 'prologue' });
     }
   }
   _onLost(ship) {

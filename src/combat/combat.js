@@ -40,6 +40,7 @@ import { SHIP_SPECS } from '../ships/shipModel.js';
 import { pickTrafficType, classOf } from '../data/shipTypes.js';
 import { ZONE_TIERS } from '../data/seaZones.js';   // sea tiers
 import { theShip, ofShip } from '../core/i18n.js';
+import { concernsPlayer, fightingFoe, inPrologue } from '../game/notifyRules.js';   // third-party events are not reported
 import { BallTrails } from '../fx/ballTrails.js';
 
 export const AMMO = {
@@ -58,7 +59,8 @@ const MAX_SURV = 96, SURV_LIFE = 40, SURV_PICKUP = 25;
 // ---- combat balance ----
 // Weather gauge: a ship upwind of its current foe (projection of foe→ship on the upwind axis > minUp × distance,
 // foe within `range`) aims truer, reloads faster and answers the helm better.
-export const WEATHER_GAUGE = { range: 900, minUp: 0.25, spread: 0.8, reload: 0.9, turn: 1.12 };
+export const WEATHER_GAUGE = { range: 900, minUp: 0.25, spread: 0.8, reload: 0.9, turn: 1.12,
+  noteHold: 3, noteGap: 20, noteForget: 45 };   // wind-advantage message: side held 3 s, ≥ 20 s apart, forgotten after 45 s without a gauge
 // Dismasting (spars fall at sail damage 0.8 / 0.9 / 0.97, shipModel.setDamage): loss 0.35 / 0.6 / 1 cuts speed and
 // turn rate by up to these fractions, on top of the torn-canvas speed loss (ship.js rigF).
 export const MAST_LOSS = { speed: 0.45, turn: 0.35 };
@@ -507,7 +509,7 @@ export class CombatSystem {
       if (ammo === 'round' && hf < 0.45 && !target.sinking && !this.noMagazine && Math.random() < 0.012 * frac) {
         fx?.explosion?.(_v.set(target.position.x, target.position.y + 3, target.position.z), 1.3);
         target.hull = 0;
-        this.game.events.emit('notify', { text: `The powder magazine ${ofShip(target)} explodes!`, kind: target.isPlayer ? 'bad' : 'good' });
+        if (concernsPlayer(this.game, target)) this.game.events.emit('notify', { text: `The powder magazine ${ofShip(target)} explodes!`, kind: target.isPlayer ? 'bad' : 'good' });
         this.startSinking(target, { explode: true });
       }
     } else {
@@ -556,8 +558,12 @@ export class CombatSystem {
     ship.reload.port = ship.reload.starboard = 0;
     this.game.fx?.smoke?.(_v.set(ship.position.x, ship.position.y + 4, ship.position.z), _v2.set(0, 1, 0), 0.6);
     this.game.events.emit('ship:struck', { ship });
-    const by = ship.lastAttacker?.isPlayer ? ' to you' : '';
-    this.game.events.emit('notify', { text: `${theShip(ship, true)} strikes her colours${by}!`, kind: ship.isPlayer ? 'bad' : 'good' });
+    // the only surrender message (the HUD no longer echoes 'ship:struck'); a third party's surrender is not reported
+    if (ship.isPlayer) this.game.events.emit('notify', { text: 'We have struck our colours.', kind: 'bad' });
+    else if (concernsPlayer(this.game, ship) && !(ship._prologue && inPrologue(this.game))) {   // the prologue says it itself
+      const by = ship.lastAttacker?.isPlayer ? ' to you' : '';
+      this.game.events.emit('notify', { text: `${theShip(ship, true)} strikes her colours${by}!`, kind: 'good' });
+    }
   }
 
   startSinking(ship, { explode = false } = {}) {
@@ -672,12 +678,21 @@ export class CombatSystem {
       }
     }
     ship.windGauge = g; ship.gaugeFoe = g ? foe : null;
-    if (ship.isPlayer && g !== prev && g !== 0 && this.game.time > (ship._wgNoteT || 0)) {
-      ship._wgNoteT = this.game.time + 12;
-      this.game.events.emit('notify', g > 0
-        ? { text: 'We hold the weather gauge! Truer fire, quicker reloading', kind: 'good' }
-        : { text: `${theShip(foe, true)} has taken the weather gauge from us`, kind: 'bad' });
-    }
+    if (ship.isPlayer) this._gaugeNote(ship, g, prev, foe);
+  }
+  // one message per real change of advantage (the status line shows the gauge all along): the new side must hold
+  // WEATHER_GAUGE.noteHold s, differ from the last side announced, against a foe that is really fighting (never one
+  // at anchor or cruising by); the last side announced is forgotten after noteForget s without a gauge
+  _gaugeNote(ship, g, prev, foe) {
+    const t = this.game.time || 0;
+    if (g !== prev) ship._wgSince = t;
+    if (g === 0) { if (ship._wgTold && t - (ship._wgSince ?? t) > WEATHER_GAUGE.noteForget) ship._wgTold = 0; return; }
+    if (g === ship._wgTold || t - (ship._wgSince ?? t) < WEATHER_GAUGE.noteHold || t < (ship._wgNoteT || 0)) return;
+    if (!fightingFoe(this.game, foe)) return;
+    ship._wgTold = g; ship._wgNoteT = t + WEATHER_GAUGE.noteGap;
+    this.game.events.emit('notify', g > 0
+      ? { text: `To windward of ${theShip(foe)}: truer fire, quicker reloading and handling.`, kind: 'good', key: 'wind', topic: 'wind' }
+      : { text: `${theShip(foe, true)} has the weather gauge: her fire and handling are better.`, kind: 'bad', key: 'wind', topic: 'wind' });
   }
   // dismasting from rigging damage: speed / turn penalty + one notification per stage for the player and their foe
   _rigState(ship) {
@@ -898,7 +913,8 @@ export class CombatSystem {
   // boardHint = { ship, dist, inReach } for the nearest boardable ship within 450 m (HUD shows “Board her!”).
   _onCollide() {}
   _canBoard(p, o) {
-    if (!o.alive || o.sinking || o.sunk || o._plundered) return false;
+    // never a ship that is going down (sinking, or her hull shot to nothing: 0 % on her card)
+    if (!o.alive || o.sinking || o.sunk || o._plundered || !(o.hull > (o.hullMax || 1) * 0.005)) return false;
     const weak = o.struck || o.hull / o.hullMax < 0.35 || o.crew < o.crewMax * 0.3 || o.crew < p.crew * 0.5;
     const hostile = o.struck || this.isHostile(p, o) || p.controller?.isEnemy?.(o);
     return weak && hostile;
@@ -995,8 +1011,7 @@ export class CombatSystem {
     else faction = nations[Math.floor(rnd() * nations.length)];
     // weighted pick among the 27 types by role and nation (src/data/shipTypes.js roles / nat)
     const type = pickTrafficType(role, faction, rnd, zs ? zs.cap(tier, role) : undefined);
-    const names = NAMES[faction] || NAMES.english;
-    const name = names[Math.floor(rnd() * names.length)];
+    const name = this.freshName(NAMES[faction] || NAMES.english, rnd);
     const spec = SHIP_SPECS[type];
     const crew = Math.round(spec.crewMax * (ROLE_CREW[role] ?? 0.6) * (0.85 + rnd() * 0.3));
     const heading = rnd() * Math.PI * 2;
@@ -1007,6 +1022,14 @@ export class CombatSystem {
       if (r < CONVOY.escorted) return this.spawnConvoy({ faction, x, z, heading, type, name, crew, tier }).charge;
     }
     return this.spawnAI({ type, faction, role, x, z, heading, sailSetting: role === 'merchant' ? 0.8 : 0.6, name, crew });
+  }
+
+  // freshName(list, rnd?) a name of the list that no ship afloat bears (one rnd() draw, as before); all taken: any
+  freshName(list, rnd = Math.random) {
+    const used = new Set();
+    for (const s of this.game.ships || []) if (!s.sunk && s.alive !== false && s.name) used.add(s.name);
+    const free = list.filter(n => !used.has(n)), from = free.length ? free : list;
+    return from[Math.floor(rnd() * from.length)];
   }
 
   // spawnConvoy({ faction, x, z, heading, treasure?, type?, name?, crew?, guards? }) -> { charge, guards[] }
@@ -1020,7 +1043,7 @@ export class CombatSystem {
     { const mCap = ZONE_TIERS[tier]?.cap.merchant ?? 5; if (classOf(type) > mCap) type = classOf('nao') <= mCap ? 'nao' : 'merchantman'; }   // announced convoy in guarded waters: no galleon
     const spec = SHIP_SPECS[type] || SHIP_SPECS.merchantman;
     const charge = this.spawnAI({ type, faction, role: 'merchant', x, z, heading, sailSetting: 0.65,
-      name: name || (treasure ? TREASURE_NAMES[Math.floor(Math.random() * TREASURE_NAMES.length)] : (NAMES[faction] || NAMES.english)[0]),
+      name: name || this.freshName(treasure ? TREASURE_NAMES : NAMES[faction] || NAMES.english),
       crew: crew ?? Math.round(spec.crewMax * (treasure ? 0.75 : 0.5)) });
     charge.treasure = treasure; charge.guards = [];
     const n = guards ?? (treasure ? 2 : 1);
@@ -1034,7 +1057,7 @@ export class CombatSystem {
       if (classOf(gt) > escCap) gt = classOf('corvette') <= escCap ? 'corvette' : 'brig';
       const gs = SHIP_SPECS[gt];
       const gd = this.spawnAI({ type: gt, faction, role: 'patrol', x: gx, z: gz, heading, sailSetting: 0.65,
-        name: (NAMES[faction] || NAMES.english)[(k + 3) % (NAMES[faction] || NAMES.english).length], crew: Math.round(gs.crewMax * 0.75) });
+        name: this.freshName(NAMES[faction] || NAMES.english), crew: Math.round(gs.crewMax * 0.75) });
       gd.ai.guardOf = charge; gd.ai.guardSlot = { ...o }; gd.escorting = charge;
       gd.ai.defendOnly = true;   // guarded waters only (ai._scan re-checks the tier on every pass)
       charge.guards.push(gd);
@@ -1080,9 +1103,15 @@ const ROLE_CREW = { merchant: 0.45, patrol: 0.7, pirate: 0.9, hunter: 0.8 };
 const CONVOY = { escorted: 0.3, treasure: 0.1 };
 const TREASURE_NAMES = ['Nuestra Señora del Rosario', 'San José', 'Santísima Trinidad', 'Nuestra Señora de Atocha'];
 const NAMES = {
-  english: ['Resolute', 'Gull', 'Kestrel', 'Prudence', 'Swiftsure', 'Lark', 'Defiance', 'Bonaventure', 'Hart', 'Speedwell'],
-  spanish: ['San Telmo', 'Santa Clara', 'Nuestra Señora', 'San Felipe', 'Esperanza', 'Santa Rosa', 'San Mateo', 'Concepción'],
-  french:  ['Le Faucon', 'La Belle', 'Le Hardi', 'La Sirène', 'Le Vigilant', "L'Aigle", 'La Fortune'],
-  dutch:   ['Zeemeeuw', 'De Hoop', 'Wapen van Hoorn', 'Eendracht', 'Zwaluw', 'Gouden Leeuw'],
-  pirate:  ['Black Tern', 'Widow\'s Due', 'Gallows Bird', 'Red Hand', 'Sea Wolf', 'Crow\'s Bargain', 'Night Heron'],
+  // ship names: combat.freshName never draws one already afloat (the lists are long enough for a busy sea)
+  english: ['Resolute', 'Gull', 'Kestrel', 'Prudence', 'Swiftsure', 'Lark', 'Defiance', 'Bonaventure', 'Hart', 'Speedwell',
+    'Dolphin', 'Unity', 'Mermaid', 'Hopewell', 'Falcon', 'Diligence'],
+  spanish: ['San Telmo', 'Santa Clara', 'Nuestra Señora', 'San Felipe', 'Esperanza', 'Santa Rosa', 'San Mateo', 'Concepción',
+    'San Lorenzo', 'Santa Ana', 'San Nicolás', 'Buen Jesús', 'Santo Cristo', 'San Andrés', 'Magdalena', 'Rosario'],
+  french:  ['Le Faucon', 'La Belle', 'Le Hardi', 'La Sirène', 'Le Vigilant', "L'Aigle", 'La Fortune', 'Le Diligent',
+    'La Licorne', "L'Espérance", 'Le Dauphin', 'La Gloire', 'Le Comte', 'La Diane'],
+  dutch:   ['Zeemeeuw', 'De Hoop', 'Wapen van Hoorn', 'Eendracht', 'Zwaluw', 'Gouden Leeuw', 'Zeepaard', 'Vliegende Hert',
+    'Witte Valk', 'Prins Willem', 'Hollandia', 'Oranjeboom', 'Delft', 'Gekroonde Liefde'],
+  pirate:  ['Black Tern', 'Widow\'s Due', 'Gallows Bird', 'Red Hand', 'Sea Wolf', 'Crow\'s Bargain', 'Night Heron',
+    'Hangman\'s Luck', 'Bloody Mary', 'Drowned Man', 'Rattling Bones', 'Grey Ghost', 'Scavenger', 'Devil\'s Lantern'],
 };
