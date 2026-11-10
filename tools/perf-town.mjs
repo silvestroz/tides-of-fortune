@@ -49,4 +49,5 @@ for (const kind of only) {
     (after.programs > before.programs || after.geometries > before.geometries || after.textures > before.textures ? '   GROWS' : '   ok'));
 }
 console.log(errors.length ? `console errors:\n  ${errors.slice(0, 8).join('\n  ')}` : 'no console errors');
-await browser.close();
+await Promise.race([browser.close(), new Promise(r => setTimeout(r, 5000))]);
+process.exit(0);

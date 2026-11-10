@@ -97,7 +97,7 @@ const PAINT_FRAG = /* glsl */`
         if (abs(N.y) < 0.5) {
           vec2 wp = vec2(u, P.y);
           float wn = texture2D(uDetail, wp * 0.06 + 0.37).r * 0.7 + texture2D(uDetail, wp * 0.21 + 0.11).b * 0.3;
-          float hole = smoothstep(0.585, 0.6, wn), rim = smoothstep(0.55, 0.585, wn) * (1.0 - hole);
+          float hole = smoothstep(0.56, 0.575, wn), rim = smoothstep(0.525, 0.56, wn) * (1.0 - hole);
           c = mix(c, c * vec3(0.7, 0.66, 0.6), rim * 0.7);                                                             // crumbled edge
           c = mix(c, brick, hole);                                                                                     // fallen plaster: the brick shows
           float streak = texture2D(uDetail, vec2(u * 0.4, P.y * 0.01)).g;

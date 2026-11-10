@@ -42,12 +42,13 @@ function materials() {
   const lamps = { value: Array.from({ length: NREF }, () => new THREE.Vector4()) }, lampCol = { value: LAMP.clone() };
   const ground = std({ vertexColors: true });
   ground.onBeforeCompile = sh => {
-    sh.uniforms.uLamps = lamps; sh.uniforms.uLampCol = lampCol; sh.uniforms.uDetail = { value: getDetailTexture() };
+    sh.uniforms.uLamps = lamps; sh.uniforms.uLampCol = lampCol;
+    sh.uniforms.uMoon = { value: new THREE.Vector3(SNEAK.moonDir.x * Math.cos(SNEAK.moonElev), Math.sin(SNEAK.moonElev), SNEAK.moonDir.z * Math.cos(SNEAK.moonElev)).normalize() }; sh.uniforms.uDetail = { value: getDetailTexture() };
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aKind; attribute float aEdge;\nvarying float vKind; varying float vEdge;\nvarying vec3 vGP3;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvKind = aKind; vEdge = aEdge; vGP3 = (modelMatrix * vec4(position, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
 varying float vKind; varying float vEdge; varying vec3 vGP3;
-uniform vec4 uLamps[${NREF}]; uniform vec3 uLampCol; uniform sampler2D uDetail;
+uniform vec4 uLamps[${NREF}]; uniform vec3 uLampCol; uniform vec3 uMoon; uniform sampler2D uDetail;
 float h21(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 float cobble(vec2 p) {
   p *= 1.7; float row = floor(p.y); p.x += 0.5 * mod(row, 2.0);
@@ -66,10 +67,10 @@ diffuseColor.rgb *= mix(1.0, mix(0.5, 1.08, cb), kc) * mix(1.0, mix(0.45, 1.05, 
 vec4 gd = texture2D(uDetail, vGP * 0.03), gd2 = texture2D(uDetail, vGP * 0.11 + 0.5);
 diffuseColor.rgb *= mix(1.0, mix(0.9, 1.12, smoothstep(0.3, 0.9, cb)), vEdge * kc);                        // stones polished mid-street
 diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.72, 0.84, 0.66), (1.0 - vEdge) * kc * smoothstep(0.35, 0.75, gd2.r) * 0.7);   // moss and grime by the walls
-float pud = smoothstep(0.58, 0.64, gd.r * 0.75 + gd2.g * 0.25) * kc * (0.35 + 0.65 * vEdge);              // puddles
+float pud = smoothstep(0.5, 0.55, gd.r * 0.75 + gd2.g * 0.25) * kc * (0.45 + 0.55 * vEdge);              // puddles
 float wet = max(pud, kc * (0.3 + 0.35 * (1.0 - cb)) + kp * 0.25);
 diffuseColor.rgb *= 1.0 - 0.3 * wet;
-diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.025, 0.03, 0.045), pud * 0.7);`)
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.02, 0.025, 0.04), pud * 0.8);`)
       .replace('#include <opaque_fragment>', `{
   vec3 Vd = normalize(cameraPosition - vGP3), sp = vec3(0.0);
   float e = 0.06, gx = cobble(vGP + vec2(e, 0.0)) - cobble(vGP - vec2(e, 0.0)), gz = cobble(vGP + vec2(0.0, e)) - cobble(vGP - vec2(0.0, e));
@@ -82,12 +83,12 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.025, 0.03, 0.045), pud * 0.7);`)
     float hh = max(dot(Nw, normalize(Ld + Vd)), 0.0);
     sp += uLampCol * L.w * pow(hh, shin) * (0.5 + shin * 0.035) / (1.0 + dd * dd * 0.02);
   }
-  float fres = pow(1.0 - max(dot(Vd, Nw), 0.0), 4.0);
-  outgoingLight += sp * wet * 0.55 + vec3(0.06, 0.085, 0.14) * fres * pud;
+  float fres = pow(1.0 - max(dot(Vd, Nw), 0.0), 3.0), moon = pow(max(dot(Nw, normalize(uMoon + Vd)), 0.0), shin * 0.6);
+  outgoingLight += sp * wet * 1.3 + vec3(0.07, 0.1, 0.17) * (fres * 1.6 + 0.12) * pud + vec3(0.35, 0.45, 0.7) * moon * wet * 0.5;
 }
 #include <opaque_fragment>`);
   };
-  ground.customProgramCacheKey = () => 'sneakGround_v2';
+  ground.customProgramCacheKey = () => 'sneakGround_v3';
   // tiled roofs: rows of round tiles from the uv (u along the ridge, v up the slope, in metres)
   const roof = std({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.85 });
   roof.onBeforeCompile = sh => {
