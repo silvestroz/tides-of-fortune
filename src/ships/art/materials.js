@@ -3,9 +3,12 @@
 // per material instance (hull/sail/flag materials are per-ship where they carry per-ship state).
 //
 //   GLOBAL uniforms (shared by every ship, updated once per frame by updateGlobals): uTime, uNight, uSunView, uSunCol
-//   makeHullMaterial()  -> material with .userData.u { uHullDmg }
-//   makeSailMaterial(color) -> material with .userData.u { uSet, uFill, uSide, uLuff, uSailDmg, uColor } + .userData.depth
-//   makeFlagMaterial(tex)  -> material with .userData.u { uYaw, uStrike, uWind } + .userData.depth
+//   makeHullMaterial()  -> material with .userData.u { uHullDmg, uSea, uLampA, uLampB }
+//     uSea 1 = a ship sailing in the world scene (set by shipModel.update; 0 on port stages, the duel deck and moored
+//     hulls, which keep their own look): day-dark stern glass, gilding glints, lantern light pools at night.
+//     uLampA / uLampB = (local lantern position, reach in m), w = 0 off: warm light the lanterns throw at night.
+//   makeSailMaterial(color) -> material with .userData.u { uSet, uFill, uSide, uLuff, uSailDmg, uColor, uSea, uLampA, uLampB } + .userData.depth
+//   makeFlagMaterial(tex)  -> material with .userData.u { uYaw, uStrike, uWind, uSea } + .userData.depth
 import * as THREE from 'three';
 import { getWoodTex, getCanvasTex, getEmblemTex } from './textures.js';
 
@@ -67,7 +70,26 @@ vec3 shipPerturb( vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDirection
 const HIDE_GLSL = `
 { float hb = aBreak < 2.5 ? step(aBreak, uHullDmg) : step(aBreak - 10.0, uSailDmg);
   if (abs(aBreak - 2.2) < 0.01) hb = step(0.5, uDuel);
+  if (abs(aBreak - 2.3) < 0.01) hb = step(uSea, 0.5);
   if (hb > 0.5) transformed = vec3(0.0, -60.0, 0.0); }`;
+
+// lantern light pools (night, sea only): vertex side passes the fragment->lamp vector in view space, fragment side
+// turns it into a soft wrapped falloff. uLamp*.w = reach (m); 0 = no lamp.
+const LAMP_VERT = /* glsl */`
+uniform vec4 uLampA; uniform vec4 uLampB; varying vec3 vLampA; varying vec3 vLampB;`;
+const LAMP_VERT_MAIN = /* glsl */`
+{ vec3 mvp = (modelViewMatrix * vec4(transformed, 1.0)).xyz;
+  vLampA = (modelViewMatrix * vec4(uLampA.xyz, 1.0)).xyz - mvp;
+  vLampB = (modelViewMatrix * vec4(uLampB.xyz, 1.0)).xyz - mvp; }`;
+const LAMP_FRAG = /* glsl */`
+uniform vec4 uLampA; uniform vec4 uLampB; varying vec3 vLampA; varying vec3 vLampB;
+float lampPool(vec3 d, float reach, vec3 n) {
+  if (reach <= 0.0) return 0.0;
+  float q = dot(d, d) / (reach * reach);
+  float wrap = 0.35 + 0.65 * max(0.0, dot(n, normalize(d)));
+  return wrap * (1.0 - smoothstep(0.35, 1.0, q)) / (1.0 + q * 9.0);
+}`;
+const LAMP_COL = 'vec3(1.0, 0.56, 0.22)';
 
 let _greyTex = null;
 function greyTex() {
@@ -82,14 +104,16 @@ function greyTex() {
 export function makeHullMaterial(skinTex = null, skinRange = null) {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0, envMapIntensity: 0.5 });
   const u = { uHullDmg: { value: 0 }, uSailDmg: { value: 0 }, uDuel: { value: 0 }, uWood: { value: getWoodTex() }, uSkin: { value: skinTex || greyTex() }, uPiv: pivUniform(),
+    uSea: { value: 0 }, uLampA: { value: new THREE.Vector4() }, uLampB: { value: new THREE.Vector4() },
     uSkinR: { value: new THREE.Vector2(skinRange?.[0] ?? 0, skinRange?.[1] ?? 0) } };
   m.userData.u = u;
   m.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, u, { uNight: GLOBAL.uNight, uTime: GLOBAL.uTime });
+    Object.assign(sh.uniforms, u, { uNight: GLOBAL.uNight, uTime: GLOBAL.uTime, uSunView: GLOBAL.uSunView, uSunCol: GLOBAL.uSunCol });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
+${LAMP_VERT}
 attribute vec4 aSurf; attribute float aBreak; attribute vec2 aPiv;
-uniform float uHullDmg; uniform float uSailDmg; uniform float uDuel;
+uniform float uHullDmg; uniform float uSailDmg; uniform float uDuel; uniform float uSea;
 ${PIV_GLSL}
 varying vec4 vSurf; varying vec2 vWUv; varying vec3 vLPos; varying float vWY; varying float vDist; varying float vNY;`)
       .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
@@ -105,10 +129,13 @@ vNY = normal.y;
   if (aSurf.y > 0.915 && aSurf.y < 0.925 && vDist > 120.0) transformed = vec3(0.0, -60.0, 0.0);
   // standing rigging: widen with distance so it never drops below ~1 px
   if (aSurf.y > 0.895 && aSurf.y < 0.925) transformed += normal * clamp(vDist * 0.0009 - 0.02, 0.0, 0.12);
-}`);
+}
+${LAMP_VERT_MAIN}`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform sampler2D uWood; uniform sampler2D uSkin; uniform float uHullDmg; uniform float uNight; uniform float uTime; uniform vec2 uSkinR;
+uniform float uSea; uniform vec3 uSunView; uniform vec3 uSunCol;
+${LAMP_FRAG}
 varying vec4 vSurf; varying vec2 vWUv; varying vec3 vLPos; varying float vWY; varying float vDist; varying float vNY;
 ${BUMP_FN}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -177,13 +204,18 @@ float hole = 0.0;
   vec2 hc = floor(hp), hf = fract(hp) - 0.5;
   float hr = fract(sin(dot(hc, vec2(12.9898, 78.233))) * 43758.5453);
   vec2 off = vec2(fract(hr * 13.7), fract(hr * 7.3)) - 0.5;
-  float hd = length((hf - off * 0.4) * vec2(1.7, 1.25));
+  vec2 dv = (hf - off * 0.4) * vec2(1.7, 1.25);
+  // ragged outline (two angular harmonics), a charred lip, and a few pale splinters sprung outward along the grain
+  float ang = atan(dv.y, dv.x);
+  float hd = length(dv) - 0.03 * sin(ang * 5.0 + hr * 40.0) - 0.02 * sin(ang * 11.0 + hr * 17.0);
   float on = isSkin * step(hr, uHullDmg * 0.55) * step(0.9, vWY) * step(vSurf.x, 0.5);
-  hole = on * smoothstep(0.23, 0.19, hd);
-  float rim = on * smoothstep(0.34, 0.24, hd) * (1.0 - hole);
-  float soot = on * smoothstep(0.85, 0.3, hd) * (1.0 - hole - rim);
+  hole = on * smoothstep(0.21, 0.18, hd);
+  float lip = on * smoothstep(0.32, 0.22, hd) * (1.0 - hole);
+  float spl = lip * smoothstep(0.55, 0.85, 0.5 + 0.5 * sin(ang * 9.0 + hr * 23.0)) * smoothstep(0.6, 0.2, abs(dv.y) / max(0.05, length(dv)));
+  float soot = on * smoothstep(0.85, 0.3, hd) * (1.0 - hole - lip);
   diffuseColor.rgb *= 1.0 - soot * 0.75;
-  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.78, 0.62, 0.42), rim * 0.85);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.06, 0.04, 0.025), lip * 0.8);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.45, 0.28), spl * 0.8);
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.02, 0.015, 0.01), hole); }
 // ropes fade toward a light hazy tone with distance (less 'black dots')
 float isRope = step(0.895, vSurf.y) * step(vSurf.y, 0.925) * step(vSurf.w, 0.05);
@@ -197,7 +229,13 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.95, 0.95), foamL * 0.7);
 // submerged hull: absorbed into the sea colour so the ship sits IN the water (no floating hull seen through clear water)
 float subm = smoothstep(-0.02, -0.9, vWY);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.17, 0.24), subm * 0.88);
-float ember = scorch * (1.0 - smoothstep(0.0, 0.012, abs(sc + 0.08 - (1.05 - scorchD)))) * 0.35;`)
+float ember = scorch * (1.0 - smoothstep(0.0, 0.012, abs(sc + 0.08 - (1.05 - scorchD)))) * 0.35;
+// at sea by day the stern glass reads as dark glass between its gilded frames (lit from dusk); lanterns dim
+float isGlass = 1.0 - step(0.06, abs(vSurf.z - 1.0)), isLamp = 1.0 - step(0.06, abs(vSurf.z - 1.6));
+float dayK = uSea * (1.0 - uNight);
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.045, 0.055), isGlass * dayK * 0.9);
+float glowK = 1.0 - dayK * (isGlass * 0.85 + isLamp * 0.6);
+float isGold = step(0.9, vSurf.x);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 roughnessFactor = clamp(vSurf.y * (0.85 + 0.3 * wt.a) + scorch * 0.2, 0.05, 1.0);
 // varnished/painted skin above the waterline: slight sheen
@@ -215,7 +253,7 @@ metalnessFactor = vSurf.x * (1.0 - burnAmt * 0.9);`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 {
   float flick = 0.88 + 0.12 * sin(uTime * 9.0 + vLPos.z * 3.0) * sin(uTime * 5.3 + vLPos.x * 7.0);
-  float glow = vSurf.z * mix(0.35, 3.2, uNight) * flick;
+  float glow = vSurf.z * mix(0.35, 3.2, uNight) * flick * glowK;
   totalEmissiveRadiance += vec3(1.0, 0.6, 0.24) * glow * (0.6 + 0.4 * wt.a);
   totalEmissiveRadiance += vec3(1.0, 0.35, 0.08) * ember * 1.5 * uHullDmg;
   // bluish reflected sea light on the lower hull skin
@@ -224,21 +262,32 @@ metalnessFactor = vSurf.x * (1.0 - burnAmt * 0.9);`)
   totalEmissiveRadiance += diffuseColor.rgb * vec3(0.05, 0.12, 0.13) * max(0.0, -vNY) * 2.2 * (1.0 - uNight * 0.8) * step(0.0, vWY);
   // painterly warm bounce fill: keeps paint colours rich in shadow (sea/deck bounce)
   totalEmissiveRadiance += diffuseColor.rgb * vec3(0.08, 0.06, 0.04) * (1.0 - uNight * 0.85) * (1.0 - vSurf.x * 0.7) * (1.0 - isPaint * 0.6);
+  if (uSea > 0.5) {
+    vec3 Vd = normalize(vViewPosition);
+    // gilding: deep at grazing angles, a hot glint where the carving turns to the sun (reads as gold, not yellow paint)
+    float gk = isGold * (1.0 - burnAmt);
+    diffuseColor.rgb *= 1.0 - gk * 0.45 * (1.0 - abs(dot(normal, Vd)));
+    float glint = pow(max(0.0, dot(reflect(-Vd, normal), uSunView)), 18.0);
+    totalEmissiveRadiance += uSunCol * diffuseColor.rgb * glint * 2.4 * gk * (1.0 - uNight);
+    // lantern light pools at night (stern lanterns, deck lantern)
+    float lp = (lampPool(vLampA, uLampA.w, normal) + 0.8 * lampPool(vLampB, uLampB.w, normal)) * uNight * (1.0 - hole);
+    totalEmissiveRadiance += diffuseColor.rgb * ${LAMP_COL} * lp * 3.0;
+  }
 }`);
   };
-  m.customProgramCacheKey = () => 'shipHull_v11';
+  m.customProgramCacheKey = () => 'shipHull_v12';
   const dm = new THREE.MeshDepthMaterial();
   dm.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
-attribute float aBreak; attribute vec2 aPiv; uniform float uHullDmg; uniform float uSailDmg; uniform float uDuel;
+attribute float aBreak; attribute vec2 aPiv; uniform float uHullDmg; uniform float uSailDmg; uniform float uDuel; uniform float uSea;
 ${PIV_GLSL}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
 transformed = pivRot(transformed, aPiv, false);
 ${HIDE_GLSL}`);
   };
-  dm.customProgramCacheKey = () => 'shipHullDepth_v5';
+  dm.customProgramCacheKey = () => 'shipHullDepth_v6';
   m.userData.depth = dm;
   return m;
 }
@@ -306,12 +355,13 @@ export function makeSailMaterial(color) {
   const u = {
     uSet: { value: 1 }, uFill: { value: 1 }, uSide: { value: 1 }, uLuff: { value: 0 }, uGust: { value: 0.5 },
     uSailDmg: { value: 0 }, uColor: { value: new THREE.Color(color) }, uCanvas: { value: getCanvasTex() }, uPiv: pivUniform(), uFac: { value: new THREE.Color(1, 1, 1) }, uEmb: { value: getEmblemTex() }, uEmbIdx: { value: 0 },
+    uSea: { value: 0 }, uLampA: { value: new THREE.Vector4() }, uLampB: { value: new THREE.Vector4() },
   };
   m.userData.u = u;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u, { uSailDmg2: u.uSailDmg, uTime: GLOBAL.uTime, uSunView: GLOBAL.uSunView, uSunCol: GLOBAL.uSunCol, uNight: GLOBAL.uNight });
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\n' + SAIL_VERT_PARS)
+      .replace('#include <common>', '#include <common>\n' + SAIL_VERT_PARS + LAMP_VERT)
       .replace('#include <beginnormal_vertex>', `
 float _fu = aSail.x, _fv = aSail.y, _k = aSail.w; float _e = 0.02;
 float _d0 = sailDisp(_fu, _fv, _k);
@@ -327,9 +377,11 @@ objectNormal = pivRot(objectNormal, aPiv, true);
 #ifdef USE_TANGENT
 vec3 objectTangent = vec3( tangent.xyz );
 #endif`)
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SAIL_VERT_MAIN);
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SAIL_VERT_MAIN + LAMP_VERT_MAIN);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
+${LAMP_FRAG}
+uniform float uSea;
 uniform sampler2D uCanvas; uniform float uSailDmg2; uniform vec3 uColor; uniform vec3 uSunView; uniform vec3 uSunCol; uniform float uNight;
 varying vec2 vSailUv; varying float vFurl; varying float vBill; varying vec2 vFV; uniform vec3 uFac; uniform sampler2D uEmb; uniform float uEmbIdx; varying vec2 vSU;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -356,6 +408,7 @@ diffuseColor.rgb *= 1.0 - 0.38 * uSailDmg2 * smoothstep(0.62, 0.3, hole) * step(
 // canvas construction that reads at gameplay range (texture seams vanish in the mips): vertical cloth seams,
 // reef bands with reef points on square sails, tabling along the edges, the yard's shadow over the head, and a
 // belly gradient (edges in the lee of the bolt-rope darker, the full belly brighter) so the cambered shape reads
+float sailLay = 0.0;   // doubled canvas (seams, reef bands, tabling): blocks the sun when the sail is backlit
 {
   float isSq = 1.0 - step(0.5, vFV.y);
   float nCl = 9.0;
@@ -371,7 +424,9 @@ diffuseColor.rgb *= 1.0 - 0.38 * uSailDmg2 * smoothstep(0.62, 0.3, hole) * step(
   diffuseColor.rgb *= 1.0 - (reef * 0.08 + pts * 0.18) * (1.0 - smoothstep(0.3, 0.8, fwv));
   // tabling: doubled canvas along the edges
   float ed = min(min(vSU.x, 1.0 - vSU.x), min(vSU.y, 1.0 - vSU.y));
-  diffuseColor.rgb *= 1.0 - 0.1 * (1.0 - smoothstep(0.015, 0.035, ed));
+  float tab = 1.0 - smoothstep(0.015, 0.035, ed);
+  diffuseColor.rgb *= 1.0 - 0.1 * tab;
+  sailLay = max(max(seamL * seamFade, reef * (1.0 - smoothstep(0.3, 0.8, fwv))), tab);
   // yard shadow across the head of square sails
   diffuseColor.rgb *= 1.0 - 0.22 * isSq * (1.0 - smoothstep(0.0, 0.09, vSU.y));
   // belly gradient
@@ -402,12 +457,19 @@ if (abs(fract(vFV.y) - 0.25) < 0.05) {
   float through = smoothstep(0.0, -0.25, ndl * sign(ndv + 1e-4));
   float fwd = pow(max(0.0, dot(-Vd, uSunView)), 2.0);
   float tr = through * (0.35 + 1.4 * fwd) * (1.0 - vFurl) * (1.0 - uNight);
+  // seams, reef bands and tabling print as darker lines against the sun (two layers of cloth); patches too (ct)
+  tr *= 1.0 - uSea * (0.55 * sailLay + 0.6 * (1.0 - min(1.0, dot(ct.rgb, vec3(0.34)))));
   totalEmissiveRadiance += diffuseColor.rgb * uSunCol * tr * vec3(1.0, 0.9, 0.72) * 1.05;
+  // lantern light on the lower canvas at night
+  if (uSea > 0.5) {
+    float lp = (lampPool(vLampA, uLampA.w, Nn) + 0.8 * lampPool(vLampB, uLampB.w, Nn)) * uNight * (1.0 - vFurl * 0.5);
+    totalEmissiveRadiance += diffuseColor.rgb * ${LAMP_COL} * lp * 2.4;
+  }
   float rim = pow(1.0 - abs(ndv), 3.0) * (1.0 - vFurl);
   totalEmissiveRadiance += diffuseColor.rgb * (vec3(0.16, 0.15, 0.2) + uSunCol * rim * 0.25) * (1.0 - uNight * 0.85);
 }`);
   };
-  m.customProgramCacheKey = () => 'shipSail_v8';
+  m.customProgramCacheKey = () => 'shipSail_v9';
   // shadow caster with the same deformation. gfx-mer: shot holes and the tattered foot cut the shadow as they cut the
   // cloth, and set canvas casts a half-tone shadow (dithered, smoothed by the PCF): sails no longer print hard dark quads
   const dm = new THREE.MeshDepthMaterial({ side: THREE.DoubleSide });
@@ -472,25 +534,30 @@ vec3 flagPos(vec3 hoist, vec4 f, float k) {
 
 export function makeFlagMaterial(tex) {
   const m = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.85, metalness: 0, envMapIntensity: 0.5 });
-  const u = { uYaw: { value: 0 }, uStrike: { value: 0 }, uWind: { value: 1 }, uDrop: { value: 10 } };
+  const u = { uYaw: { value: 0 }, uStrike: { value: 0 }, uWind: { value: 1 }, uDrop: { value: 10 }, uSea: { value: 0 } };
   m.userData.u = u;
   m.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, u, { uTime: GLOBAL.uTime });
+    Object.assign(sh.uniforms, u, { uTime: GLOBAL.uTime, uNight: GLOBAL.uNight });
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\n' + FLAG_VERT_PARS)
+      .replace('#include <common>', '#include <common>\n' + FLAG_VERT_PARS + '\nvarying float vFold;')
       .replace('#include <beginnormal_vertex>', `
 vec3 _p0 = flagPos(position, aFlag, aKind);
 vec3 _pu = flagPos(position, aFlag + vec4(0.02, 0.0, 0.0, 0.0), aKind);
 vec3 _pv = flagPos(position, aFlag + vec4(0.0, 0.02, 0.0, 0.0), aKind);
 vec3 objectNormal = cross(_pu - _p0, _pv - _p0);
 objectNormal = dot(objectNormal, objectNormal) > 1e-12 ? normalize(objectNormal) : vec3(1.0, 0.0, 0.0);`)
-      .replace('#include <begin_vertex>', `vec3 transformed = flagPos(position, aFlag, aKind);`);
-    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-diffuseColor.rgb *= gl_FrontFacing ? 0.95 : 0.8;`)
+      .replace('#include <begin_vertex>', `vec3 transformed = flagPos(position, aFlag, aKind);
+// fold slope across the travelling waves (painted light / shade bands, independent of the sun)
+vFold = clamp((flagWave(aFlag.x + 0.04, aFlag.y, aKind) - flagWave(aFlag.x, aFlag.y, aKind)) / (0.36 * (0.07 + 0.06 * aKind)), -1.5, 1.5);`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uSea; uniform float uNight; varying float vFold;')
+      .replace('#include <map_fragment>', `#include <map_fragment>
+diffuseColor.rgb *= gl_FrontFacing ? 0.95 : 0.8;
+// cloth folds: lit crests, shaded troughs; deeper toward the fly where the waves are biggest
+diffuseColor.rgb *= 1.0 + uSea * clamp(vFold, -1.0, 1.0) * 0.2;`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-totalEmissiveRadiance += diffuseColor.rgb * 0.12;`);
+totalEmissiveRadiance += diffuseColor.rgb * 0.12 * (1.0 - uSea * uNight * 0.85);`);
   };
-  m.customProgramCacheKey = () => 'shipFlag_v3';
+  m.customProgramCacheKey = () => 'shipFlag_v4';
   const dm = new THREE.MeshDepthMaterial({ side: THREE.DoubleSide });
   dm.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u, { uTime: GLOBAL.uTime });

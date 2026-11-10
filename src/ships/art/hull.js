@@ -2,7 +2,8 @@
 //   Lofts the hull skin (painted strakes, wales, paint band, boot-top), inner bulwarks + cap rail, decks,
 //   castle bulkheads, transom stern with windows/gallery/carvings/lanterns, stem/cutwater/head + figurehead,
 //   rudder, gunports (lids, cannons, muzzle anchors), channels, catheads/anchors and deck props.
-// info: { ports:{port:[{pos,dir}],starboard:[..]}, deckHeight, sternLanterns:[Vector3], channels:[{s, y, xOut}], bowTip, headZ, ensignStaff }
+// info: { ports:{port:[{pos,dir}],starboard:[..]}, deckHeight, sternLanterns:[Vector3], lights:[Vector3] (deck lantern),
+//         channels:[{s, y, xOut}], bowTip, headZ, ensignStaff }
 import * as THREE from 'three';
 import { SURF, trs, basisMatrix } from './builder.js';
 import { mulberry32, clamp01, smooth } from './noise.js';
@@ -678,7 +679,18 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     gb.add(G.box, trs(0, y + 1.25, z, 0, 0, 0, 0.9, 0.1, 0.25), { color: oakDark, surf: SURF.wood });
     gb.add(G.cone, trs(0, y + 0.98, z, 0, 0, 0, 0.18, 0.32, 0.18), { color: gold, surf: SURF.gold });
   }
-  // deck lantern by the wheel / mainmast (soft glow at night)
+  // deck lantern hung on the fore side of the mainmast (lit at night: glow point + light pool, info.lights);
+  // sea only (brk 2.3, hidden while uSea = 0: port stages, duel deck, moored hulls)
+  {
+    const m = d.masts[d.masts.length >= 2 ? 1 : 0];
+    const ym = dl(m.s), yl = ym + 2.3, rM = m.r * (0.8 + B * 0.035);
+    const zl = zs(m.s) + (yl - ym) * Math.tan(m.rake) - rM - 0.32;
+    const s = 0.3 + L * 0.003;
+    gb.add(G.box, trs(0, yl + s * 1.2, zl + 0.16, 0, 0, 0, 0.05, 0.05, 0.42), { color: iron, surf: SURF.iron, brk: 2.3 });
+    gb.add(LANTERN, trs(0, yl, zl, 0, 0, 0, s * 0.6, s * 1.5, s * 0.6), { color: glass, surf: SURF.lamp, brk: 2.3 });
+    gb.add(G.cone, trs(0, yl + s * 0.98, zl, 0, 0, 0, s * 0.52, s * 0.45, s * 0.52), { color: iron, surf: SURF.iron, brk: 2.3 });
+    info.lights.push(V3(0, yl, zl));
+  }
   // ---------------- channels (chainwales) for shrouds: one per mast per side
   for (const m of d.masts) {
     const s = m.s, y = H.deckY(s) + H.castleRaise(s) + 0.05 * H.bulH;
