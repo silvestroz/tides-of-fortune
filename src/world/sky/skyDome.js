@@ -167,7 +167,7 @@ void main() {
     float mwd = abs( dot( v, mwN ) );
     float mw = exp( -mwd * mwd * 30.0 ) * ( 0.4 + 0.9 * fbm( v.xy * 1.8 + v.z ) );
     float vis = uStars * smoothstep( 0.0, 0.18, y ) * ( 1.0 - uOvercast );
-    col += ( sc * star * 2.2 + vec3( 0.16, 0.18, 0.28 ) * mw * 0.35 ) * vis;
+    col += ( sc * star * 2.2 + vec3( 0.16, 0.18, 0.28 ) * mw * 0.24 ) * vis;
   }
 
   // --- moon (disc with maria + halo)

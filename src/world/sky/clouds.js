@@ -67,7 +67,8 @@ void main() {
   float n1 = texture2D( uNoise, nuv ).r;
   float n2 = texture2D( uNoise, vUv * 0.55 + vInfo.y * 3.1 ).g;
   float edge = sqrt( r2 ) + ( n1 - 0.5 ) * 0.55 + ( n2 - 0.5 ) * 0.22;
-  float alpha = smoothstep( 1.0, 0.55, edge ) * smoothstep( 1.0, 0.78, sqrt( r2 ) );
+  // firmer silhouette than a plain soft disc so heaped lobes read (cauliflower tops), still no hard outline
+  float alpha = smoothstep( 0.98, 0.62, edge ) * smoothstep( 1.0, 0.79, sqrt( r2 ) );
   if ( alpha < 0.01 ) discard;
   // sphere-ish normal (bumped)
   float z = sqrt( max( 1.0 - r2, 0.0 ) );
