@@ -151,8 +151,8 @@ export class Islands {
     const cam = this.game.camera.position;
     this.material.userData.uniforms.uTime.value = t;
     { const h = this.game.sky?.timeOfDay ?? 12; this.material.userData.uniforms.uNight.value = Math.min(1, Math.max(0, Math.max(6.5 - h, h - 18.6) / 0.8)); }
-    if (force || cam.distanceToSquared(this._camPrev) > 400) {
-      this.terrain.update(cam, force);
+    if (force || this._terrainPending || cam.distanceToSquared(this._camPrev) > 400) {
+      this._terrainPending = this.terrain.update(cam, force);   // true: a chunk build was left for the next frame
       this._camPrev.copy(cam);
     }
     this.vegetation?.update(dt, t, force);

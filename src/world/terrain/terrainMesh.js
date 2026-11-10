@@ -21,6 +21,7 @@ const STEPS = [1, 2, 4, 8];
 const SHADE_FLOOR = [0, 450, 1200, 3000];
 const PX_TOL = { low: 3, medium: 2.2, high: 1.5, ultra: 1 };
 const SKIRT = 10;
+const BUILD_MS = 1.5;                // time a chunk build may take per update() call
 
 export class TerrainMeshes {
   constructor(game, shape, material) {
@@ -97,6 +98,14 @@ export class TerrainMeshes {
   }
 
   _buildChunk(c, lod) {
+    const job = this._buildSteps(c, lod);
+    let r; while (!(r = job.next()).done);
+    return r.value;
+  }
+
+  // The build as a generator: it yields every few rows of vertices, so that update() can spread a chunk over
+  // several frames; its return value is the geometry.
+  *_buildSteps(c, lod) {
     const t = c.t, s = STEPS[lod], H = t.h, nx = t.nx, cell = t.cell;
     const isl = t.isl, shape = this.shape;
     const cols = Math.floor((c.i1 - c.ci) / s) + 1, rows = Math.floor((c.j1 - c.cj) / s) + 1;
@@ -109,7 +118,8 @@ export class TerrainMeshes {
     const W = ix.length, R = jz.length;
     const nVerts = W * R + 2 * (W + R) ;
     const pos = new Float32Array(nVerts * 3), nrm = new Float32Array(nVerts * 3), dat = new Float32Array(nVerts * 4);
-    const hAt = (i, j) => H[Math.min(t.nz - 1, Math.max(0, j)) * nx + Math.min(nx - 1, Math.max(0, i))];
+    const iMax = nx - 1, jMax = t.nz - 1;
+    const hAt = (i, j) => H[(j < 0 ? 0 : j > jMax ? jMax : j) * nx + (i < 0 ? 0 : i > iMax ? iMax : i)];
     const n3 = shape.n3, moistBase = isl.moist, dry = isl.dry || 0;
     // dryness 2 = bare sea stack (terrainMaterial). Decided per vertex by the island that owns the ground there:
     // tiles overlap their neighbours (coplanar duplicates), so a per-tile flag z-fought with the next island's colours
@@ -121,6 +131,12 @@ export class TerrainMeshes {
       return o >= 0 && shape.islands[o]?.bare ? 2 : dry;
     };
     const aoDirs = 8, aoSteps = [1, 2, 4, 7, 12];
+    // the 40 horizon samples of a vertex: cell offsets and run length, worked out once per chunk, not per vertex
+    const aoN = aoSteps.length, aoI = new Int8Array(aoDirs * aoN), aoJ = new Int8Array(aoDirs * aoN), aoRun = new Float64Array(aoDirs * aoN);
+    for (let d = 0; d < aoDirs; d++) {
+      const a = d / aoDirs * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
+      for (let q = 0; q < aoN; q++) { const st = aoSteps[q]; aoI[d * aoN + q] = Math.round(dx * st); aoJ[d * aoN + q] = Math.round(dz * st); aoRun[d * aoN + q] = st * cell; }
+    }
     let v = 0;
     const writeVert = (i, j, yOff) => {
       const x = t.x0 + i * cell, z = t.z0 + j * cell, h = hAt(i, j);
@@ -130,12 +146,10 @@ export class TerrainMeshes {
       nrm[v * 3] = -gx * il; nrm[v * 3 + 1] = il; nrm[v * 3 + 2] = -gz * il;
       // horizon AO
       let occ = 0;
-      for (let d = 0; d < aoDirs; d++) {
-        const a = d / aoDirs * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
+      for (let d = 0, q = 0; d < aoDirs; d++) {
         let maxS = 0;
-        for (const st of aoSteps) {
-          const hh = hAt(i + Math.round(dx * st), j + Math.round(dz * st));
-          const sl = (hh - h) / (st * cell);
+        for (const end = q + aoN; q < end; q++) {
+          const sl = (hAt(i + aoI[q], j + aoJ[q]) - h) / aoRun[q];
           if (sl > maxS) maxS = sl;
         }
         occ += maxS / Math.sqrt(1 + maxS * maxS);
@@ -148,7 +162,8 @@ export class TerrainMeshes {
       dat[v * 4] = ao; dat[v * 4 + 1] = moist; dat[v * 4 + 2] = Math.max(-1, Math.min(1, lap * 0.8)); dat[v * 4 + 3] = dryAt(i, j, x, z);
       v++;
     };
-    for (let b = 0; b < R; b++) for (let a = 0; a < W; a++) writeVert(ix[a], jz[b], 0);
+    for (let b = 0; b < R; b++) { for (let a = 0; a < W; a++) writeVert(ix[a], jz[b], 0); if ((b & 3) === 3) yield; }
+    yield;
     const idx = [];
     for (let b = 0; b < R - 1; b++) for (let a = 0; a < W - 1; a++) {
       const k = b * W + a;
@@ -169,6 +184,7 @@ export class TerrainMeshes {
     for (let a = 0; a < W; a++) { north.push([a, 0]); south.push([a, R - 1]); }
     for (let b = 0; b < R; b++) { west.push([0, b]); east.push([W - 1, b]); }
     edge(north, true); edge(south, false); edge(west, false); edge(east, true);
+    yield;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos.subarray(0, v * 3), 3));
     g.setAttribute('normal', new THREE.BufferAttribute(nrm.subarray(0, v * 3), 3));
@@ -179,8 +195,17 @@ export class TerrainMeshes {
     return g;
   }
 
+  // Returns true when a chunk still waits for its geometry: the caller then calls again on the next frame. One
+  // build at a time, BUILD_MS per call (a full-detail chunk is 16 000 vertices with their horizon occlusion, several
+  // ms; up to three were built in the same frame, a missed frame every time the camera crossed a LOD ring).
   update(cam, force = false) {
-    let built = 0;
+    let pending = false;
+    // a build in hand for a chunk that no longer wants it is finished first (kept in the chunk's cache)
+    if (this._job && !force) {
+      const j = this._job, t0 = performance.now();
+      let r; do r = j.steps.next(); while (!r.done && performance.now() - t0 < BUILD_MS);
+      if (r.done) { this._job = null; j.c.lods[j.lod] ||= r.value; } else pending = true;
+    }
     const camera = this.game.camera;
     const K = innerHeight / (2 * Math.tan((camera?.fov ?? 50) * Math.PI / 360));   // pixels per metre at 1 m
     const tol = PX_TOL[QUALITY.tier] ?? PX_TOL.high;
@@ -193,15 +218,21 @@ export class TerrainMeshes {
         const px = c.err[L] * K / Math.max(d, 1);
         if (px < (L > c.cur ? tol * 0.75 : tol)) { want = L; break; }
       }
+      if (want >= 2 && c.cur >= 2 && c.lods[0]) { c.lods[0].dispose(); c.lods[0] = null; }   // a build finished after the chunk had moved away
       if (want === c.cur) continue;
       if (!c.lods[want]) {
-        if (!force && built >= 3) continue;      // spread builds across frames
-        c.lods[want] = this._buildChunk(c, want); built++;
+        if (force) c.lods[want] = this._buildChunk(c, want);
+        else {
+          // one build at a time (advanced above, BUILD_MS per call): the chunk keeps its current geometry meanwhile
+          this._job ||= { c, lod: want, steps: this._buildSteps(c, want) };
+          pending = true; continue;
+        }
       }
       c.mesh.geometry = c.lods[want];
       c.cur = want;
       // free full-res geometry when far
       if (want >= 2 && c.lods[0]) { c.lods[0].dispose(); c.lods[0] = null; }
     }
+    return pending;
   }
 }
