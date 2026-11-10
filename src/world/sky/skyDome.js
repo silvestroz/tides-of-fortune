@@ -139,10 +139,14 @@ void main() {
     // distant squall curtains: dark, slanted rain shafts hanging from the deck down to the sea horizon
     float az = atan( v.z, v.x ) * 0.15915494;   // 0..1 around the horizon (integer noise scales: no seam)
     vec2 drift = uWindOff * 0.000004;
-    float shaft = smoothstep( 0.52, 0.78, texture2D( uNoise, vec2( az * 10.0, 0.13 ) + drift ).r * 0.7 + texture2D( uNoise, vec2( az * 23.0, 0.61 ) + drift ).g * 0.3 );
-    float streak = 0.7 + 0.3 * texture2D( uNoise, vec2( az * 300.0 + yh * 18.0, yh * 3.0 ) ).g;
-    float hang = ( 1.0 - smoothstep( 0.015, 0.17, yh + ( streak - 0.85 ) * 0.04 ) ) * smoothstep( -0.012, 0.004, y );
-    col = mix( col, uCloudShade * 0.75 + uHorizon * 0.3, shaft * streak * hang * 0.6 * smoothstep( 0.4, 0.9, uOvercast ) );
+    // wind-slanted (azimuth sheared with height), soft-edged, each curtain fraying out at its own height under the deck
+    float saz = az + yh * 0.06;
+    float sn = texture2D( uNoise, vec2( saz * 10.0, 0.13 ) + drift ).r * 0.7 + texture2D( uNoise, vec2( saz * 23.0, 0.61 ) + drift ).g * 0.3;
+    float shaft = smoothstep( 0.5, 0.82, sn );
+    float streak = 0.75 + 0.25 * texture2D( uNoise, vec2( saz * 300.0, yh * 4.0 ) ).g;
+    float top = 0.05 + 0.12 * texture2D( uNoise, vec2( az * 17.0, 0.83 ) ).b;
+    float hang = ( 1.0 - smoothstep( top * 0.35, top, yh ) ) * smoothstep( -0.012, 0.004, y );
+    col = mix( col, uCloudShade * 0.8 + uHorizon * 0.32, shaft * shaft * streak * hang * 0.5 * smoothstep( 0.4, 0.9, uOvercast ) );
   }
 
   // --- stars & milky way

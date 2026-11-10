@@ -1,6 +1,6 @@
 // Painterly cumulus: each cloud is a cluster of camera-facing "puffs" (one InstancedBufferGeometry, ONE draw call).
 // Every puff is shaded as a noisy sphere: wrap-lit tops, cool shaded bellies (by height within the cloud),
-// silver-lined silhouettes and darker cores when back-lit, sun-tinted at golden hour, aerial haze toward the horizon colour.
+// silver lining and darker cores when back-lit, sun-tinted at golden hour, aerial haze toward the horizon colour.
 // The field tiles infinitely around the camera and drifts with game.wind. Puffs are depth-sorted on the CPU.
 // API: new CloudLayer(skyUniforms) ; .mesh ; .setCoverage(0..1) ; .update(dt, camera, wind)
 import * as THREE from 'three';
@@ -67,8 +67,7 @@ void main() {
   float n1 = texture2D( uNoise, nuv ).r;
   float n2 = texture2D( uNoise, vUv * 0.55 + vInfo.y * 3.1 ).g;
   float edge = sqrt( r2 ) + ( n1 - 0.5 ) * 0.55 + ( n2 - 0.5 ) * 0.22;
-  // painted silhouette: a firm (not hard) edge so heaped lobes read against the sky instead of melting into it
-  float alpha = smoothstep( 0.96, 0.66, edge ) * smoothstep( 1.0, 0.8, sqrt( r2 ) );
+  float alpha = smoothstep( 1.0, 0.55, edge ) * smoothstep( 1.0, 0.78, sqrt( r2 ) );
   if ( alpha < 0.01 ) discard;
   // sphere-ish normal (bumped)
   float z = sqrt( max( 1.0 - r2, 0.0 ) );
@@ -90,12 +89,10 @@ void main() {
   vec3 V = normalize( vWorld - uCam );
   float mu = max( dot( V, L ), 0.0 );
   float thin = 1.0 - z;   // smooth toward the puff rim (no hard outline)
-  // back-lit: thick cores go dark against the sun, the thin noisy silhouette lights up (silver lining)
+  // back-lit: thick cores go darker against the sun, the thin upper rims light up (silver lining)
   float back = pow( mu, 6.0 ) * uSunUp;
-  float rimE = smoothstep( 0.42, 0.9, edge );
-  col *= 1.0 - back * z * 0.3;
-  col += ( uGlow * 0.7 + uSunColor * 0.45 ) * back * rimE * ( 0.6 + 0.8 * h ) * 1.3;
-  col += ( uGlow * 0.6 + uSunColor * 0.3 ) * pow( mu, 10.0 ) * 0.2 * uSunUp;
+  col *= 1.0 - back * z * 0.22;
+  col += ( uGlow * 0.6 + uSunColor * 0.3 ) * pow( mu, 10.0 ) * ( 0.25 + thin * 1.1 * h ) * uSunUp;
   col += uBand * pow( mu, 3.0 ) * 0.25 * uSunUp;
   // gfx-ultra: sun at or just below the horizon lights the cloud bellies from beneath (hot orange-pink undersides,
   // tops already turning to the cool violet shade) — the painted sunset look
