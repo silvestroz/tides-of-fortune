@@ -40,6 +40,7 @@ export function changeReputation(game, faction, delta, reason = '') {
 
 export function isHostile(game, a, b) {
   if (!a || !b || a === b) return false;
+  if ((a._prologue && !b.isPlayer) || (b._prologue && !a.isPlayer)) return false;   // the prologue's target is the player's alone (src/game/prologue.js)
   if (a.grudges?.has(b) || b.grudges?.has(a)) return true;
   if (b.isPlayer) return playerHostility(game, a);
   if (a.isPlayer) return playerHostility(game, b);
