@@ -548,6 +548,61 @@
 @keyframes tofWait { 50% { opacity: 0.6; } }
 
 /* ======================================================================================================
+   Readability, second pass (2026-11-10). Floors raised by 1–2 px on short screens (1366×768: #ui = 13 px,
+   helm = 14 px); 1080p mostly unchanged. Targets: text to read ≥ 14 px, notes / units / keys ≥ 12 px.
+   Captions no longer pale italics; text over the 3D always on a dark pill or a double shadow.
+   ====================================================================================================== */
+/* ledger strip */
+.ledger-strip .shipclass, .ledger-strip .date { font-size: max(1em, 14px); }
+/* resource band: captions in upright ink, 12.5 px at least */
+.res-band .res small { font-size: max(0.76em, 12.5px); font-style: normal; color: #4a3018; letter-spacing: 0.03em; margin-top: 0.08em; }
+/* minimap legend (sea tier · range): on a dark pill, 14 px */
+.chart .legend { font-size: max(1em, 14px); bottom: -1.55em; padding: 0.05em 0.7em 0.1em; border-radius: 1em; background: rgba(20,12,6,0.62);
+  box-shadow: 0 0 0 1px rgba(201,162,74,0.35); }
+/* target card: type, stance, threat, distance line at 14 px; the folded card wide enough for “Spanish frigate · 28 guns” */
+.target { top: 15em; }
+.target .ttype, .target .stance, .target .hdr .threat, .target .meta { font-size: max(1em, 14px); }
+.target .tname { font-size: max(1.08em, 15px); }
+.target.compact { width: 15em; }
+.target.compact .ttype { font-size: max(0.92em, 13px); }
+.target .gauge .lbl, .target .gauge .val { font-size: max(1em, 13.5px); }
+/* helm bar: labels and values 13 px, captions and keys 12 px */
+.helm .cell.vitals { width: 13.2em; }
+.helm .cell.sail { width: 9.4em; }
+.helm .cell.guns { width: 11em; }
+.helm .cell.acts { width: 7em; }
+.helm .gauge { grid-template-columns: 1em 3.9em 1fr 2.8em; }
+.helm .gauge .lbl { font-size: 0.9em; }
+.helm .gauge .val { font-size: 0.95em; }
+.helm .pos-banner { font-size: 0.88em; }
+.helm .ammo-name { font-size: 0.95em; }
+.helm .row.guns { font-size: 0.92em; }
+.helm .rl .st { font-size: 1em; }
+.helm .glyph .k { font-size: 0.88em; }
+.helm .act { font-size: 0.92em; }
+.kc.sm { font-size: max(0.8em, 12px); }
+.helm .tacline { font-size: max(0.95em, 13px); }
+.helm .cam-pill { font-size: max(0.92em, 13px); }
+/* key help (bottom right) */
+#hud .hint { font-size: max(0.9em, 12.5px); }
+#hud .hint .kc { font-size: max(0.92em, 12px); }
+/* mission reminder */
+.mission-brief .mb-h { font-size: max(0.85em, 12px); }
+.mission-brief .mb-h .kc, .mission-brief .mb-o .kc { font-size: max(0.9em, 12px); }
+.mission-brief .mb-w { font-size: max(0.9em, 12.5px); }
+.mission-brief .mb-o { font-size: max(1em, 14px); }
+.mission-brief .mb-more { font-size: max(0.88em, 12.5px); }
+/* Options: every segmented row fits the sheet (“Power saver” was cut at 1639×739, dpr 1.25), notes at 12 px, and the
+   in-game sheet (with “Game mode”) fits 739 px of height */
+.options-sheet { width: 38em; max-width: 96vw; padding-top: 1.5em; padding-bottom: 1.3em; }
+.options-sheet .lede { margin-bottom: 0.45em; }
+.options-sheet .rule { margin: 0.05em auto 0.25em; }
+.options-sheet .srow { grid-template-columns: 8.2em minmax(0, 1fr) auto; margin: 0.42em 0; }
+.options-sheet .seg button { padding: 0.22em 0.55em; }
+.options-sheet .lede.opt-note { font-family: var(--txt); font-size: max(0.85em, 12px); line-height: 1.32; margin: 0.1em 0 0.35em; }
+.options-sheet .actions { margin-top: 0.7em; }
+
+/* ======================================================================================================
    Readability — minimum sizes in px for small screens (1366×768: #ui = 13 px), 1080p unchanged (the max()
    only kick in below). Targets: text to read ≥ 13 px, notes ≥ 11 px.
    ====================================================================================================== */
