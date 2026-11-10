@@ -24,6 +24,7 @@ import { itemName, itemEffect } from '../../game/fortune.js';
 import { health, scoreBreakdown } from '../../game/retirement.js';
 import { relation } from '../../combat/factions.js';
 import { ensureFleet, FLEET, crewMaxOf, holdCapOf, holdUsedOf, salePrice, repairCost } from '../../game/fleet.js';   // squadron
+import { provisionDays, fmtDays } from '../resourceBar.js';   // provisions shown in days at sea, as in the resource band
 
 const LOCS = [
   ['market', 'Market', 'Buy and sell'],
@@ -164,7 +165,7 @@ export class PortScreen {
     return `<div class="purse">
       <div class="pg">${coin}<b>${fmt(st.gold)}</b></div>
       <div class="pi">${GLYPH.hold}<b>${used}/${cap}</b><span>hold</span></div>
-      <div class="pi">${GLYPH.food}<b>${st.food}</b><span>provisions</span></div>
+      <div class="pi" title="${fmt(st.food)} ${st.food === 1 ? 'barrel' : 'barrels'} for ${p?.crew ?? st.crew} men">${GLYPH.food}<b>${fmtDays(provisionDays(g))}</b><span>provisions</span></div>
       <div class="pi">${GLYPH.crew}<b>${p?.crew ?? st.crew}</b><span>men</span></div>
       <div class="pi ${mor < 35 ? 'warn' : ''}">${GLYPH.morale}<b>${morLbl}</b><span>morale</span></div>
       <div class="pdate">${formatDate(st.date)} · Captain ${esc(st.name)}, ${st.age} years old</div>
@@ -279,7 +280,7 @@ export class PortScreen {
         <span class="tr ${tr[0]}" title="Price ${tr[2]}: ${pct > 0 ? '+' : ''}${pct}% of the going rate"><b>${tr[1]}</b><small>${pct > 0 ? '+' : pct < 0 ? '−' : ''}${Math.abs(pct)}%</small></span>
         <button class="pb buy" data-buy="${id}" data-fk="b${id}" tabindex="-1" ${canBuy ? '' : 'disabled'} title="Buy one lot (Shift or right click: ten)"><span class="num">${fmt(q.buy)}</span><span class="chev">+</span></button>
         <button class="pb sell" data-sell="${id}" data-fk="s${id}" tabindex="-1" ${have ? '' : 'disabled'} title="Sell one lot (Shift or right click: all)"><span class="chev">−</span><span class="num">${fmt(q.sell)}</span></button>
-        <span class="hv">${have ? `<button class="hvall" data-sell="${id}" data-all="1" tabindex="-1" title="Sell all (${have})"><b>${have}</b><small class="hvt">sell all</small>${paid ? `<small class="hvp">paid ${fmt(Math.round(paid))}</small>` : ''}</button>` : '<span class="nil">—</span>'}</span>
+        <span class="hv">${have ? `<button class="hvall" data-sell="${id}" data-all="1" tabindex="-1" title="Sell all (${have})"><b>${have}</b><small class="hvt">sell all</small>${id === 'food' ? `<small class="hvp">${fmtDays(provisionDays(g, have))}</small>` : paid ? `<small class="hvp">paid ${fmt(Math.round(paid))}</small>` : ''}</button>` : '<span class="nil">—</span>'}</span>
         <span class="mg">${gain !== null ? `<b class="${gain >= 0 ? 'up' : 'dn'}">${gain >= 0 ? '+' : '−'}${fmt(Math.abs(Math.round(gain)))}</b><small>${fmt(Math.abs(Math.round(gain * have)))}</small>` : '<span class="nil">—</span>'}</span>
       </div>`;
     }).join('');
