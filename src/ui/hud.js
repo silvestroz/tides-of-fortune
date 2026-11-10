@@ -252,7 +252,11 @@ export class HUD {
     if (!this.visible) return;
     const g = this.game, p = g.player, st = g.state || {};
     this._t += dt; this._slowT -= dt; this._mmT -= dt;
-    const real = 1 / 60; // DOM refresh uses at-least-real cadence even when frozen
+    // DOM refresh follows real time, even when the simulation is frozen: the time since the last call, so that a
+    // 144 Hz screen does not redraw the chart or expire the messages 2.4 times as fast as a 60 Hz one (it was one
+    // 60th of a second per call). Under the automated tools, which step by hand, still one 60th per call.
+    const nowR = performance.now(), real = navigator.webdriver ? 1 / 60 : Math.min(0.1, (nowR - (this._realT ?? nowR - 1000 / 60)) / 1000);
+    this._realT = nowR;
     this._mmT -= real; this._slowT -= real;
     this.res?.update(real); this.shoal?.update(real); this.toasts?.update(real); this.missions?.update(real);
 

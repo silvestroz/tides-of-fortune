@@ -530,7 +530,7 @@ export class DuelSystem {
   }
 
   // ------------------------------------------------------------------ input
-  _readInput() {
+  _readInput(real = 1 / 60) {
     const inp = this.game.input, sim = this.sim, p = sim.player;
     if (!inp || this.ended || this.introT < 1.0 || this.opts.autoplay || this.opts.noInput) return;
     const up = inp.down('KeyW') || inp.down('ArrowUp'), dn = inp.down('KeyS') || inp.down('ArrowDown');
@@ -547,7 +547,7 @@ export class DuelSystem {
       if (!p.busy) { const { t, ...it } = b; void t; p.intent = it; this._buffer = null; }
     } else if (inp.down('KeyK')) p.intent = { parry: line };
     else if (!p.busy) p.intent = null;
-    if (inp.down('KeyY')) { this._yieldT += 1 / 60; if (this._yieldT > 1) sim.yieldDuel('player'); } else this._yieldT = 0;
+    if (inp.down('KeyY')) { this._yieldT += real; if (this._yieldT > 1) sim.yieldDuel('player'); } else this._yieldT = 0;
   }
 
   // ------------------------------------------------------------------ update
@@ -560,7 +560,7 @@ export class DuelSystem {
     this.introT += real;
     this._tutUpdate(real);
     if (this._buffer) { this._buffer.t -= real; if (this._buffer.t <= 0) this._buffer = null; }
-    this._readInput();
+    this._readInput(real);   // real seconds: holding Y yields after one second at any frame rate
     const sim = this.sim;
     if (this._freezeSim) { this._sync(0, 0); return; }   // showcase: hold the composed instant
     // hitstop: a few frames of frozen action on blade contact / a touch (real time), then resume
