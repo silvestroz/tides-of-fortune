@@ -46,7 +46,8 @@ function puffTexture() {
     const r = S * (0.12 + rnd() * 0.16), a = rnd() * Math.PI * 2, d = rnd() * S * 0.24;
     const cx = S / 2 + Math.cos(a) * d, cy = S / 2 + Math.sin(a) * d * 0.7;
     const g = x.createRadialGradient(cx, cy, 0, cx, cy, r);
-    g.addColorStop(0, 'rgba(255,255,255,0.55)'); g.addColorStop(0.6, 'rgba(255,255,255,0.22)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    // firm-edged lobes (heaped cumulus) rather than airbrushed blobs
+    g.addColorStop(0, 'rgba(255,255,255,0.7)'); g.addColorStop(0.62, 'rgba(255,255,255,0.5)'); g.addColorStop(0.85, 'rgba(255,255,255,0.18)'); g.addColorStop(1, 'rgba(255,255,255,0)');
     x.fillStyle = g; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fill();
   }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
