@@ -3,34 +3,47 @@
 // Everything is procedural: geometry carries vertex colours + a material id per vertex (aMat, ids in KM), merged
 // per material with GeoBuilder (src/world/towns/builder.js) or drawn as InstancedMesh (vegetation, rocks, effects).
 //
-// Materials (created once, shared by every scene; kitWarmup(renderer) precompiles their programs):
-//   kitMaterials() -> { paint, water, puff, flash, flag }
+// Materials (a fresh set per scene: created when the scene is built, released with K.dispose() when it ends;
+// nothing of the kit exists at sea or at the title screen):
+//   kitMaterials() -> { paint, water, puff, flash, flag, dispose() }
 //     paint  MeshStandardMaterial for every opaque prop and the ground; reads aMat (KM ids) for its brushwork
-//            (plaster, barrel tiles, planks, ashlar, cobbles, foliage, bark, rock strata) and, on the ground (KM.GROUND),
+//            (worn plaster with brick showing through and grime at the foot, brick, barrel tiles, planks, ashlar,
+//            cobbles, foliage, bark, rock strata) and, on the ground (KM.GROUND),
 //            aGround = vec4(sand, paved, field, rock) blend weights over grass. Works on Mesh and InstancedMesh
 //            (instance colour multiplies the vertex colour; KM.FOLIAGE sways in the wind when instanced).
 //     water  painted sea: vertex colour = depth tint, aFoam (0–1) = shore foam; animated ripples
 //     puff / flash  soft camera-facing billboards for PuffPool (normal / additive blending)
 //     flag   nation flags from the shared flag atlas (clothGeo + flagUV)
 //   kitTick(dt)   advances the shared time uniform (sway, ripples)
-//   KM            material ids (builder.js ids + FOLIAGE BARK GROUND ROCK)
+//   KM            material ids (builder.js ids + FOLIAGE BARK GROUND ROCK CLAY)
 //   PALETTE       { walls, roofs, trims, stone, sand } colonial colours (ochre, salmon, white, pale blue...)
 // Builders (append triangles to a GeoBuilder B; y = ground height at the footprint, rot = local +z facing direction):
-//   house(B, { x, z, y, w, d, rot, floors, wall, roof, trim, hip, rand })   footprint w × d, 1–3 floors, tiled roof with
-//            ridge and overhang, door, shuttered windows, sometimes a balcony or a chimney
+//   house(B, { x, z, y, w, d, rot, floors, wall, roof, trim, hip, rand, dress })   footprint w × d, 1–3 floors, tiled
+//            roof with ridge and overhang, door in its stone frame with a step, shuttered windows with flower boxes,
+//            sometimes a balcony, a chimney, a hanging sign, an awning, pots and goods along the walls (dress: false =
+//            bare); its walls lean and its ridge sags a little (lean)
 //   church(B, { x, z, y, rot, wall, roof, spire }) -> { top: [x, y, z] }   nave + bell tower (dome or spire)
 //   fort(B, { x, z, y, w, d, rot }) -> { flag: [x, y, z] }   low stone bastioned fort with guns and a flagpole
 //   lowWall(B, x0, z0, x1, z1, ground, { h, color })          dry-stone wall following the ground
+// Facade and street dressing (shared by both towns; face(x, z, nx, nz) = a wall plane through (x, z) facing (nx, nz),
+// u along the wall, o out of it):
+//   doorFrame(B, F, { u, y, w, h, step })   stone jambs, lintel, a worn step     balcony(B, F, { u, y, w, rand, trim })
+//   hangingSign(B, F, { u, y, color })   awning(B, F, { u, y, w, color })   flowerBox(B, F, { u, y, w, rand })
+//   pot(B, x, y, z, s, rand)   laundry(B, a [x, y, z], b, rand)   lean(parts, y0, h, rand) (warps a building's
+//   vertices: walls lean, the ridge sags; nothing moves at the foot)
+//   cart(B, { x, z, y, rot, load, rand })   crates(B, { x, z, y, rot, rand })   sacks(B, { x, z, y, rot, rand })
+//   barrel(B, x, y, z, s)   well(B, { x, z, y, rot })   fountain(B, { x, z, y, r })
 //   longboat(B, { x, z, y, rot, color })                       a ship's boat pulled up on the beach
-//   anchoredShips(B, ships [{ type, x, z, rot }], faction) -> Mesh   ship hulls (sea-world models, hull material) +
-//            their furled sails merged into B
-// Instanced props (unit geometry, base at y = 0, cached): vegGeos() -> { broadleaf, palm, bush, rock }
+//   anchoredShips(B, ships [{ type, x, z, rot }], faction) -> Mesh   ship hulls (sea-world models, a hull material of
+//            its own: dispose mesh.geometry, mesh.material and mesh.customDepthMaterial with the scene) + their furled
+//            sails merged into B
+// Instanced props (unit geometry, base at y = 0, one set per scene): vegGeos() -> { broadleaf, palm, bush, rock, dispose() }
 //   scatter(geo, material, items [{ x, y, z, s, r, tint }], { shadow }) -> InstancedMesh
 // Ground: paintGround(geo, fn)   geo = a horizontal grid already displaced in y; fn(x, z, y) -> { color, sand, paved,
 //   field, rock } (weights 0–1) writes the colour and aGround attributes and sets aMat = KM.GROUND
 // Cloth: clothGeo(w, h, segW, segH) flag plane hanging from x = 0, flagUV(geo, faction) maps it onto that nation's
 //   flag, waveCloth(geo, t, amp) waves it (CPU)
-// Effects: new PuffPool(scene, max, { additive }) .spawn({ x, y, z, vx, vy, vz, size, grow, life, color, alpha, rise, fadeIn })
+// Effects: new PuffPool(scene, K, max, { additive }) .spawn({ x, y, z, vx, vy, vz, size, grow, life, color, alpha, rise, fadeIn })
 //   .update(dt) — smoke, dust and muzzle flashes, one draw call per pool
 import * as THREE from 'three';
 import { GeoBuilder, M } from '../../world/towns/builder.js';
@@ -41,7 +54,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 import { mulberry32 } from '../../core/rng.js';
 
 export { GeoBuilder };
-export const KM = { ...M, FOLIAGE: 14, BARK: 15, GROUND: 16, ROCK: 17 };
+export const KM = { ...M, FOLIAGE: 14, BARK: 15, GROUND: 16, ROCK: 17, CLAY: 18 };   // CLAY: plain painted colour (pots, cloth goods)
 export const PALETTE = {
   walls: ['#e8c27a', '#e3a46e', '#f1e7d2', '#d98f74', '#b9cfd6', '#efd9a8', '#f4efe2', '#d9b07a', '#c9dccf', '#e6b598'],
   roofs: ['#b4532f', '#a2482a', '#c2653e', '#93401f', '#cc7446', '#a85d37'],
@@ -72,7 +85,26 @@ const PAINT_FRAG = /* glsl */`
     c = g * wg + s * w.x + pv * w.y + f * w.z + r * w.w;
   } else {
     vec4 d = triT(P, N, 0.11), dB = triT(P, N, 0.027);
-    if (mid == 0.0) { c *= 0.84 + 0.26 * dB.r + 0.1 * d.a; c = mix(c, c * vec3(0.82, 0.76, 0.68), smoothstep(0.62, 0.9, triT(P, N, 0.009).r)); }   // plaster
+    if (mid == 0.0 || mid == 1.0) {                                                                                  // plaster, brick
+      float lum = dot(c, vec3(0.3, 0.59, 0.11)), hgt = P.y - vKGround;
+      vec2 bq = vec2(u * 4.2, P.y * 8.4); bq.x += floor(bq.y) * 0.5;                                                  // bricks in running bond
+      vec2 bf = fract(bq); float br = fract(sin(dot(floor(bq), vec2(12.9, 78.2))) * 437.5);
+      float mort = smoothstep(0.0, 0.1, bf.y) * smoothstep(1.0, 0.9, bf.y) * smoothstep(0.0, 0.05, bf.x) * smoothstep(1.0, 0.95, bf.x);
+      vec3 brick = mix(vec3(0.62, 0.56, 0.48), vec3(0.66, 0.33, 0.22) * (0.78 + 0.36 * br), mort) * (0.8 + 0.3 * d.r) * (0.55 + 0.6 * lum);
+      if (mid == 1.0) c *= mix(0.6, 0.78 + 0.36 * br, mort) * (0.82 + 0.3 * d.r);
+      else {
+        c *= 0.84 + 0.26 * dB.r + 0.1 * d.a; c = mix(c, c * vec3(0.82, 0.76, 0.68), smoothstep(0.62, 0.9, triT(P, N, 0.009).r));
+        if (abs(N.y) < 0.5) {
+          vec2 wp = vec2(u, P.y);
+          float wn = texture2D(uDetail, wp * 0.06 + 0.37).r * 0.7 + texture2D(uDetail, wp * 0.21 + 0.11).b * 0.3;
+          float hole = smoothstep(0.585, 0.6, wn), rim = smoothstep(0.55, 0.585, wn) * (1.0 - hole);
+          c = mix(c, c * vec3(0.7, 0.66, 0.6), rim * 0.7);                                                             // crumbled edge
+          c = mix(c, brick, hole);                                                                                     // fallen plaster: the brick shows
+          float streak = texture2D(uDetail, vec2(u * 0.4, P.y * 0.01)).g;
+          c *= (0.9 + 0.14 * streak) * mix(0.66, 1.0, smoothstep(0.0, 1.5, hgt));                                      // rain streaks, grime at the foot
+        }
+      }
+    }
     else if (mid == 2.0 || mid == 5.0) { vec2 t2 = vec2(u * 2.6, P.y * 3.0); t2.x += floor(t2.y) * 0.5;
       float cell = fract(sin(dot(floor(t2), vec2(12.9, 78.2))) * 437.5);
       c *= (0.62 + 0.42 * sin(fract(t2.x) * 3.14159)) * (0.74 + 0.26 * smoothstep(0.0, 0.3, fract(t2.y))) * (0.84 + 0.32 * cell);
@@ -185,20 +217,11 @@ function puffMaterial(additive) {
   });
 }
 
-let MATS = null;
 export function kitMaterials() {
-  return MATS ||= { paint: paintMaterial(), water: waterMaterial(), puff: puffMaterial(false), flash: puffMaterial(true),
-    flag: new THREE.MeshStandardMaterial({ map: getFlagAtlas(), side: THREE.DoubleSide, roughness: 0.9 }) };
-}
-
-// compiles every program of the kit (plain and instanced paint, water, flags, puffs) on a miniature scene
-export function kitWarmup(renderer, lights = true) {
-  const K = kitMaterials(), s = new THREE.Scene(), g = new THREE.BoxGeometry(1, 1, 1), cam = new THREE.PerspectiveCamera(40, 1, 1, 100);
-  if (lights) s.add(new THREE.HemisphereLight(0xffffff, 0x445533, 1), new THREE.DirectionalLight(0xffffff, 1));
-  for (const m of [K.paint, K.water, K.flag]) s.add(new THREE.Mesh(g, m));
-  for (const m of [K.paint, K.puff, K.flash]) { const im = new THREE.InstancedMesh(g, m, 1); im.setColorAt(0, new THREE.Color(1, 1, 1)); s.add(im); }
-  try { renderer.compile(s, cam); } catch (e) { console.warn('land kit warmup', e); }
-  g.dispose();
+  const K = { paint: paintMaterial(), water: waterMaterial(), puff: puffMaterial(false), flash: puffMaterial(true),
+    flag: new THREE.MeshStandardMaterial({ map: getFlagAtlas(), side: THREE.DoubleSide, roughness: 0.9 }) };   // the atlas is the sea world's
+  K.dispose = () => { for (const k of ['paint', 'water', 'puff', 'flash', 'flag']) K[k].dispose(); };
+  return K;
 }
 
 // ------------------------------------------------------------------------------------------------ helpers
@@ -216,41 +239,58 @@ function rod(B, a, b, r0, r1, color, mat, seg = 7) {
 }
 
 // ------------------------------------------------------------------------------------------------ buildings
-export function house(B, { x, z, y, w = 8, d = 7, rot = 0, floors = 1, wall, roof, trim, hip = false, rand = Math.random }) {
+export function house(B, { x, z, y, w = 8, d = 7, rot = 0, floors = 1, wall, roof, trim, hip = false, rand = Math.random, dress = true }) {
   wall ||= pick(rand, PALETTE.walls); roof ||= pick(rand, PALETTE.roofs); trim ||= pick(rand, PALETTE.trims);
-  const H = floors * 3.3 + 0.7, L = frame(x, z, rot);
+  const H = floors * 3.3 + 0.7, L = frame(x, z, rot), from = B.pos.length;
   B.ground = y; B.aoH = 3.2;
   B.block(x, y - 3, z, w + 0.5, 3.4, d + 0.5, '#8d8068', KM.STONE, rot);                         // plinth (absorbs the slope)
   B.block(x, y, z, w, H, d, wall, KM.PLASTER, rot);
   B.block(x, y, z, w + 0.08, 0.9, d + 0.08, shade(wall, 0.72), KM.PLASTER, rot);                // splash band
   B.block(x, y + H - 0.4, z, w + 0.1, 0.4, d + 0.1, shade(wall, 0.6), KM.PLASTER, rot);         // eave shadow
-  const rh = d * (hip ? 0.36 : 0.44);
+  if (floors >= 2) B.block(x, y + 3.25, z, w + 0.14, 0.16, d + 0.14, shade(wall, 0.85), KM.PLASTER, rot);   // string course
+  const rh = d * (hip ? 0.36 : 0.44) * (0.9 + rand() * 0.2);
   if (hip) B.hip(x, y + H, z, w, d, rh, roof, KM.TILE, rot, 0.75);
   else {
     B.gable(x, y + H, z, w, d, rh, roof, KM.TILE, rot, 0.75, wall, KM.PLASTER);
     B.block(x, y + H + rh - 0.12, z, w + 1.6, 0.3, 0.42, shade(roof, 0.7), KM.TILE, rot);         // ridge tiles
   }
   if (rand() < 0.35) { const [cx, cz] = L(w * 0.28 * (rand() < 0.5 ? -1 : 1), -d * 0.12); B.block(cx, y + H, cz, 0.9, rh + 1.1, 0.9, shade(wall, 0.9), KM.PLASTER, rot); }   // chimney
-  // front (+z) and back faces: door, shuttered windows on every floor
-  const nWin = Math.max(1, Math.floor(w / 2.9));
+  // front (+z) and back faces: door, shuttered windows on every floor, flower boxes
+  const nWin = Math.max(1, Math.floor(w / 2.9)), sn = Math.sin(rot), cs = Math.cos(rot);
+  const faces = { 1: face(...L(0, d / 2), sn, cs), [-1]: face(...L(0, -d / 2), -sn, -cs) };
+  let doorU = 0;
   for (const side of [1, -1]) for (let f = 0; f < floors; f++) for (let k = 0; k < nWin; k++) {
-    const t = (k + 0.5) / nWin - 0.5, lx = t * w * 0.82;
+    const t = (k + 0.5) / nWin - 0.5, lx = t * w * 0.82, F = faces[side], u = -side * lx;
     if (side === 1 && f === 0 && k === (nWin >> 1)) {
       const [dx, dz] = L(lx, d / 2 + 0.06);
       B.block(dx, y, dz, 1.7, 2.7, 0.14, '#3a2a1c', KM.DARK, rot);
       const [ex, ez] = L(lx, d / 2 + 0.12); B.block(ex, y, ez, 1.3, 2.4, 0.12, trim, KM.WOOD, rot);
+      if (dress) doorFrame(B, F, { u, y, w: 1.7, h: 2.7 });
+      doorU = u;
       continue;
     }
     const wy = y + 1.4 + f * 3.3;
     const [wx, wz] = L(lx, side * (d / 2 + 0.06));
     B.block(wx, wy, wz, 1.05, 1.5, 0.12, '#22262c', KM.WINDOW, rot);
     for (const s of [-1, 1]) { const [sx, sz] = L(lx + s * 0.88, side * (d / 2 + 0.1)); B.block(sx, wy - 0.05, sz, 0.58, 1.6, 0.1, trim, KM.WOOD, rot); }
+    if (dress && rand() < (f ? 0.4 : 0.18)) flowerBox(B, F, { u, y: wy, w: 1.15, rand });
   }
   if (floors >= 2 && rand() < 0.45) {                                                            // wooden balcony
-    const [bx, bz] = L(0, d / 2 + 0.75), by = y + 3.3 + 0.5, bw = w * (0.4 + rand() * 0.35);
-    B.block(bx, by, bz, bw, 0.22, 1.5, '#5a3a22', KM.WOOD, rot);
-    const [rx, rz] = L(0, d / 2 + 1.45); B.block(rx, by + 0.22, rz, bw, 0.85, 0.1, trim, KM.WOOD, rot);
+    const bw = w * (0.4 + rand() * 0.35);
+    balcony(B, faces[1], { u: 0, y: y + 3.3 + 0.5, w: bw, rand, trim });
   }
+  if (dress) {
+    const F = faces[1], r = rand();
+    if (r < 0.22) hangingSign(B, F, { u: doorU + (doorU > 0 ? -1.6 : 1.6), y: 2.6 + y, rand });
+    else if (r < 0.5 && nWin > 1) awning(B, F, { u: doorU + (doorU > 0 ? -1 : 1) * w * 0.82 / nWin, y: y + 2.55, w: 1.9, rand });
+    if (rand() < 0.55) for (const s of rand() < 0.5 ? [-1] : [-1, 1]) { const [px, pz] = F.at(doorU + s * 1.25, 0.32); pot(B, px, y, pz, 1.1, rand); }
+    if (floors >= 2 && rand() < 0.22) { const ly = y + 3.3 + 2.3, [ax, az] = F.at(-w / 2 + 0.4, 0.55), [bx, bz] = F.at(w / 2 - 0.4, 0.55); laundry(B, [ax, ly, az], [bx, ly, bz], rand); }
+    const g = rand();                                                                              // goods along a side wall
+    if (g < 0.3) { const s = rand() < 0.5 ? -1 : 1, Fs = face(...L(s * w / 2, 0), s * cs, -s * sn);
+      for (let q = 0; q < 2; q++) { const [bx, bz] = Fs.at((q - 0.5) * 1.3, 0.55); barrel(B, bx, y, bz, 0.85); } }
+    else if (g < 0.42) { const [cx, cz] = L((rand() - 0.5) * w * 0.4, -d / 2 - 1.2); cart(B, { x: cx, z: cz, y, rot: rot + Math.PI / 2 + (rand() - 0.5) * 0.3, load: pick(rand, ['hay', 'sacks', 'barrels']), rand }); }   // behind the house
+  }
+  lean([[B.pos, from]], y, H, rand);
 }
 
 export function church(B, { x, z, y, rot = 0, wall = '#f2ead8', roof = '#b4532f', spire = false }) {
@@ -336,6 +376,164 @@ export function lowWall(B, x0, z0, x1, z1, ground, { h = 1.1, color = '#a89c84' 
   }
 }
 
+// ------------------------------------------------------------------------------------------------ facade and street dressing
+// a wall plane through (x, z) facing (nx, nz): F.at(u, o) -> [x, z] (u along the wall, o out of it); F.rot turns a
+// block's local +z out of the wall
+export function face(x, z, nx, nz) {
+  const tx = -nz, tz = nx;
+  return { rot: Math.atan2(nx, nz), nx, nz, at: (u, o = 0) => [x + tx * u + nx * o, z + tz * u + nz * o] };
+}
+const IRON = '#2a2420', AWN = ['#b8402e', '#e8dcc0', '#3a6a8a', '#d8a040', '#5a7a3a', '#8a3a5a'], CLOTHES = ['#efe8d8', '#e6dcc2', '#9fb4c8', '#c86a4a', '#d8c070', '#7a8a5a'];
+const FLOWERS = ['#d8443a', '#e87aa0', '#f2eedc', '#e8b030'];
+// stone door frame: jambs, lintel, a worn step (all within 0.33 m of the wall)
+export function doorFrame(B, F, { u = 0, y, w = 1.3, h = 2.4, step = true, color = '#b3a68c' }) {
+  for (const s of [-1, 1]) { const [jx, jz] = F.at(u + s * (w / 2 + 0.13), 0.1); B.block(jx, y, jz, 0.26, h + 0.06, 0.2, color, KM.STONE, F.rot); }
+  const [lx, lz] = F.at(u, 0.11); B.block(lx, y + h, lz, w + 0.62, 0.32, 0.24, shade(color, 1.06), KM.STONE, F.rot);
+  if (step) { const [sx, sz] = F.at(u, 0.16); B.block(sx, y - 0.1, sz, w + 0.46, 0.24, 0.32, shade(color, 0.9), KM.STONE, F.rot); }
+}
+// terracotta pot with a leafy plant (and sometimes flowers), base at y
+export function pot(B, x, y, z, s = 1, rand = Math.random) {
+  B.cyl(x, y, z, 0.13 * s, 0.18 * s, 0.32 * s, 7, rand() < 0.5 ? '#b5603a' : '#a0522f', KM.CLAY);
+  const g = blob(0.24 * s, 0, rand() * 9, 0.3, false), m = new THREE.Matrix4().makeTranslation(x, y + 0.42 * s, z);
+  B.geo(g, m, rand() < 0.5 ? '#4f7a32' : '#5d8a3a', KM.FOLIAGE); g.dispose();
+  if (rand() < 0.6) { const c = pick(rand, FLOWERS); for (let k = 0; k < 3; k++) { const a = k * 2.1 + rand(); B.block(x + Math.cos(a) * 0.14 * s, y + 0.5 * s, z + Math.sin(a) * 0.14 * s, 0.09 * s, 0.09 * s, 0.09 * s, c, KM.CLAY); } }
+}
+// flower box under a window (sill height y)
+export function flowerBox(B, F, { u = 0, y, w = 1.0, rand = Math.random }) {
+  const [bx, bz] = F.at(u, 0.16); B.block(bx, y - 0.24, bz, w, 0.24, 0.24, '#6a4a2e', KM.WOOD, F.rot);
+  const c = pick(rand, FLOWERS), n = Math.max(2, Math.round(w / 0.28));
+  for (let k = 0; k < n; k++) {
+    const [px, pz] = F.at(u - w / 2 + (k + 0.5) * w / n, 0.16 + (rand() - 0.5) * 0.06), g = blob(0.15 + rand() * 0.05, 0, k + rand() * 5, 0.3, false);
+    B.geo(g, new THREE.Matrix4().makeTranslation(px, y + 0.04, pz), rand() < 0.5 ? '#4a7530' : '#5a8638', KM.FOLIAGE); g.dispose();
+    if (rand() < 0.7) B.block(px + (rand() - 0.5) * 0.1, y + 0.14, pz, 0.08, 0.08, 0.08, rand() < 0.75 ? c : '#f2eedc', KM.CLAY);
+  }
+}
+// wooden balcony on brackets, its floor at y: railing, a pot or two, sometimes washing over the rail
+export function balcony(B, F, { u = 0, y, w = 2.4, rand = Math.random, trim = '#5a4632' }) {
+  const D = 1.0, wood = '#5a3a22';
+  const [bx, bz] = F.at(u, D / 2); B.block(bx, y, bz, w, 0.15, D, wood, KM.WOOD, F.rot);
+  for (const s of [-1, 1]) { const [kx, kz] = F.at(u + s * (w / 2 - 0.22), 0.32); B.block(kx, y - 0.5, kz, 0.1, 0.5, 0.62, wood, KM.WOOD, F.rot); }
+  const n = Math.max(3, Math.round(w / 0.32));
+  for (let k = 0; k <= n; k++) { const [px, pz] = F.at(u - w / 2 + 0.05 + k * (w - 0.1) / n, D - 0.06); B.block(px, y + 0.15, pz, 0.05, 0.75, 0.05, trim, KM.WOOD, F.rot); }
+  const [rx, rz] = F.at(u, D - 0.06); B.block(rx, y + 0.88, rz, w, 0.07, 0.1, trim, KM.WOOD, F.rot);
+  for (const s of [-1, 1]) { const [sx, sz] = F.at(u + s * (w / 2 - 0.05), D / 2); B.block(sx, y + 0.88, sz, 0.08, 0.07, D, trim, KM.WOOD, F.rot); B.block(sx, y + 0.15, sz, 0.05, 0.75, 0.05, trim, KM.WOOD, F.rot); }
+  if (rand() < 0.75) { const [px, pz] = F.at(u + (rand() - 0.5) * (w - 0.8), D * 0.55); pot(B, px, y + 0.15, pz, 0.9, rand); }
+  if (rand() < 0.4) { const [cx, cz] = F.at(u + (rand() - 0.5) * (w - 1.2), D + 0.0); B.block(cx, y + 0.35, cz, 0.9, 0.62, 0.04, pick(rand, CLOTHES), KM.CLOTH, F.rot); }
+}
+// tavern-style sign on an iron arm, the board across the street (perpendicular to the wall), bottom at y
+export function hangingSign(B, F, { u = 0, y = 2.7, color = '#b8862c', rand = Math.random }) {
+  const [ax, az] = F.at(u, 0.7); B.block(ax, y + 1.05, az, 0.07, 0.07, 1.4, IRON, KM.IRON, F.rot);
+  const [qx, qz] = F.at(u, 0.3); B.block(qx, y + 0.62, qz, 0.05, 0.45, 0.05, IRON, KM.IRON, F.rot + 0.8);   // brace
+  const [bx, bz] = F.at(u, 0.9);
+  B.block(bx, y, bz, 0.05, 0.74, 1.06, '#3a2a1a', KM.WOOD, F.rot);
+  B.block(bx, y + 0.06, bz, 0.08, 0.62, 0.92, color, KM.WOOD, F.rot);
+  B.block(bx, y + 0.22, bz, 0.1, 0.3, 0.34, rand() < 0.5 ? '#2a2018' : '#e8d8a8', KM.CLAY, F.rot);           // painted emblem
+  for (const s of [-0.38, 0.38]) { const [cx, cz] = F.at(u, 0.9 + s); B.block(cx, y + 0.74, cz, 0.03, 0.31, 0.03, IRON, KM.IRON, F.rot); }
+}
+// striped cloth awning sloping out from the wall over a door or a shop window, its front edge at height y
+export function awning(B, F, { u = 0, y = 2.5, w = 2.2, depth = 1.15, color, rand = Math.random }) {
+  color ||= pick(rand, AWN);
+  const n = Math.max(3, Math.round(w / 0.36)), top = y + 0.62;
+  for (let k = 0; k < n; k++) {
+    const u0 = u - w / 2 + k * w / n, u1 = u0 + w / n, c = k % 2 ? '#efe6cf' : color;
+    const [ax, az] = F.at(u0, 0.02), [bx, bz] = F.at(u1, 0.02), [cx, cz] = F.at(u1, depth), [dx, dz] = F.at(u0, depth);
+    const A = [ax, top, az], Bq = [bx, top, bz], Cq = [cx, y, cz], D = [dx, y, dz];
+    B.quad(A, Bq, Cq, D, c, KM.CLOTH); B.quad(D, Cq, Bq, A, shade(c, 0.7), KM.CLOTH);                        // top and underside
+    const [vx, vz] = F.at((u0 + u1) / 2, depth); B.block(vx, y - 0.22, vz, w / n, 0.22, 0.03, c, KM.CLOTH, F.rot);   // valance
+  }
+  for (const s of [-1, 1]) { const [rx, rz] = F.at(u + s * w / 2, depth / 2); B.block(rx, y + 0.28, rz, 0.04, 0.04, depth, IRON, KM.IRON, F.rot); }
+}
+// washing line from a to b ([x, y, z]), sagging, with a few clothes pegged on it
+export function laundry(B, a, b, rand = Math.random) {
+  const L = Math.hypot(b[0] - a[0], b[2] - a[2]), n = 6, sag = 0.25 + L * 0.04, P = t => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - Math.sin(t * Math.PI) * sag, a[2] + (b[2] - a[2]) * t];
+  for (let k = 0; k < n; k++) rod(B, P(k / n), P((k + 1) / n), 0.02, 0.02, '#d8ceb4', KM.CLAY, 3);
+  const dx = (b[0] - a[0]) / L, dz = (b[2] - a[2]) / L;
+  for (let t = 0.12 + rand() * 0.1; t < 0.9; t += 0.14 + rand() * 0.12) {
+    const p = P(t), hw = 0.25 + rand() * 0.2, hh = 0.45 + rand() * 0.4, c = pick(rand, CLOTHES);
+    const q0 = [p[0] - dx * hw, p[1], p[2] - dz * hw], q1 = [p[0] + dx * hw, p[1], p[2] + dz * hw], q2 = [q1[0], p[1] - hh, q1[2]], q3 = [q0[0], p[1] - hh * (0.9 + rand() * 0.2), q0[2]];
+    B.quad(q0, q1, q2, q3, c, KM.CLOTH); B.quad(q3, q2, q1, q0, shade(c, 0.85), KM.CLOTH);
+  }
+}
+// walls lean and the ridge sags: warps the vertices of a building standing at y0 with walls h high, given as
+// parts [[positions (flat x, y, z array), first index], ...] (e.g. [[B.pos, from]]: what was appended to B since
+// `from`); every part is warped by the same function, so walls and a roof built apart stay joined; nothing moves at
+// the foot
+export function lean(parts, y0, h, rand = Math.random, { amt = 0.18, sag = 0.24 } = {}) {
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const [p, from] of parts) for (let i = from; i < p.length; i += 3) { if (p[i] < x0) x0 = p[i]; if (p[i] > x1) x1 = p[i]; if (p[i + 2] < z0) z0 = p[i + 2]; if (p[i + 2] > z1) z1 = p[i + 2]; }
+  const a = rand() * 6.283, k = amt * (0.3 + rand() * 0.7), lx = Math.cos(a) * k, lz = Math.sin(a) * k, sg = sag * (0.3 + rand() * 0.7), alongX = x1 - x0 >= z1 - z0, ph = rand() * 6.283;
+  for (const [p, from] of parts) for (let i = from; i < p.length; i += 3) {
+    const t = (p[i + 1] - y0) / h; if (t <= 0) continue;
+    const s = alongX ? (p[i] - x0) / (x1 - x0 || 1) : (p[i + 2] - z0) / (z1 - z0 || 1), w = Math.sin(Math.max(0, Math.min(1, s)) * Math.PI);
+    const tt = Math.min(t, 1.6), bulge = Math.sin(tt * Math.PI * 0.8) * 0.035 * Math.sin(s * 7 + ph);
+    p[i] += lx * tt * tt + bulge; p[i + 2] += lz * tt * tt + bulge;
+    p[i + 1] -= sg * w * Math.max(0, Math.min(1, (t - 0.85) / 0.45));
+  }
+}
+// cask with hoops (s = scale; 1 = 1.15 m)
+export function barrel(B, x, y, z, s = 1, color = '#7a5a34') {
+  B.cyl(x, y, z, 0.42 * s, 0.5 * s, 0.58 * s, 9, color, KM.WOOD); B.cyl(x, y + 0.58 * s, z, 0.5 * s, 0.42 * s, 0.57 * s, 9, color, KM.WOOD);
+  for (const h of [0.2, 0.94]) B.cyl(x, y + h * s, z, 0.48 * s, 0.48 * s, 0.07 * s, 9, '#3a2c20', KM.IRON);
+}
+function sack(B, x, y, z, s, rot, rand) {
+  const g = new THREE.SphereGeometry(0.42, 7, 5), m = new THREE.Matrix4().makeRotationY(rot).scale(new THREE.Vector3(0.9 * s, 0.62 * s, 0.7 * s)).setPosition(x, y + 0.24 * s, z);
+  B.geo(g, m, rand() < 0.5 ? '#c8b48a' : '#a8956c', KM.CLOTH); g.dispose();
+  B.block(x, y + 0.42 * s, z, 0.14 * s, 0.16 * s, 0.14 * s, '#8a7650', KM.CLOTH, rot);   // the tied neck
+}
+// pile of crates, a barrel or two (fits in a 4.4 m square around x, z)
+export function crates(B, { x, z, y, rot = 0, rand = Math.random }) {
+  const L = frame(x, z, rot), wood = ['#8f6c3e', '#7a5a34', '#9a7a4a'];
+  for (const [lx, lz, s, h0] of [[-0.9, -0.6, 1.9, 0], [1.0, 0.8, 1.4, 0], [-0.7, -0.5, 1.2, 1.5], [0.9, -1.1, 1.1, 0]]) {
+    if (rand() < 0.15) continue;
+    const [cx, cz] = L(lx, lz), r = rot + (rand() - 0.5) * 0.5, c = pick(rand, wood);
+    B.block(cx, y + h0, cz, s, s * 0.82, s, c, KM.WOOD, r);
+    B.block(cx, y + h0 + s * 0.38, cz, s + 0.04, 0.1, s + 0.04, shade(c, 0.7), KM.WOOD, r);   // the band of planks
+  }
+  for (const [lx, lz] of [[1.4, -1.6], [-1.6, 1.3]]) { const [bx, bz] = L(lx, lz); barrel(B, bx, y, bz, 0.95); }
+}
+export function sacks(B, { x, z, y, rot = 0, rand = Math.random }) {
+  const L = frame(x, z, rot);
+  for (let k = 0; k < 7; k++) { const [sx, sz] = L((k % 3 - 1) * 0.85 + (rand() - 0.5) * 0.2, (Math.floor(k / 3) - 0.5) * 0.95), lay = k >= 6 ? 0.5 : 0; sack(B, sx, y + lay, sz, 1.1, rot + rand(), rand); }
+  const [cx, cz] = L(0.4, 1.5); B.block(cx, y, cz, 1.3, 1.1, 1.3, '#8f6c3e', KM.WOOD, rot + 0.3);
+  const [bx, bz] = L(-1.5, 1.4); barrel(B, bx, y, bz, 0.9);
+}
+// two-wheeled hand cart with its load ('hay' | 'sacks' | 'barrels'), shafts resting on the ground
+export function cart(B, { x, z, y, rot = 0, load = 'sacks', rand = Math.random }) {
+  const L = frame(x, z, rot), wood = '#6b4a2c', by = y + 0.78;
+  B.block(x, by, z, 1.5, 0.12, 2.5, wood, KM.WOOD, rot);
+  for (const s of [-1, 1]) { const [sx, sz] = L(s * 0.72, 0); B.block(sx, by + 0.12, sz, 0.08, 0.42, 2.5, wood, KM.WOOD, rot); }
+  for (const s of [-1, 1]) { const [ex, ez] = L(0, s * 1.22); B.block(ex, by + 0.12, ez, 1.5, 0.42, 0.08, wood, KM.WOOD, rot); }
+  for (const s of [-1, 1]) {
+    const [wx, wz] = L(s * 0.86, 0.1);
+    B.cyl(wx, y + 0.62, wz, 0.62, 0.62, 0.1, 12, '#5a3e24', KM.WOOD, 0, rot, Math.PI / 2);
+    B.cyl(wx, y + 0.62, wz, 0.14, 0.14, 0.18, 6, '#3a2c20', KM.IRON, 0, rot, Math.PI / 2);
+    const [a0x, a0z] = L(s * 0.5, 1.25), [a1x, a1z] = L(s * 0.45, 2.9); rod(B, [a0x, by + 0.05, a0z], [a1x, y + 0.08, a1z], 0.06, 0.05, wood, KM.WOOD, 5);   // shafts
+  }
+  if (load === 'hay') { const g = blob(1.0, 1, rand() * 9, 0.18), m = new THREE.Matrix4().makeRotationY(rot).scale(new THREE.Vector3(0.78, 0.62, 1.25)).setPosition(x, by + 0.62, z); B.geo(g, m, '#cfac52', KM.THATCH); g.dispose(); }
+  else if (load === 'barrels') for (const lz of [-0.6, 0.6]) { const [bx, bz] = L(0, lz); barrel(B, bx, by + 0.12, bz, 0.8); }
+  else for (let k = 0; k < 5; k++) { const [sx, sz] = L((k % 2 - 0.5) * 0.6, (Math.floor(k / 2) - 1) * 0.75), up = k === 4 ? 0.4 : 0; sack(B, sx, by + 0.12 + up, sz, 0.85, rot + rand() * 0.6, rand); }
+}
+// stone well with its little tiled roof, winch and bucket (≈ 2.6 m across, 3.3 m high)
+export function well(B, { x, z, y, rot = 0 }) {
+  const L = frame(x, z, rot);
+  B.cyl(x, y, z, 1.15, 1.1, 0.95, 12, '#a99d86', KM.STONE);
+  B.cyl(x, y + 0.95, z, 1.2, 1.2, 0.14, 12, '#bcb098', KM.STONE);
+  B.cyl(x, y + 0.6, z, 0.85, 0.85, 0.5, 10, '#14110e', KM.DARK);
+  for (const s of [-1, 1]) { const [px, pz] = L(s * 1.0, 0); B.block(px, y + 0.9, pz, 0.16, 1.9, 0.16, '#5a3e24', KM.WOOD, rot); }
+  B.cyl(x, y + 2.35, z, 0.1, 0.1, 2.0, 6, '#6b4a2c', KM.WOOD, 0, rot, Math.PI / 2);                            // winch
+  B.gable(x, y + 2.75, z, 2.6, 1.6, 0.55, '#a85d37', KM.TILE, rot, 0.15);
+  B.cyl(x + 0.1, y + 1.1, z + 0.6, 0.18, 0.22, 0.3, 7, '#6b4a2c', KM.WOOD);                                     // bucket on the rim
+}
+// round fountain: stone basin, water, a column with a bowl and its jet (r = basin radius)
+export function fountain(B, { x, z, y, r = 2.2 }) {
+  B.cyl(x, y, z, r, r, 0.62, 16, '#b8ab90', KM.STONE);
+  B.cyl(x, y + 0.62, z, r + 0.12, r + 0.12, 0.14, 16, '#cbbfa4', KM.STONE);
+  B.cyl(x, y + 0.5, z, r - 0.18, r - 0.18, 0.2, 16, '#4f8a96', KM.CLAY);
+  B.cyl(x, y, z, 0.32, 0.24, 1.9, 8, '#c2b59a', KM.STONE);
+  B.cyl(x, y + 1.9, z, 0.3, 0.8, 0.32, 10, '#c2b59a', KM.STONE);
+  B.cyl(x, y + 2.2, z, 0.1, 0.05, 0.6, 6, '#bfe0e6', KM.CLAY);
+}
+
 export function longboat(B, { x, z, y, rot = 0, color = '#7a5232' }) {
   const L = frame(x, z, rot), m = new THREE.Matrix4();
   B.ground = y; B.aoH = 1.2;
@@ -349,7 +547,6 @@ export function longboat(B, { x, z, y, rot = 0, color = '#7a5232' }) {
 
 // sea-world ship models at anchor: hulls (+ masts and rigging) in one Mesh with the ships' hull material, sails
 // furled on their yards merged into B (KM.CLOTH)
-let HULL_MAT = null;
 export function anchoredShips(B, ships, faction = 'english') {
   const hulls = [];
   for (const s of ships) {
@@ -362,8 +559,8 @@ export function anchoredShips(B, ships, faction = 'english') {
   if (!hulls.length) return null;
   const geo = mergeGeometries(hulls, false); hulls.forEach(g => g.dispose());
   geo.computeBoundingSphere();
-  const mesh = new THREE.Mesh(geo, HULL_MAT ||= makeHullMaterial());
-  mesh.customDepthMaterial = HULL_MAT.userData.depth; mesh.receiveShadow = true;
+  const mat = makeHullMaterial(), mesh = new THREE.Mesh(geo, mat);
+  mesh.customDepthMaterial = mat.userData.depth; mesh.receiveShadow = true;
   return mesh;
 }
 // sail cloth in its furled state: every vertex gathered onto its yard/boom anchor (as the sail shader does when furled)
@@ -402,9 +599,7 @@ function blob(r, detail, seed, amp = 0.22, soft = true) {
   g.computeVertexNormals();
   return g;
 }
-let VEG = null;
 export function vegGeos() {
-  if (VEG) return VEG;
   const m = new THREE.Matrix4(), r = mulberry32(4242);
   // broadleaf: short leaning trunk, a crown of four foliage blobs (darker underneath)
   const bl = new GeoBuilder(); bl.ground = 0; bl.aoH = 8;
@@ -447,7 +642,9 @@ export function vegGeos() {
   const ro = new GeoBuilder(); ro.ground = -0.4; ro.aoH = 2;
   { const g = blob(1.6, 0, 3, 0.35, false); m.makeScale(1.2, 0.75, 1); ro.geo(g, m, '#958b7a', KM.ROCK); g.dispose();
     const g2 = blob(1.0, 0, 7, 0.3, false); m.makeScale(1, 0.8, 1).setPosition(1.5, -0.1, 0.6); ro.geo(g2, m, '#857c6c', KM.ROCK); g2.dispose(); }
-  return (VEG = { broadleaf: bl.build(), palm: pa.build(), bush: bu.build(), rock: ro.build() });
+  const V = { broadleaf: bl.build(), palm: pa.build(), bush: bu.build(), rock: ro.build() };
+  V.dispose = () => { for (const k of ['broadleaf', 'palm', 'bush', 'rock']) V[k].dispose(); };
+  return V;
 }
 
 const _d = new THREE.Object3D(), _c = new THREE.Color();
@@ -497,8 +694,8 @@ export function waveCloth(g, t, amp = 0.3) {
 
 // ------------------------------------------------------------------------------------------------ effects
 export class PuffPool {
-  constructor(scene, max = 300, { additive = false } = {}) {
-    const K = kitMaterials(), g = new THREE.PlaneGeometry(1, 1);
+  constructor(scene, K, max = 300, { additive = false } = {}) {
+    const g = new THREE.PlaneGeometry(1, 1);
     this.fade = new THREE.InstancedBufferAttribute(new Float32Array(max), 1); this.fade.setUsage(THREE.DynamicDrawUsage);
     g.setAttribute('aFade', this.fade);
     this.mesh = new THREE.InstancedMesh(g, additive ? K.flash : K.puff, max);

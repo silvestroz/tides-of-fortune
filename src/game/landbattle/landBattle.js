@@ -6,14 +6,15 @@
 //     landing further off (no fire from the fort, a longer march);
 //   - at the pirate haven: “V Organise an attack” → choice of a nearby enemy town, reinforcement of
 //     freebooters (LAND.haven.bonus × crew), voyage and landing.
-// API: offer(port) · start(port, { approach:'sea'|'land', allies }) · forceEnd(winner) · screenOf(x, z) · warmup()
+// API: offer(port) · start(port, { approach:'sea'|'land', allies }) · forceEnd(winner) · screenOf(x, z)
 //      active · sim · view · port · speed (time multiplier, debugging)
 // Events: 'landbattle:start' { port, approach }, 'landbattle:end' { port, result, choice }, 'state:change'
 //   { from:'sail', to:'land' } then { from:'land', to:'sail' }. Game mode 'land' during the battle.
+// Loading: the battlefield (view.js, imported on first use) is built when the battle starts, under the loading
+// screen (src/ui/townLoader.js), and released when it ends: nothing of it exists at sea.
 // Save: nothing mid-battle; the aftermath goes through state.gold/crew, state.towns (living.assaulted) and
 //   state.landBattles { won, lost } (missing from old saves: recreated on the fly).
 import { LandSim, T } from './sim.js';
-import { LandView } from './view.js';
 import { LAND, UNIT_KINDS, NATION_COATS } from '../../data/landbattle.js';
 import { kc, isKey } from '../../core/keys.js';
 import { NATIONS } from '../career.js';
@@ -22,7 +23,7 @@ import { a, nationAdj, nationPeople, fmtInt, NBSP } from '../../core/i18n.js';
 import { saveGame } from '../save.js';
 import { hashString } from '../../core/rng.js';
 import './landbattle.css';
-import { precompile } from '../../core/precompile.js';
+import { openTownLoader, townScope } from '../../ui/townLoader.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -48,25 +49,6 @@ export class LandBattle {
     cv.addEventListener('contextmenu', e => { if (this.active) e.preventDefault(); });
     cv.addEventListener('wheel', e => { if (this.active && this.view) this.view.cam.dist *= e.deltaY > 0 ? 1.1 : 0.9; }, { passive: true });
     game.events.on('state:change', ({ to } = {}) => { if (to !== 'sail') this._showPrompt(null); });
-  }
-
-  warmup() {
-    LandView.warmup(this.game);
-    // the miniature scene has neither cast shadows nor the real battle's lighting (15 programs compiled at the
-    // first assault): we build a real battle in front of the first port at hand and compile it (game.warmupRare,
-    // title screen); its programs stay alive (game._pinPrograms)
-    const g = this.game, port = g.islands?.ports?.find(p => !p.haven);
-    if (!port || this._warmed) return;
-    this._warmed = true;
-    try {
-      const sim = new LandSim({ heights: this._sample(port), seed: 7, playerForce: 60, garrison: 60, nation: port.faction, approach: 'land', allies: 0 });
-      const v = new LandView(g).build(sim, { coat: NATION_COATS[port.faction] || '#555', seed: 7, nation: port.faction, ships: ['frigate', 'brig'] });
-      const r = g.renderer, sh = r.shadowMap.enabled, rt = r.getRenderTarget();
-      r.shadowMap.enabled = true; r.setRenderTarget(null);
-      r.compile(v.scene, v.camera);
-      r.shadowMap.enabled = sh; r.setRenderTarget(rt);
-      v.dispose();
-    } catch (e) { console.warn('warmup landbattle', e); }
   }
 
   // ------------------------------------------------------------------ prompt at sea
@@ -178,10 +160,14 @@ export class LandBattle {
     this.active = true; this.paused = false; this.speed = this.speed || 1; this.sel.clear(); this._retreatT = 0;
     this._prevMode = g.mode; this._prevFrozen = this._wasFrozen ?? g.frozen; this._wasFrozen = undefined;
     this._showPrompt(null);
-    await this._fadeTo(true);
+    const L = openTownLoader(g, { mode: approach === 'sea' ? 'sea' : 'land', title: port.name });
+    g.frozen = true; g.renderOverride = () => {};   // nothing drawn behind the loading screen
+    this._scope = townScope(g);
+    await L.step();
+    const { LandView } = await import('./view.js');
     const pf = p?.faction || 'pirate', ships = [p?.type || 'brig', ...(g.state.fleet || []).map(f => f.type)];
-    this.view = new LandView(g).build(this.sim, { coat: NATION_COATS[port.faction] || '#555', playerCoat: NATION_COATS[pf] || NATION_COATS.pirate, seed, nation: port.faction, playerFaction: pf, ships });
-    await precompile(g.renderer, this.view.scene, this.view.camera, { shadows: true });   // programs compiled in parallel under the fade
+    this.view = await new LandView(g).build(this.sim, { coat: NATION_COATS[port.faction] || '#555', playerCoat: NATION_COATS[pf] || NATION_COATS.pirate, seed, nation: port.faction, playerFaction: pf, ships }, L.step);
+    await L.compile(this.view.scene, this.view.camera);
     g.mode = 'land'; g.frozen = true;
     g.hud?.show?.(false);
     g.events.emit('state:change', { from: this._prevMode || 'sail', to: 'land' });
@@ -190,7 +176,7 @@ export class LandBattle {
     g.renderOverride = () => this._frame();
     this._buildHud();
     for (const u of this.sim.units) if (u.side === 'player' && u.kind !== 'officiers') this.sel.add(u);
-    this._fadeTo(false);
+    L.close();
     const msg = (this._seaNote ? this._seaNote + ' ' : '') + (allies ? `${allies} freebooters from the haven land with you. ` : '') + 'Take the square or rout the garrison.';
     this._seaNote = null;
     g.events.emit('notify', { text: msg, kind: 'info' });
@@ -316,6 +302,7 @@ export class LandBattle {
     const g = this.game;
     this.active = false;
     if (g.renderOverride) g.renderOverride = null;
+    this._scope?.end(); this._scope = null;   // before the dispose: the battle's programs go with its materials
     this.view?.dispose(); this.view = null;
     this.hud.classList.add('off'); this.hud.innerHTML = ''; this.box.style.display = 'none';
     g.mode = 'sail'; g.frozen = !!this._prevFrozen && !!g.params.get('frozen');

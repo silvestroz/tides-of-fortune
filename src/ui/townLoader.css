@@ -1,0 +1,27 @@
+/* Loading screen of the town scenes (townLoader.js): a parchment card on a dark backdrop, a turning compass rose,
+   a flavour line and a thin progress bar. Shown at once, fades out on the scene's first frame. */
+.town-loader { position: absolute; inset: 0; z-index: 45; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(120% 100% at 50% 50%, #2a1d10 0%, #120c06 70%, #080502 100%);
+  font-family: var(--txt); opacity: 1; transition: opacity .55s ease; pointer-events: auto; }
+.town-loader.night { background: radial-gradient(120% 100% at 50% 55%, #1a2438 0%, #0b101c 65%, #05070c 100%); }
+.town-loader.out { opacity: 0; pointer-events: none; }
+.town-loader .tl-card { min-width: 22em; max-width: 34em; padding: 1.4em 2.2em 1.2em; border-radius: .35em; text-align: center;
+  box-shadow: inset 0 0 1.4em rgba(110,66,18,.55), 0 .4em 1.6em rgba(0,0,0,.6), 0 0 0 .14em #5a3c14;
+  animation: tl-in .25s ease-out both; }
+.town-loader .tl-head { font-family: var(--sc, var(--deco)); font-size: 1.35em; letter-spacing: .05em; color: #4a1010; margin-top: .35em; }
+.town-loader .tl-line { font-style: italic; font-size: 1.05em; margin: .45em 0 .9em; color: #3a2814; }
+.town-loader .tl-bar { height: .3em; border-radius: .2em; background: rgba(70,40,10,.25); overflow: hidden; box-shadow: inset 0 0 .15em rgba(40,20,5,.6); }
+.town-loader .tl-bar i { display: block; height: 100%; width: 4%; background: linear-gradient(90deg, #8a5a1c, #d6a24a); transition: width .3s ease; }
+/* compass rose: a slowly turning card, the needle trembling toward north */
+.town-loader .tl-rose { position: relative; width: 3.6em; height: 3.6em; margin: 0 auto; }
+.town-loader .tl-rose i { position: absolute; inset: 0; border-radius: 50%;
+  background:
+    conic-gradient(from 0deg, transparent 0 40deg, rgba(90,52,16,.85) 45deg, transparent 50deg 130deg, rgba(90,52,16,.85) 135deg, transparent 140deg 220deg, rgba(90,52,16,.85) 225deg, transparent 230deg 310deg, rgba(90,52,16,.85) 315deg, transparent 320deg),
+    radial-gradient(circle, transparent 52%, rgba(90,52,16,.8) 54%, transparent 57%, transparent 88%, rgba(90,52,16,.9) 90%, transparent 94%);
+  animation: tl-spin 7s linear infinite; }
+.town-loader .tl-rose b { position: absolute; left: 50%; top: 8%; width: .5em; height: 84%; margin-left: -.25em;
+  background: linear-gradient(180deg, #8a1a12 0 50%, #2a2018 50% 100%); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  animation: tl-needle 1.6s ease-in-out infinite alternate; }
+@keyframes tl-spin { to { transform: rotate(360deg); } }
+@keyframes tl-needle { from { transform: rotate(-14deg); } to { transform: rotate(11deg); } }
+@keyframes tl-in { from { opacity: 0; transform: translateY(.4em); } to { opacity: 1; transform: none; } }

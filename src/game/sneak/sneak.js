@@ -4,7 +4,7 @@
 //   - ports.enter() in a hostile port, when the soldiers would arrest you: “Soldiers guard the quay” screen
 //     (offerPort) → “Slip into town” (start kind 'infiltrate'), pay the fine (the old arrest) or leave;
 //   - prison screen (boarding._captivityScreen): “Attempt an escape” (start kind 'escape').
-// API: offerPort(port, tab) · start({ kind, port, onEnd }) · forceEnd(outcome) · warmup() · screenOf(x, z)
+// API: offerPort(port, tab) · start({ kind, port, onEnd }) · forceEnd(outcome) · screenOf(x, z)
 //      active · sim · view · port · level (0–4, read by the music) · speed (debugging)
 // Events: 'sneak:start' { kind, port }, 'sneak:end' { kind, port, result }, 'state:change' { to:'sneak' } / back.
 // Game mode 'sneak' meanwhile (world frozen, rendered through renderOverride). Caught → duel against a guard
@@ -12,10 +12,11 @@
 // alarm is raised; lost: prison / longer sentence.
 // Fugitive's tools (mnemonic keys, by character): T or left click throws a stone (at the cursor, else ahead),
 // H hides in / leaves a doorway, barrels or a haystack, K knocks out a guard from behind; Space picks the grate.
+// Loading: the town (view.js, imported on first use) is built when the mode starts, under the loading screen
+// (src/ui/townLoader.js), and released when it ends: nothing of it exists at sea.
 // Save: nothing mid-mode; optional counter state.sneaks { ok, caught, tries } recreated on the fly (tries: the
 // attempt number, which draws the guards' routes and posts again at every attempt).
 import { SneakSim } from './sim.js';
-import { SneakView } from './view.js';
 import { SNEAK } from '../../data/sneak.js';
 import { NATION_COATS } from '../../data/landbattle.js';
 import { kc, isKey } from '../../core/keys.js';
@@ -23,7 +24,7 @@ import { nationPeople } from '../../core/i18n.js';
 import { hashString } from '../../core/rng.js';
 import '../landbattle/landbattle.css';
 import './sneak.css';
-import { precompile } from '../../core/precompile.js';
+import { openTownLoader, townScope } from '../../ui/townLoader.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const LEVELS = ['Unseen', 'Suspicion', 'Wariness', 'Hunted', 'Alarm!'];
@@ -47,8 +48,6 @@ export class Sneak {
       this._mouse = { x: e.clientX, y: e.clientY }; this._throw();
     }, true);
   }
-
-  warmup() { SneakView.warmup(this.game); }
 
   // ------------------------------------------------------------------ choice at the entrance of a hostile port
   offerPort(port, tab) {
@@ -95,11 +94,15 @@ export class Sneak {
     this.active = true; this.level = 0; this._fighting = false; this._ending = false; this._giveUpT = 0;
     this._prevMode = g.mode; this._prevFrozen = this._panelFrozen ?? g.frozen; this._panelFrozen = undefined;
     this._prevHud = g.hud?.visible;
-    await this._fadeTo(true);
-    this.view = new SneakView(g).build(this.sim, { coat: NATION_COATS[port.faction] || '#555', nation: port.faction, seed });
+    const L = openTownLoader(g, { mode: kind, title: port.name });
+    g.frozen = true; g.renderOverride = () => {};   // nothing drawn behind the loading screen
+    this._scope = townScope(g);
+    await L.step();
+    const { SneakView } = await import('./view.js');
+    this.view = await new SneakView(g).build(this.sim, { coat: NATION_COATS[port.faction] || '#555', nation: port.faction, seed }, L.step);
     this.view.update(this.sim, 0);   // the figures in place (and visible) before their programs are compiled
-    await precompile(g.renderer, this.view.scene, this.view.camera, { shadows: true });   // programs compiled in parallel under the fade
-    this.view.render();   // one frame under the fade: the shadow-map variants (skinned figures) compile now, not on the first visible frame
+    await L.compile(this.view.scene, this.view.camera);
+    this.view.render();   // one frame under the loading screen: the shadow-map variants (skinned figures) compile now
     g.mode = 'sneak'; g.frozen = true;
     g.hud?.show?.(false);
     g.events.emit('state:change', { from: this._prevMode || 'sail', to: 'sneak' });
@@ -107,7 +110,7 @@ export class Sneak {
     this._last = performance.now();
     g.renderOverride = () => this._frame();
     this._buildHud();
-    this._fadeTo(false);
+    L.close();
     const lp = this.sim.lockpick;
     this._toast(kind === 'escape'
       ? (lp ? `Your ${lp >= 2 ? 'lockpicking kit' : 'skeleton key'} is in your boot. Pick the lock of the grille (Space).` : 'A bent pin to pick the lock of the grille (Space)… this will take a while.')
@@ -227,6 +230,7 @@ export class Sneak {
     const g = this.game;
     this.active = false;
     if (g.renderOverride) g.renderOverride = null;
+    this._scope?.end(); this._scope = null;   // before the dispose: the town's programs go with its materials
     this.view?.dispose(); this.view = null;
     this.hud.classList.add('off'); this.hud.innerHTML = '';
     g.mode = this._prevMode === 'sneak' ? 'sail' : (this._prevMode || 'sail');

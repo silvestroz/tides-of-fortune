@@ -5,37 +5,32 @@
 // with a banner each, squeezed into a column in the streets, scattering when routed; volleys put a line of smoke and
 // muzzle flashes along the front rank, cavalry raises dust. Overlays: selection rings, march paths, order markers,
 // the outline of the square filling up while it is held, and the flag over it changing hands. ≈ 40 draw calls.
-//   const v = new LandView(game).build(sim, { coat, seed, nation, playerFaction, ships })
+//   const v = await new LandView(game).build(sim, { coat, seed, nation, playerFaction, ships }, step)
 //   v.update(sim, dt, selected, visibleFn)  v.render()  v.dispose()
 //   v.volley(unit) (smoke + flashes)  v.clash(x, z) (melee dust)  v.order(x, z, target) (order marker)
 //   v.pick(ndcX, ndcY) -> { x, z } on the terrain    v.project(x, z, y) -> { x, y, behind } screen pixels
 //   v.squareState -> 'free' | 'held' | 'enemy' | 'contested' (updated each frame)
-// Shared materials created once (makeMaterials, kit materials) and precompiled by game.warmup() via LandView.warmup(game).
+// Everything (materials, geometries, the kit's materials) is created by build() and released by dispose(): nothing of
+// the battle exists at sea or at the title screen. build() is asynchronous: it yields (await step()) between its stages
+// so that the loading screen (src/ui/townLoader.js) stays alive.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { T, heightAt, findPath, cellIndex } from './sim.js';
 import { LAND } from '../../data/landbattle.js';
 import { mulberry32 } from '../../core/rng.js';
-import { kitMaterials, kitWarmup, kitTick, GeoBuilder, PALETTE, house, church, fort, lowWall, longboat, anchoredShips,
+import { kitMaterials, kitTick, GeoBuilder, PALETTE, house, church, fort, lowWall, longboat, anchoredShips, fountain, pot, sacks,
   vegGeos, scatter, paintGround, clothGeo, flagUV, waveCloth, PuffPool, KM } from '../land/kit.js';
 
 const MAX_MEN = 520;
-let MATS = null;
+// the battle's own materials (a fresh set per battle, disposed with it): soldiers, overlays drawn above everything
+// (selection rings, march paths, order markers, the square's outline: always readable)
 function makeMaterials() {
-  if (MATS) return MATS;
-  const std = o => new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0, ...o });
-  MATS = {
-    ground: std({ vertexColors: true }),
-    water: std({ color: 0x3f8f9a, roughness: 0.35, transparent: true, opacity: 0.82 }),
-    veg: std({ vertexColors: true }),
-    rock: std({ vertexColors: true, flatShading: true }),
-    house: std({ vertexColors: true, flatShading: true }),
-    men: menMaterial(std({ vertexColors: true, roughness: 0.8 })),
-    ring: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false }),
-    smoke: new THREE.MeshBasicMaterial({ color: 0xe9e2d2, transparent: true, opacity: 0.5, depthWrite: false }),
-    flag: std({ color: 0xffffff, side: THREE.DoubleSide }),
+  const M = {
+    men: menMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 })),
+    decal: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
   };
-  return MATS;
+  M.dispose = () => { M.men.dispose(); M.decal.dispose(); };
+  return M;
 }
 
 // geometries with vertex colours: each part is tinted a fixed colour; aTint attribute (characters):
@@ -154,10 +149,6 @@ function chevronGeo() {
   return g;
 }
 
-// overlays drawn above everything (selection rings, march paths, order markers, the square's outline): always readable
-let DECAL = null;
-const decalMat = () => DECAL ||= new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
-
 const SQUARE_DASHES = 44, MAX_DOTS = 420, MAX_MARK = 12, MAX_BANNERS = 24;
 const COL = {
   sel: new THREE.Color(0xffe08a), mine: new THREE.Color(0x86acd0).multiplyScalar(0.8), foe: new THREE.Color(0xd8452f), rout: new THREE.Color(0x9a9a9a),
@@ -171,23 +162,11 @@ const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a
 export class LandView {
   constructor(game) { this.game = game; this.scene = null; }
 
-  static warmup(game) {
-    // precompiles every program of the battle (miniature scenes with each material) to avoid the hitch
-    const M = makeMaterials(), s = new THREE.Scene(), g = new THREE.BoxGeometry(1, 1, 1);
-    s.add(new THREE.HemisphereLight(0xffffff, 0x445533, 1), new THREE.DirectionalLight(0xffffff, 1));
-    for (const mat of [M.men, decalMat()]) { const im = new THREE.InstancedMesh(g, mat, 1); im.setColorAt(0, new THREE.Color(1, 1, 1)); s.add(im); }
-    s.fog = new THREE.Fog(0xcfd6d0, 300, 1100);
-    const cam = new THREE.PerspectiveCamera(40, 1, 1, 100);
-    try { game.renderer.compile(s, cam); } catch (e) { console.warn('warmup landbattle', e); }
-    g.dispose();
-    kitWarmup(game.renderer);
-  }
-
   // coat: the garrison's colour · nation / playerFaction: their flags (player colours = NATION_COATS of playerFaction,
   // passed as playerCoat) · ships: types of the player's ships riding at anchor off the beach
-  build(sim, { coat = '#2d4c8f', playerCoat = '#3a3a3a', seed = 1, nation = 'spanish', playerFaction = 'pirate', ships = ['brig'] } = {}) {
+  async build(sim, { coat = '#2d4c8f', playerCoat = '#3a3a3a', seed = 1, nation = 'spanish', playerFaction = 'pirate', ships = ['brig'] } = {}, step = async () => {}) {
     const M = makeMaterials(), K = kitMaterials(), m = sim.map, S = this.scene = new THREE.Scene(), r = mulberry32(seed);
-    this.sim = sim; this.disposables = []; this.nation = nation; this.playerFaction = playerFaction;
+    this.sim = sim; this.disposables = [M, K]; this.nation = nation; this.playerFaction = playerFaction;
     const keep = o => { this.disposables.push(o); return o; };
     const MW = m.W * m.cell, MH = m.H * m.cell, cx = MW / 2, cz = MH / 2, Y = (x, z) => this._ground(x, z);
     S.background = new THREE.Color(0xc4d2d6);
@@ -253,6 +232,7 @@ export class LandView {
       return { color: new THREE.Color(v[0] * lift, v[1] * lift, v[2] * lift), sand: v[3], paved: v[4], field: v[5], rock: v[6] };
     };
 
+    await step();
     // ---- terrain: the battle map and a painted border (beach and sea to the south, the harbour shore to the north) ----
     const SUB = 3, PAD = 24;
     const geo = keep(new THREE.PlaneGeometry((m.W + PAD * 2) * m.cell, (m.H + PAD * 2) * m.cell, (m.W + PAD * 2) * SUB, (m.H + PAD * 2) * SUB));
@@ -276,14 +256,27 @@ export class LandView {
       S.add(new THREE.Mesh(wg, K.water));
     }
 
-    // ---- town (houses on the built cells, church, fort), field walls, square, longboats, ships: merged ----
+    await step();
+    // ---- town (houses on the built cells, church, fort, a fountain), field walls, square, longboats, ships: merged ----
     const B = new GeoBuilder();
     const cellC = k => [((k % m.W) + 0.5) * m.cell, (Math.floor(k / m.W) + 0.5) * m.cell];
     const footY = (x, z, rad) => Math.min(Y(x - rad, z - rad), Y(x + rad, z - rad), Y(x - rad, z + rad), Y(x + rad, z + rad), Y(x, z));
     const nave = [];
+    // a little fountain square in place of the house nearest the market square (on a built cell: nothing to cross)
+    let fk = -1, fd = Infinity;
+    for (let k = 0; k < N; k++) if (m.built[k] === 1) { const [x, z] = cellC(k), dd = Math.hypot(x - m.town.x, z - m.town.z); if (dd > LAND.squareR + 8 && dd < fd) { fd = dd; fk = k; } }
     for (let k = 0; k < N; k++) {
       if (m.built[k] === 2) nave.push(cellC(k));
       if (m.built[k] !== 1) continue;
+      if (k === fk) {
+        const [x, z] = cellC(k), y = footY(x, z, 4);
+        B.ground = y; B.aoH = 1.5;
+        B.block(x, y - 1.2, z, m.cell - 0.6, 1.32, m.cell - 0.6, '#bfa784', KM.COBBLE);
+        fountain(B, { x, z, y: y + 0.12, r: 2.1 });
+        for (const [dx, dz] of [[-3.4, -3.4], [3.4, 3.2]]) pot(B, x + dx, y + 0.12, z + dz, 1.4, r);
+        sacks(B, { x: x + 3.2, z: z - 3.0, y: y + 0.12, rot: r() * 3, rand: r });
+        continue;
+      }
       const [x0, z0] = cellC(k), x = x0 + (r() - 0.5) * 1.4, z = z0 + (r() - 0.5) * 1.4, dT = Math.hypot((x - m.town.x) / 1.3, z - m.town.z) / m.cell;
       const rot = Math.round(Math.atan2(m.town.x - x, m.town.z - z) / (Math.PI / 8)) * (Math.PI / 8) + (r() - 0.5) * 0.08, fr = r();
       house(B, { x, z, y: footY(x, z, 4), w: 7.8 + r() * 1.9, d: 6.8 + r() * 2.3, rot, floors: dT < 6 ? (fr < 0.2 ? 3 : fr < 0.75 ? 2 : 1) : (fr < 0.4 ? 2 : 1), hip: r() < 0.4, rand: r });
@@ -331,11 +324,12 @@ export class LandView {
       ancho.push({ type, x, z: z - 12 - r() * 12, rot: Math.PI / 2 + (r() - 0.5) * 0.6 });
     });
     const hulls = anchoredShips(B, ancho, playerFaction);
-    if (hulls) { keep(hulls.geometry); S.add(hulls); }
+    if (hulls) { keep(hulls.geometry); keep(hulls.material); keep(hulls.customDepthMaterial); S.add(hulls); }
     const town = new THREE.Mesh(keep(B.build()), K.paint); town.castShadow = true; town.receiveShadow = true; S.add(town);
 
     // ---- vegetation and rocks (instanced), on the sim's cells and over the border ----
-    const V = vegGeos(), inner = { broadleaf: [], palm: [], bush: [], rock: [] }, border = { broadleaf: [], palm: [], bush: [], rock: [] };
+    await step();
+    const V = keep(vegGeos()), inner = { broadleaf: [], palm: [], bush: [], rock: [] }, border = { broadleaf: [], palm: [], bush: [], rock: [] };
     let veg = inner;
     const tint = () => new THREE.Color(0.88 + r() * 0.22, 0.88 + r() * 0.2, 0.84 + r() * 0.16);
     const add = (kind, x, z, s) => veg[kind].push({ x, y: Y(x, z) - (kind === 'rock' ? 0.3 : 0.15), z, s, r: r() * 6.283, tint: kind === 'rock' ? 0xffffff : tint() });
@@ -385,12 +379,12 @@ export class LandView {
     this.coats = { player: { sabreurs: new THREE.Color('#8a2a1f'), mousquetaires: new THREE.Color('#5a6a32'), officiers: new THREE.Color('#2b2f4a') }, enemy: new THREE.Color(coat) };
     this.flagCols = { player: new THREE.Color(playerCoat), enemy: new THREE.Color(coat) };
     // ---- overlays and effects ----
-    const ov = (g, n) => { keep(g); const im = new THREE.InstancedMesh(g, decalMat(), n); im.count = 0; im.frustumCulled = false; im.renderOrder = 5; im.setColorAt(0, new THREE.Color()); S.add(im); return im; };
+    const ov = (g, n) => { keep(g); const im = new THREE.InstancedMesh(g, M.decal, n); im.count = 0; im.frustumCulled = false; im.renderOrder = 5; im.setColorAt(0, new THREE.Color()); S.add(im); return im; };
     this.rings = ov(new THREE.RingGeometry(0.94, 1, 48).rotateX(-Math.PI / 2), 64);
     this.dots = ov(new THREE.CircleGeometry(1, 10).rotateX(-Math.PI / 2), MAX_DOTS);
     this.marks = ov(chevronGeo(), MAX_MARK);
     this.dashes = ov(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), SQUARE_DASHES);
-    this.smoke = new PuffPool(S, 700); this.flashes = new PuffPool(S, 240, { additive: true });
+    this.smoke = new PuffPool(S, K, 700); this.flashes = new PuffPool(S, K, 240, { additive: true });
     this._vs = new Map(); this._orders = []; this._d = new THREE.Object3D(); this._c = new THREE.Color();
     this.squareState = 'free';
     // ---- camera ----
@@ -599,5 +593,3 @@ export class LandView {
   }
 }
 
-// materials and geometries shared with src/game/sneak/view.js (same painted style)
-export { makeMaterials, painted, tr, manGeo };
