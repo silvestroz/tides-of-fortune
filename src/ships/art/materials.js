@@ -234,6 +234,7 @@ float ember = scorch * (1.0 - smoothstep(0.0, 0.012, abs(sc + 0.08 - (1.05 - sco
 float isGlass = 1.0 - step(0.06, abs(vSurf.z - 1.0)), isLamp = 1.0 - step(0.06, abs(vSurf.z - 1.6));
 float dayK = uSea * (1.0 - uNight);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.045, 0.055), isGlass * dayK * 0.9);
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.3, 0.24, 0.15), isLamp * dayK * 0.6);   // unlit horn panes
 float glowK = 1.0 - dayK * (isGlass * 0.85 + isLamp * 0.6);
 float isGold = step(0.9, vSurf.x);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
@@ -271,7 +272,7 @@ metalnessFactor = vSurf.x * (1.0 - burnAmt * 0.9);`)
     totalEmissiveRadiance += uSunCol * diffuseColor.rgb * glint * 2.4 * gk * (1.0 - uNight);
     // lantern light pools at night (stern lanterns, deck lantern)
     float lp = (lampPool(vLampA, uLampA.w, normal) + 0.8 * lampPool(vLampB, uLampB.w, normal)) * uNight * (1.0 - hole);
-    totalEmissiveRadiance += diffuseColor.rgb * ${LAMP_COL} * lp * 3.0;
+    totalEmissiveRadiance += diffuseColor.rgb * ${LAMP_COL} * lp * 2.2;
   }
 }`);
   };
@@ -553,7 +554,7 @@ vFold = clamp((flagWave(aFlag.x + 0.04, aFlag.y, aKind) - flagWave(aFlag.x, aFla
       .replace('#include <map_fragment>', `#include <map_fragment>
 diffuseColor.rgb *= gl_FrontFacing ? 0.95 : 0.8;
 // cloth folds: lit crests, shaded troughs; deeper toward the fly where the waves are biggest
-diffuseColor.rgb *= 1.0 + uSea * clamp(vFold, -1.0, 1.0) * 0.2;`)
+diffuseColor.rgb *= 1.0 + uSea * clamp(vFold, -1.0, 1.0) * 0.38;`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 totalEmissiveRadiance += diffuseColor.rgb * 0.12 * (1.0 - uSea * uNight * 0.85);`);
   };
