@@ -499,8 +499,10 @@
 @keyframes toastBump { 40% { transform: scale(1.04); filter: brightness(1.08); } }
 
 /* ---------- banner (major announcements): top centre, just under the goal line, compact; the prompts step under it ---------- */
-.banner { position: absolute; left: 50%; top: 3em; transform: translateX(-50%); width: max-content; max-width: min(46em, 72vw); transition: opacity 0.5s, transform 0.6s cubic-bezier(.2,.9,.3,1.1); }
+/* width: what the ledger and resource band (≈ 41em on the left) leave free, mirrored; on narrow screens it drops below the band */
+.banner { position: absolute; left: 50%; top: 3em; transform: translateX(-50%); width: max-content; max-width: min(46em, max(20em, calc(100vw - 84em))); transition: opacity 0.5s, transform 0.6s cubic-bezier(.2,.9,.3,1.1); }
 #hud.banner-on { --prompt-top: calc(3.6em + var(--bh, 3.4em)); }
+@media (max-aspect-ratio: 3/2) { .banner { top: 7.9em; max-width: min(46em, 86vw); } #hud.banner-on { --prompt-top: calc(8.5em + var(--bh, 3.4em)); } }
 .banner.off { opacity: 0; transform: translate(-50%, -0.8em) scale(0.96); }
 .banner.on { opacity: 1; animation: bannerIn 0.7s cubic-bezier(.2,.9,.3,1.15) both; }
 @keyframes bannerIn { from { opacity: 0; transform: translate(-50%, -1em) scaleX(0.6); } }
