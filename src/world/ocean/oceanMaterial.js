@@ -2,9 +2,10 @@
 // Uses three's light/shadow/fog chunks (lights: true, fog: true) so the surface receives ship shadows and the
 // the aerial-perspective fog patched in by src/world/sky/atmosphere.js; everything else (depth colour, Fresnel sky/env reflection, sun specular
 // + glitter, crest SSS glow, Jacobian crest foam, shoreline foam bands, wake foam, two scrolling detail normal layers,
-// moonlight) is custom.
+// moonlight and moon path, drifting cloud shadows from ../sky/cloudShadow.js on the direct light) is custom.
 import * as THREE from 'three';
 import { GLSL_WAVES } from './waves.js';
+import { CLOUD_SHADOW, cloudShadowPars } from '../sky/cloudShadow.js';
 
 const vert = /* glsl */`
 ${GLSL_WAVES}
@@ -77,6 +78,7 @@ varying vec2 vP0; varying vec3 vWorld; varying float vAtt; varying float vTerrai
 #include <shadowmap_pars_fragment>
 #include <shadowmask_pars_fragment>
 #include <logdepthbuf_pars_fragment>
+${cloudShadowPars}
 // material.envMap = PMREM texture  => three adds USE_ENVMAP / ENVMAP_TYPE_CUBE_UV / CUBEUV_* defines
 #ifdef ENVMAP_TYPE_CUBE_UV
   uniform sampler2D envMap;
@@ -185,7 +187,7 @@ void main() {
   float sh2 = smoothstep( 5.0, 0.8, waterDepth );     // turquoise → sand-lit
   vec3 bodyCol = mix( openCol, uTeal, sh0 * 0.75 );
   bodyCol = mix( bodyCol, uTurq, sh1 * 0.9 );
-  bodyCol = mix( bodyCol, uSand, sh2 * 0.85 );
+  bodyCol = mix( bodyCol, uSand, sh2 * mix( 0.4, 0.85, smoothstep( 0.04, 0.3, V.y ) ) );   // pale sand-lit water only seen from above (from sea level it read milky)
   float shallowGlow = 1.0 + ( sh1 * 0.5 + sh2 * 0.6 ) * alt;   // luminous shallows from altitude
   // lot 0 — shoals readable from the chase camera: at deck height the turquoise was swamped by the Fresnel sky, so
   // reef-depth water (≈1–9 m) gets a lighter, more saturated turquoise that does not depend on altitude
@@ -248,8 +250,11 @@ void main() {
     }
   }
   shadow = min( shadow, 1.0 - shipSh * 0.85 );
+  // drifting cloud shadows (same field as on the islands) dim the direct light: the sun path and glitter go out
+  // under a cloud, so the shadows run on from land across the water
+  float cloudSh = cloudShadow( vWorld );
   vec3 keyLight = uLightCol * lightUp;
-  vec3 waterLight = uAmbient * 0.45 + keyLight * ( 0.12 + 0.1 * NdotL ) * mix( 0.55, 1.0, shadow );
+  vec3 waterLight = uAmbient * 0.45 + keyLight * ( 0.12 + 0.1 * NdotL ) * mix( 0.55, 1.0, shadow ) * mix( 0.7, 1.0, cloudSh );
   vec3 col = bodyCol * waterLight * shallowGlow;
 
   // ---- subsurface glow through crests (light travelling through thin wave tops) ----
@@ -292,6 +297,8 @@ void main() {
   // grazing reflections of the bright horizon haze otherwise stack into a white strip before fog
   // painted seas reflect a slightly darker, greyer sky: keeps foam the only near-white on the water
   refl = min( refl, uSkyHorizon * 0.82 + uLightCol * 0.01 );
+  // under an overcast deck the sea mirrors the dark cloud base, not the brighter horizon gap
+  refl *= 1.0 - 0.35 * uHzParams.y * smoothstep( 0.4, 0.9, uSeaState );
   // from altitude the sky reflection is flattened toward its mean: ripple-scale reflection contrast read as stripes
   // (less flattening re-printed ripple-scale cloud reflections as stripes from the battle camera: keep 0.75)
   refl = mix( refl, mix( uSkyHorizon, uSkyZenith, 0.6 ) * 0.8, altF * 0.75 );
@@ -350,9 +357,9 @@ void main() {
   // facing the sun from deck height the capped lobe still covered a wide band of near-white water at the waterline:
   // lower the cap at grazing view angles (the sun path stays, as flecks/glitter rather than a white sheet)
   float graze = 1.0 - smoothstep( 0.04, 0.3, V.y );
-  float hl = min( spec + glitter * F * 6.0 + column * ( 3.0 + 2.0 * pathK ), mix( 4.0, 1.6 + 0.8 * pathK, graze ) ) + min( sheen, mix( 0.25, 0.1, graze ) );
-  col += specCol * hl * shadow * lightUp;
-  col += mix( vec3( 1.0, 0.957, 0.84 ), vec3( 0.86, 0.93, 1.0 ), uIsMoon ) * uLightCol * min( flecks, 3.0 ) * lightUp;
+  float hl = min( spec + glitter * F * 6.0 + column * ( 3.0 + 0.6 * pathK ), mix( 4.0 - 1.4 * lowSun, 1.6 + 0.2 * pathK, graze ) ) + min( sheen, mix( 0.25, 0.1, graze ) );
+  col += specCol * hl * shadow * cloudSh * lightUp;
+  col += mix( vec3( 1.0, 0.957, 0.84 ), vec3( 0.86, 0.93, 1.0 ), uIsMoon ) * uLightCol * min( flecks, 2.2 ) * cloudSh * lightUp;
 
   // ---- foam ----
   float storm = uSeaState;
@@ -394,7 +401,7 @@ void main() {
     float reach = mix( 0.35, 1.1, surge );
     shore += smoothstep( reach, reach * 0.15, sd ) * 1.0;
     shore += exp( -pow( ( sd - 1.15 ) / 0.12, 2.0 ) ) * ( 1.0 - surge ) * 0.55;
-    shore += smoothstep( 2.2, 0.3, sd ) * 0.3;
+    shore += smoothstep( 2.2, 0.3, sd ) * 0.3 * ( 1.0 - smoothstep( 0.1, 0.5, footprint ) );
   }
   // lot 0 — breakers on reef edges: where the seabed rises steeply to within ~4 m, broken white water rolls
   // over the lip (pulsing with the swell), so a submerged reef reads as a foam line even from the chase camera
@@ -430,7 +437,7 @@ void main() {
   // a faint veil under the lace keeps thin Kelvin arms reading as one feathered line rather than dotted specks
   wakeLace = max( wakeLace, wCov * 0.3 );
   wakeLace = max( wakeLace, smoothstep( 1.1, 1.4, wk1 ) );     // churned white right behind the stern
-  float wakeBody = mix( wakeLace, wCov * 0.85, smoothstep( 0.9, 2.5, footprint ) );
+  float wakeBody = mix( wakeLace, wCov * 0.85, smoothstep( 0.9, 2.5, footprint ) ) * ( 1.0 - 0.3 * uIsMoon );   // moonlit foam glowed along the hulls
   // churned (aerated) water under the trail: a lighter, greener turquoise that shows through the holes of the lace
   // (kept close to the body colour: a strong turquoise churn read as a glowing cyan slick under and behind every hull)
   float churnK = clamp( churn, 0.0, 1.0 ) * ( 0.14 + 0.16 * ( 1.0 - altF ) );
@@ -479,7 +486,7 @@ export function createOceanMaterial(shared) {
   const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.lights, THREE.UniformsLib.fog]);
   // re-attach shared (by-reference) fog extras that merge() may have cloned
   for (const k of ['fogSunDir', 'fogSunGlow', 'fogAtmos']) if (THREE.UniformsLib.fog[k]) uniforms[k] = THREE.UniformsLib.fog[k];
-  Object.assign(uniforms, shared, {
+  Object.assign(uniforms, shared, CLOUD_SHADOW.uniforms, {
     uTime: { value: 0 }, uSeaState: { value: 0.5 },
     uWindDir: { value: new THREE.Vector2(1, 0) }, uWindSpeed: { value: 8 },
     uLightDir: { value: new THREE.Vector3(0, 1, 0) }, uLightCol: { value: new THREE.Color(3, 3, 3) },
