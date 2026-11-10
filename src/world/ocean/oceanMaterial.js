@@ -361,9 +361,13 @@ void main() {
   float jt = mix( 0.2, 0.75, smoothstep( 0.1, 1.0, storm ) );
   float crest = smoothstep( jt, jt - 0.2, jac ) * smoothstep( 0.15, 0.5, storm );
   // whitecap patches: breaking happens in groups, gated by a slowly drifting noise
-  float capGate = smoothstep( 0.6 - storm * 0.25, 0.85 - storm * 0.2, fN.a * 0.6 + texture2D( uFoamTex, vP0 / 61.0 + uOffF.zw * 0.5 ).r * 0.6 );
+  float capN = texture2D( uFoamTex, vP0 / 61.0 + uOffF.zw * 0.5 ).r;
+  float capGate = smoothstep( 0.6 - storm * 0.25, 0.85 - storm * 0.2, fN.a * 0.6 + capN * 0.6 );
   crest *= capGate;   // whitecaps only inside noise-gated patches, never along every crest line
   crest += smoothstep( 0.7, 1.3, crestH ) * capGate * smoothstep( 0.4, 0.9, storm ) * 0.6;
+  // gale: most wave tops break, in broad white caps spilling down the lee face (a storm sea must read white-flecked
+  // from the deck, not as a dark rippled lake)
+  crest += smoothstep( 0.8, 1.25, crestH ) * smoothstep( 0.45, 0.75, fN.a * 0.45 + capN * 0.75 ) * smoothstep( 0.65, 1.0, storm ) * 0.75;
   // fair-weather crest foam: thin lacy caps on the highest crests even in a moderate sea (painted seas always carry a
   // few white flecks), patch-gated so it never traces every crest line
   float fairGate = smoothstep( 0.48, 0.8, fN.a * 0.55 + texture2D( uFoamTex, vP0 / 47.0 + uOffF.xy * 0.7 ).r * 0.65 );
@@ -372,7 +376,7 @@ void main() {
   // wind-driven foam streaks (Beaufort 7+): long thin lines along the wind
   float streakN = texture2D( uFoamTex, vec2( pr.x / 140.0, pr.y / 11.0 ) + uOffP * 3.0 ).b;
   float streakM = texture2D( uFoamTex, vP0 / 173.0 + uOffP ).r;
-  crest += smoothstep( 0.66, 0.86, streakN ) * smoothstep( 0.45, 0.75, streakM ) * smoothstep( 0.6, 1.0, storm ) * 0.35;
+  crest += smoothstep( 0.62, 0.86, streakN ) * smoothstep( 0.4, 0.75, streakM ) * smoothstep( 0.6, 1.0, storm ) * 0.55;
   vec4 f1 = foamNT( vP0, 9.0, uOffF.xy );
   vec4 f2 = foamNT( vP0, 31.0, uOffF.zw );
   float foamTex = clamp( f1.g * 0.65 + f2.r * 0.55, 0.0, 1.0 );
@@ -384,7 +388,12 @@ void main() {
     float wob = fN.a * 9.0 + texture2D( uFoamTex, vP0 / 151.0 + uOffP * 2.63 ).r * 4.0;   // 397 m / 151 m: no visible repeat
     float band = sin( sd * 1.6 + uTime * 1.3 + wob );
     shore = smoothstep( 0.6, 1.0, band ) * smoothstep( 6.0, 0.8, sd ) * 0.8;
-    shore += smoothstep( 0.7, 0.05, sd ) * 1.0;
+    // swash: the white water at the waterline surges up the shelf and drains back on the swell's rhythm, leaving a
+    // thin lace line at its high-water mark
+    float surge = 0.5 + 0.5 * sin( uTime * 0.55 + wob * 0.7 );
+    float reach = mix( 0.35, 1.1, surge );
+    shore += smoothstep( reach, reach * 0.15, sd ) * 1.0;
+    shore += exp( -pow( ( sd - 1.15 ) / 0.12, 2.0 ) ) * ( 1.0 - surge ) * 0.55;
     shore += smoothstep( 2.2, 0.3, sd ) * 0.3;
   }
   // lot 0 — breakers on reef edges: where the seabed rises steeply to within ~4 m, broken white water rolls
@@ -438,6 +447,8 @@ void main() {
   // (whitecaps only: wake foam must not become a pale wash at range)
   foam = mix( foam, clamp( crest * 0.4 * ( 0.6 + foamTex * 0.6 ), 0.0, 0.6 ), smoothstep( 250.0, 1200.0, dist ) );
   vec3 foamLit = uFoamCol * ( uAmbient * mix( 0.75, 0.4, uIsMoon ) + keyLight * ( 0.35 + 0.4 * NdotL ) * mix( 0.5, 1.0, shadow ) * 0.3 );
+  // under an overcast the dim key light left foam a dull grey: keep it at least as bright as the horizon sky
+  foamLit = max( foamLit, uFoamCol * uSkyHorizon * 0.95 * smoothstep( 0.5, 0.9, storm ) * ( 1.0 - uIsMoon * 0.6 ) );
   foam = max( foam, shoreFoam );
   col = mix( col, foamLit, foam );
 
