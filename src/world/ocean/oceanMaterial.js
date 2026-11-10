@@ -387,7 +387,7 @@ void main() {
     // surf lines roll in toward the beach (phase decreases with depth), wobbling along the coast
     float wob = fN.a * 9.0 + texture2D( uFoamTex, vP0 / 151.0 + uOffP * 2.63 ).r * 4.0;   // 397 m / 151 m: no visible repeat
     float band = sin( sd * 1.6 + uTime * 1.3 + wob );
-    shore = smoothstep( 0.6, 1.0, band ) * smoothstep( 6.0, 0.8, sd ) * 0.8;
+    shore = smoothstep( 0.68, 0.97, band ) * smoothstep( 8.0, 1.0, sd );
     // swash: the white water at the waterline surges up the shelf and drains back on the swell's rhythm, leaving a
     // thin lace line at its high-water mark
     float surge = 0.5 + 0.5 * sin( uTime * 0.55 + wob * 0.7 );
@@ -437,7 +437,8 @@ void main() {
   col = mix( col, mix( bodyCol, mix( uTeal, uTurq, 0.35 ), 0.55 ) * waterLight * 1.15 + refl * F * 0.5, churnK );
   float foamAmt = crest * 0.9 + wakeFoam * 0.35;
   // shore foam: fine lacy texture so surf reads as lines of spume, not blobs
-  float shoreFoam = clamp( shore * smoothstep( 0.15, 0.75, f1.g * 0.8 + shore * 0.45 ), 0.0, 1.0 );
+  // (from range the lace mips to its mean and greyed the surf into a flat pale stripe: the lines stay solid there)
+  float shoreFoam = clamp( shore * mix( smoothstep( 0.15, 0.75, f1.g * 0.8 + shore * 0.45 ), 0.9, smoothstep( 0.12, 0.5, footprint ) ), 0.0, 1.0 );
   float fbreak = smoothstep( 0.0, 1.0, foamTex * 1.25 - ( 1.0 - min( foamAmt, 1.4 ) ) * 0.9 );
   float foam = clamp( fbreak * min( foamAmt * 1.5, 1.0 ), 0.0, 1.0 );
   foam = max( foam, clamp( wakeBody, 0.0, 1.0 ) * 0.92 );
