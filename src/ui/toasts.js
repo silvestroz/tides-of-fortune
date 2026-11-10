@@ -111,7 +111,7 @@ export class Toasts {
     if (q) { if (q.text === text) q.n++; else Object.assign(q, { text, kind, topic }); return null; }
     const item = { text, kind, topic, key: opts.key || null, n: 1, q0: performance.now() };
     // a bad message jumps ahead of queued infos
-    if (this.live.length >= this.max) { if (kind === 'bad') this.queue.unshift(item); else this.queue.push(item); this._evictInfo(); return null; }
+    if (this.live.filter(t => !t.out).length >= this.max) {   // a toast fading out no longer takes a place if (kind === 'bad') this.queue.unshift(item); else this.queue.push(item); this._evictInfo(); return null; }
     return this._show(item);
   }
   // journal only (no toast): flying resource gains already animate on screen
