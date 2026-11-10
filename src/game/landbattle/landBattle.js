@@ -1,19 +1,22 @@
 // Town assaults. game.landBattle: attack on an enemy town, a real-time tactical land battle (2–4 min) and its
-// aftermath (plunder, governor, prison). Simulation: sim.js; rendering: view.js; settings: src/data/landbattle.js.
+// aftermath (plunder, governor, prison). Simulation: sim.js; rendering: view.js; sounds and officers' orders:
+// feedback.js; settings: src/data/landbattle.js.
 // Trigger (at sea, mode 'sail'):
 //   - within 400 m of a port of another nation: “V Attack the town” prompt → choice of an assault from the sea
 //     (the fort fires first: hull and men lost, but fewer defenders and a landing at the foot of the town) or a
 //     landing further off (no fire from the fort, a longer march);
 //   - at the pirate haven: “V Organise an attack” → choice of a nearby enemy town, reinforcement of
 //     freebooters (LAND.haven.bonus × crew), voyage and landing.
-// API: offer(port) · start(port, { approach:'sea'|'land', allies }) · forceEnd(winner) · screenOf(x, z) · warmup()
+// API: offer(port) · start(port, { approach:'sea'|'land', allies }) · forceEnd(winner) · screenOf(x, z)
 //      active · sim · view · port · speed (time multiplier, debugging)
 // Events: 'landbattle:start' { port, approach }, 'landbattle:end' { port, result, choice }, 'state:change'
 //   { from:'sail', to:'land' } then { from:'land', to:'sail' }. Game mode 'land' during the battle.
+// Loading: the battlefield (view.js, imported on first use) is built when the battle starts, under the loading
+// screen (src/ui/townLoader.js), and released when it ends: nothing of it exists at sea.
 // Save: nothing mid-battle; the aftermath goes through state.gold/crew, state.towns (living.assaulted) and
 //   state.landBattles { won, lost } (missing from old saves: recreated on the fly).
 import { LandSim, T } from './sim.js';
-import { LandView } from './view.js';
+import { LandFeedback } from './feedback.js';
 import { LAND, UNIT_KINDS, NATION_COATS } from '../../data/landbattle.js';
 import { kc, isKey } from '../../core/keys.js';
 import { NATIONS } from '../career.js';
@@ -22,7 +25,7 @@ import { a, nationAdj, nationPeople, fmtInt, NBSP } from '../../core/i18n.js';
 import { saveGame } from '../save.js';
 import { hashString } from '../../core/rng.js';
 import './landbattle.css';
-import { precompile } from '../../core/precompile.js';
+import { openTownLoader, townScope } from '../../ui/townLoader.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -50,25 +53,6 @@ export class LandBattle {
     game.events.on('state:change', ({ to } = {}) => { if (to !== 'sail') this._showPrompt(null); });
   }
 
-  warmup() {
-    LandView.warmup(this.game);
-    // the miniature scene has neither cast shadows nor the real battle's lighting (15 programs compiled at the
-    // first assault): we build a real battle in front of the first port at hand and compile it (game.warmupRare,
-    // title screen); its programs stay alive (game._pinPrograms)
-    const g = this.game, port = g.islands?.ports?.find(p => !p.haven);
-    if (!port || this._warmed) return;
-    this._warmed = true;
-    try {
-      const sim = new LandSim({ heights: this._sample(port), seed: 7, playerForce: 60, garrison: 60, nation: port.faction, approach: 'land', allies: 0 });
-      const v = new LandView(g).build(sim, { coat: NATION_COATS[port.faction] || '#555', seed: 7 });
-      const r = g.renderer, sh = r.shadowMap.enabled, rt = r.getRenderTarget();
-      r.shadowMap.enabled = true; r.setRenderTarget(null);
-      r.compile(v.scene, v.camera);
-      r.shadowMap.enabled = sh; r.setRenderTarget(rt);
-      v.dispose();
-    } catch (e) { console.warn('warmup landbattle', e); }
-  }
-
   // ------------------------------------------------------------------ prompt at sea
   _target() {
     const g = this.game, p = g.player;
@@ -90,7 +74,7 @@ export class LandBattle {
     const k = t ? `${t.port.id}:${t.haven}` : '';
     if (k === this._promptK) return; this._promptK = k;
     this.prompt.classList.toggle('off', !t);
-    if (t) this.prompt.innerHTML = `<span class="key">V</span><span>${t.haven ? 'Organise an attack from the haven' : `Attack <b>${esc(t.port.name)}</b>`}</span>`;
+    if (t) this.prompt.innerHTML = `${kc('KeyV', 'key')}<span>${t.haven ? 'Organise an attack from the haven' : `Attack <b>${esc(t.port.name)}</b>`}</span>`;
   }
 
   _havenTargets(haven) {
@@ -178,9 +162,14 @@ export class LandBattle {
     this.active = true; this.paused = false; this.speed = this.speed || 1; this.sel.clear(); this._retreatT = 0;
     this._prevMode = g.mode; this._prevFrozen = this._wasFrozen ?? g.frozen; this._wasFrozen = undefined;
     this._showPrompt(null);
-    await this._fadeTo(true);
-    this.view = new LandView(g).build(this.sim, { coat: NATION_COATS[port.faction] || '#555', seed });
-    await precompile(g.renderer, this.view.scene, this.view.camera, { shadows: true });   // programs compiled in parallel under the fade
+    const L = openTownLoader(g, { mode: approach === 'sea' ? 'sea' : 'land', title: port.name });
+    g.frozen = true; g.renderOverride = () => {};   // nothing drawn behind the loading screen
+    this._scope = townScope(g);
+    await L.step();
+    const { LandView } = await import('./view.js');
+    const pf = p?.faction || 'pirate', ships = [p?.type || 'brig', ...(g.state.fleet || []).map(f => f.type)];
+    this.view = await new LandView(g).build(this.sim, { coat: NATION_COATS[port.faction] || '#555', playerCoat: NATION_COATS[pf] || NATION_COATS.pirate, seed, nation: port.faction, playerFaction: pf, ships }, L.step);
+    await L.compile(this.view.scene, this.view.camera);
     g.mode = 'land'; g.frozen = true;
     g.hud?.show?.(false);
     g.events.emit('state:change', { from: this._prevMode || 'sail', to: 'land' });
@@ -189,7 +178,7 @@ export class LandBattle {
     g.renderOverride = () => this._frame();
     this._buildHud();
     for (const u of this.sim.units) if (u.side === 'player' && u.kind !== 'officiers') this.sel.add(u);
-    this._fadeTo(false);
+    L.close();
     const msg = (this._seaNote ? this._seaNote + ' ' : '') + (allies ? `${allies} freebooters from the haven land with you. ` : '') + 'Take the square or rout the garrison.';
     this._seaNote = null;
     g.events.emit('notify', { text: msg, kind: 'info' });
@@ -225,18 +214,17 @@ export class LandBattle {
     }
     v.update(sim, this.paused ? 0 : dt, this.sel, u => u.side === 'player' || sim.visible(u, 'player'));
     v.render();
+    this.fx?.frame(this.paused ? 0 : dt, sim, v);
     this._updateHud();
     this.game.audio?.music && (this.game.audio.combat = Math.max(this.game.audio.combat || 0, 0.7));
   }
 
   _onEvent(e) {
-    const g = this.game, v = this.view;
-    if (e.type === 'volley') {
-      v.puff(e.unit.x, e.unit.z, 3 + Math.min(5, e.unit.n / 5));
-      if ((this._volT || 0) < performance.now()) { this._volT = performance.now() + 220; g.audio?.play?.('cannon', { volume: 0.25 }); }
-    } else if (e.type === 'melee') {
-      if ((this._melT || 0) < performance.now()) { this._melT = performance.now() + 700; g.audio?.play?.('hit', { volume: 0.25 }); }
-    } else if (e.type === 'rout') this._toast(e.unit.side === 'player' ? `Your ${UNIT_KINDS[e.unit.kind].name.toLowerCase()} are giving way!` : `${UNIT_KINDS[e.unit.kind].name}: they are running!`);
+    const v = this.view;
+    this.fx?.event(e, this.sim, v);
+    if (e.type === 'volley') v.volley(e.unit);
+    else if (e.type === 'melee') v.clash(e.x, e.z);
+    else if (e.type === 'rout') this._toast(e.unit.side === 'player' ? `Your ${UNIT_KINDS[e.unit.kind].name.toLowerCase()} are giving way!` : `${UNIT_KINDS[e.unit.kind].name}: they are running!`);
     else if (e.type === 'rally') this._toast(`${UNIT_KINDS[e.unit.kind].name} rallied around the officers.`);
     else if (e.type === 'end') setTimeout(() => this._outcome(e.result), 900);
     if (e.unit && (e.type === 'destroyed' || e.type === 'fled')) this.sel.delete(e.unit);
@@ -314,6 +302,8 @@ export class LandBattle {
     const g = this.game;
     this.active = false;
     if (g.renderOverride) g.renderOverride = null;
+    this.fx?.dispose(); this.fx = null;
+    this._scope?.end(); this._scope = null;   // before the dispose: the battle's programs go with its materials
     this.view?.dispose(); this.view = null;
     this.hud.classList.add('off'); this.hud.innerHTML = ''; this.box.style.display = 'none';
     g.mode = 'sail'; g.frozen = !!this._prevFrozen && !!g.params.get('frozen');
@@ -328,10 +318,11 @@ export class LandBattle {
     const P = this.sim.units.filter(u => u.side === 'player');
     this.hud.classList.remove('off');
     this.hud.innerHTML = `
-      <div class="lb-top tof-parch"><b class="lb-town">${esc(this.port.name)}</b><span class="lb-clock"></span><span class="lb-men"></span><div class="lb-hold"><i></i></div></div>
+      <div class="lb-top tof-parch"><b class="lb-town">${esc(this.port.name)}</b><span class="lb-clock"></span><span class="lb-men"></span><span class="lb-goal"></span><div class="lb-hold"><i></i></div></div>
       <div class="lb-cards">${P.map((u, i) => `<div class="lb-card tof-parch" data-id="${u.id}"><span class="kc">${i + 1}</span><b>${UNIT_KINDS[u.kind].name}</b><span class="n"></span><div class="mor"><i></i></div></div>`).join('')}</div>
-      <div class="lb-help tof-parch">Left click: select (drag = box) · right click: march / charge · ${kc('KeyW')}${kc('KeyA')}${kc('KeyS')}${kc('KeyD')} camera · ${kc('KeyQ')}${kc('KeyE')} rotate · wheel: zoom · <span class="kc">T</span> all · <span class="kc">H</span> halt · <span class="kc">Space</span> pause · <span class="kc">R</span><span class="kc">R</span> retreat</div>
-      <div class="lb-tags"></div><div class="lb-toast"></div><div class="lb-pause">Pause</div>`;
+      <div class="lb-help tof-parch">Left click: select (drag = box) · right click: march / charge · ${kc('KeyW')}${kc('KeyA')}${kc('KeyS')}${kc('KeyD')} camera · ${kc('KeyQ')}${kc('KeyE')} rotate · wheel: zoom · ${kc('KeyT')} all · ${kc('KeyH')} halt · ${kc('Space')} pause · ${kc('KeyR')}${kc('KeyR')} retreat</div>
+      <div class="lb-tags"></div><div class="lb-obj"><b></b><i><s></s></i></div><div class="lb-toast"></div><div class="lb-pause">Pause</div>`;
+    this.fx = new LandFeedback(this.game, this.hud);   // positional battle sounds, officers' orders
     this.hud.querySelectorAll('.lb-card').forEach(c => c.onclick = e => { const u = this.sim.units.find(x => x.id === +c.dataset.id); if (!u) return; if (!e.shiftKey) this.sel.clear(); this.sel.add(u); });
     this._tags = new Map();
   }
@@ -342,6 +333,14 @@ export class LandBattle {
     h.querySelector('.lb-men').textContent = `Your men ${s._men('player')} · garrison ${s.units.filter(u => u.side === 'enemy' && s.alive(u) && u.state !== 'rout').reduce((a, u) => a + u.n, 0)}`;
     h.querySelector('.lb-hold i').style.width = `${Math.min(100, s.hold / LAND.holdTime * 100)}%`;
     h.querySelector('.lb-hold').classList.toggle('on', s.hold > 0);
+    // objective: the square, its state and the time it must still be held
+    const sq = this.view.squareState, rest = Math.ceil(Math.max(0, LAND.holdTime - s.hold));
+    h.querySelector('.lb-goal').textContent = sq === 'held' ? `Holding the square: ${rest} s` : sq === 'contested' ? 'The square is contested' : sq === 'enemy' ? 'The garrison holds the square' : s.hold > 0 ? 'Retake the square!' : 'Take the square';
+    const ob = h.querySelector('.lb-obj'), op = this.view.project(s.map.town.x, s.map.town.z, 22);
+    ob.style.display = op.behind ? 'none' : ''; ob.style.transform = `translate(${op.x.toFixed(0)}px, ${op.y.toFixed(0)}px)`;
+    ob.className = `lb-obj ${sq}`;
+    ob.querySelector('b').textContent = sq === 'held' ? `Hold ${rest} s` : 'The square';
+    ob.querySelector('s').style.width = `${Math.min(100, s.hold / LAND.holdTime * 100)}%`;
     h.querySelector('.lb-pause').classList.toggle('on', this.paused);
     for (const c of h.querySelectorAll('.lb-card')) {
       const u = s.units.find(x => x.id === +c.dataset.id);
@@ -409,6 +408,8 @@ export class LandBattle {
       const units = [...this.sel].filter(u => this.sim.alive(u));
       if (!units.length) return;
       const tgt = this.sim.order(units, pt.x, pt.z);
+      this.view.order(pt.x, pt.z, tgt);
+      this.fx?.order(units, tgt, this.sim, this.view);
       this.game.audio?.play?.('ui:click');
       this._toast(tgt ? `Attack: ${UNIT_KINDS[tgt.kind].name.toLowerCase()}!` : this.sim.cellAt(pt.x, pt.z) === T.WOOD ? 'Into the cover of the woods.' : this.sim.cellAt(pt.x, pt.z) === T.HILL ? 'Take the high ground.' : 'Forward, march.');
     }

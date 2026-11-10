@@ -1,4 +1,4 @@
-/* Sneaking: detection gauge, objective, marks above the guards. The rest reuses landbattle.css. */
+/* Sneaking: detection gauge, objective, goal marks (the guards' indicators: feedback.css). The rest reuses landbattle.css. */
 .sn-hud { position: absolute; inset: 0; pointer-events: none; font-family: var(--txt); z-index: 10; }
 .sn-hud.off { display: none; }
 .sn-hud .kc { display: inline-block; min-width: 1.3em; padding: 0 .3em; border-radius: .2em; text-align: center;
@@ -20,12 +20,17 @@
 .sn-lock { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); width: 9em; height: .5em; background: rgba(0,0,0,.45); border-radius: .25em;
   overflow: hidden; display: none; } .sn-lock.on { display: block; } .sn-lock i { display: block; height: 100%; width: 0; background: #9ec4ff; }
 .sn-marks { position: absolute; inset: 0; overflow: hidden; }
-.sn-mark { position: absolute; left: 0; top: 0; margin: -1.2em 0 0 -.6em; font: bold 1.5em Georgia, serif; color: #ffd36a;
-  text-shadow: 0 0 .25em #000, 0 0 .1em #000; }
-.sn-mark[data-l="2"] { color: #ff5a3a; }
 .sn-goalmark { position: absolute; left: 0; top: 0; margin: -1.6em 0 0 -3em; width: 6em; text-align: center; color: #ffe9a0; font-size: .9em;
   text-shadow: 0 0 .25em #000, 0 0 .1em #000; letter-spacing: .05em; }
 /* Readability: town name in SC, objective marker on a dark pill */
 .sn-top b { font-family: var(--sc); letter-spacing: .04em; }
 .sn-goalmark { font-size: max(.9em, 12px); }
 .sn-goalmark span, .sn-goalmark { text-shadow: 0 0 .3em #000, 0 0 .12em #000, 0 1px 2px #000; }
+/* Fugitive's tools: stones left (top right), contextual key prompt above the captain */
+.sn-tools { position: absolute; top: .8em; right: 1em; padding: .3em .9em; border-radius: .3em; font-size: .95em; color: #4a3018;
+  box-shadow: inset 0 0 .8em rgba(110,66,18,.5), 0 0 0 .1em #5a3c14; white-space: nowrap; }
+.sn-tools b { letter-spacing: .15em; color: #3a2410; font-weight: normal; }
+.sn-ctx { position: absolute; left: 0; top: 0; margin: 1.6em 0 0 -6em; width: 12em; text-align: center; color: #f6e3b0; font-size: .9em; display: none; }
+.sn-ctx > * { vertical-align: middle; }
+.sn-ctx { text-shadow: 0 1px 2px #000; }
+.sn-ctx::before { content: ''; position: absolute; inset: -.2em 1.5em; background: rgba(18,12,6,.72); border-radius: .8em; z-index: -1; }

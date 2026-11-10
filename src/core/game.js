@@ -235,8 +235,9 @@ export class Game {
     const m = n => this.bootMark('warmup:' + n);   // duration of each step (game.bootTimes)
     m('begin');
     warmupPortraits(this, { render: false });   // character portraits: the hall paintings know the game; the bust renders in warmupRare
-    // land battle, sneaking, port sets, duel deck and portrait medallions compile during the title screen
-    // (warmupRare); whatever is not done when the menu closes compiles on first use, as before.
+    // port sets, duel deck and portrait medallions compile during the title screen (warmupRare); whatever is not
+    // done when the menu closes compiles on first use, as before. The town scenes (land battle, sneaking) build and
+    // compile their own content when they start, under their loading screen (src/ui/townLoader.js).
     // The sea is drawn by PostFX into a render target (linear output, no tone mapping); compiled for the screen
     // (null target), the warm-up programs were useless to it and everything recompiled on the first frame (the duel
     // recompiled its characters). So we compile into a small target, like the real render.
@@ -289,8 +290,6 @@ export class Game {
       ['portraits', () => warmupPortraits(this)],          // character portraits: port speaker busts (studio programs)
       ['worldMap', () => this.worldMap?._ensureBase?.()],  // chart (M): engraved 3072² background baked once (~1 s on first open)
       ['port:market', stage('market')], ['port:tavern', stage('tavern')], ['port:shipyard', stage('shipyard')], ['port:governor', stage('governor')],
-      ['landBattle', () => this.landBattle?.warmup?.()],   // land-battle materials
-      ['sneak', () => this.sneak?.warmup?.()],             // infiltration materials
     ];
     const run = () => { const it = q.shift(); if (!it) return; this._bt = performance.now(); try { it[1](); } catch (e) { console.warn('warmup', it[0], e); } this.bootMark('warmup:' + it[0]); };
     if (now) { while (q.length) run(); return; }
