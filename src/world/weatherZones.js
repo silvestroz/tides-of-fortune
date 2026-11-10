@@ -69,7 +69,8 @@ const PUFF_FS = /* glsl */`
   varying vec2 vUv; varying vec3 vCol; varying float vFade; varying float vShade;
   void main() {
     vec4 t = texture2D(uMap, vUv);
-    vec3 col = mix(vCol * vShade, uTint, 0.28) * uLight;
+    // the dimmer the light, the more the puff melts into the sky colour (no white blobs on a night horizon)
+    vec3 col = mix(vCol * vShade * uLight, uTint, 0.28 + 0.6 * (1.0 - uLight));
     float a = t.a * vFade * 0.95;
     if (a < 0.01) discard;
     gl_FragColor = vec4(col, a);
@@ -316,7 +317,7 @@ export class WeatherZones {
     const fog = this.game.scene.fog?.color;
     if (fog) this.puffMat.uniforms.uTint.value.copy(fog);
     const sun = this.game.sky?.sunDir?.y ?? this.game.sky?.sunElevation;
-    if (typeof sun === 'number') this.puffMat.uniforms.uLight.value = Math.max(0.28, Math.min(1, 0.45 + sun * 2));
+    if (typeof sun === 'number') this.puffMat.uniforms.uLight.value = Math.max(0.12, Math.min(1, 0.45 + sun * 2));
     const show = this.game.mode !== 'port' && this.game.mode !== 'duel';
     this.puffs.visible = this.rain.visible = show;
   }

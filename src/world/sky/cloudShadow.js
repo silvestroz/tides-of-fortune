@@ -33,7 +33,7 @@ float cloudShadow( vec3 wp ) {
   if ( uCsAmt < 0.005 ) return 1.0;
   vec2 uv = ( wp.xz - uCsOff ) * ${(1 / TILE).toFixed(8)};
   float n = texture2D( uCsNoise, uv ).r * 0.7 + texture2D( uCsNoise, uv * 3.0 + 0.37 ).g * 0.3;
-  float t = 0.86 - uCsCov * 0.42;
+  float t = 0.76 - uCsCov * 0.38;   // ~30 % of the ground shaded under fair-weather cumulus, ~60 % when cloudy
   return 1.0 - uCsAmt * smoothstep( t - 0.035, t + 0.05, n );
 }
 `;

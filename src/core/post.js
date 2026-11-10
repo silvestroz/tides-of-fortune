@@ -157,7 +157,7 @@ export class PostFX {
     this.godRays.strength = onScreen * (sky.sunVisibility ?? 1) * lowBoost * 2.2 * (duel ? 0.3 : 1);
     this.godRays.threshold = 0.65 + (1 - golden) * 0.4;
     // layered haze on distant land: full by day, lighter at night and in a storm (already grey and close)
-    this._layerHaze = duel ? 0 : 0.85 * (1 - night * 0.5) * (1 - storm * 0.5);
+    this._layerHaze = duel ? 0 : 1.0 * (1 - night * 0.5) * (1 - storm * 0.5);
     this.godRays.tint.copy(sky.sunColor);
   }
 

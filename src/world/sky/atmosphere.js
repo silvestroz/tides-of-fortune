@@ -83,7 +83,7 @@ THREE.ShaderChunk.fog_fragment = /* glsl */`
 			// receding layers: a cool, slightly darker veil peaking at mid fog depth, strongest away from the sun
 			float fogY = cameraPosition.y + vFogWorldDelta.y;
 			float fogLayer = fogFactor * ( 1.0 - fogFactor ) * 4.0 * smoothstep( 1.5, 12.0, fogY ) * ( 1.0 - fogMu * fogMu );
-			fogCol = mix( fogCol, fogColor * vec3( 0.66, 0.8, 1.0 ) + vec3( 0.0, 0.004, 0.012 ), clamp( fogLayer * fogAtmos.w, 0.0, 1.0 ) );
+			fogCol = mix( fogCol, fogColor * vec3( 0.58, 0.74, 0.98 ) + vec3( 0.0, 0.005, 0.016 ), clamp( fogLayer * fogAtmos.w, 0.0, 1.0 ) );
 		}
 		gl_FragColor.rgb = mix( gl_FragColor.rgb, fogCol, clamp( fogFactor, 0.0, 1.0 ) );
 	}
