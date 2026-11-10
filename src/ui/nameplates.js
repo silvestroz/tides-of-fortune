@@ -42,7 +42,7 @@ const STYLE = `
 const OBSTACLES = [
   ['.ledger-strip', 1], ['.res-band', 1], ['.toasts .toast', 1], ['.goal-line', 1], ['.chart', 1], ['.chart .legend', 1], ['.target', 1],
   ['.shoal-alert', 1], ['.banner', 1], ['.prompt', 0], ['.helm .bar', 0], ['.helm .tacline', 0], ['.helm .cam-pill', 0],
-  ['.hint-card', 0], ['.mission-brief', 0], ['.hint', 0],
+  ['.hint-card', 0], ['.mate-guide', 0], ['.mission-brief', 0], ['.hint', 0],
 ];
 const GAP = 5;   // px kept between a plate and anything else
 
