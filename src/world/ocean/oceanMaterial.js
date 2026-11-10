@@ -357,7 +357,7 @@ void main() {
   // facing the sun from deck height the capped lobe still covered a wide band of near-white water at the waterline:
   // lower the cap at grazing view angles (the sun path stays, as flecks/glitter rather than a white sheet)
   float graze = 1.0 - smoothstep( 0.04, 0.3, V.y );
-  float hl = min( spec + glitter * F * 6.0 + column * ( 3.0 + 0.6 * pathK ), mix( 4.0 - 1.4 * lowSun, 1.6 + 0.2 * pathK, graze ) ) + min( sheen, mix( 0.25, 0.1, graze ) );
+  float hl = min( spec + glitter * F * 6.0 + column * ( 2.4 + 0.6 * uIsMoon ), mix( 4.0 - 1.6 * lowSun, 1.3 + 0.3 * uIsMoon, graze ) ) + min( sheen, mix( 0.25, 0.1, graze ) );
   col += specCol * hl * shadow * cloudSh * lightUp;
   col += mix( vec3( 1.0, 0.957, 0.84 ), vec3( 0.86, 0.93, 1.0 ), uIsMoon ) * uLightCol * min( flecks, 2.2 ) * cloudSh * lightUp;
 
