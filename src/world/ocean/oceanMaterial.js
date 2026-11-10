@@ -2,9 +2,10 @@
 // Uses three's light/shadow/fog chunks (lights: true, fog: true) so the surface receives ship shadows and the
 // the aerial-perspective fog patched in by src/world/sky/atmosphere.js; everything else (depth colour, Fresnel sky/env reflection, sun specular
 // + glitter, crest SSS glow, Jacobian crest foam, shoreline foam bands, wake foam, two scrolling detail normal layers,
-// moonlight) is custom.
+// moonlight and moon path, drifting cloud shadows from ../sky/cloudShadow.js on the direct light) is custom.
 import * as THREE from 'three';
 import { GLSL_WAVES } from './waves.js';
+import { CLOUD_SHADOW, cloudShadowPars } from '../sky/cloudShadow.js';
 
 const vert = /* glsl */`
 ${GLSL_WAVES}
@@ -77,6 +78,7 @@ varying vec2 vP0; varying vec3 vWorld; varying float vAtt; varying float vTerrai
 #include <shadowmap_pars_fragment>
 #include <shadowmask_pars_fragment>
 #include <logdepthbuf_pars_fragment>
+${cloudShadowPars}
 // material.envMap = PMREM texture  => three adds USE_ENVMAP / ENVMAP_TYPE_CUBE_UV / CUBEUV_* defines
 #ifdef ENVMAP_TYPE_CUBE_UV
   uniform sampler2D envMap;
@@ -185,7 +187,7 @@ void main() {
   float sh2 = smoothstep( 5.0, 0.8, waterDepth );     // turquoise → sand-lit
   vec3 bodyCol = mix( openCol, uTeal, sh0 * 0.75 );
   bodyCol = mix( bodyCol, uTurq, sh1 * 0.9 );
-  bodyCol = mix( bodyCol, uSand, sh2 * 0.85 );
+  bodyCol = mix( bodyCol, uSand, sh2 * mix( 0.4, 0.85, smoothstep( 0.04, 0.3, V.y ) ) );   // pale sand-lit water only seen from above (from sea level it read milky)
   float shallowGlow = 1.0 + ( sh1 * 0.5 + sh2 * 0.6 ) * alt;   // luminous shallows from altitude
   // lot 0 — shoals readable from the chase camera: at deck height the turquoise was swamped by the Fresnel sky, so
   // reef-depth water (≈1–9 m) gets a lighter, more saturated turquoise that does not depend on altitude
@@ -248,8 +250,11 @@ void main() {
     }
   }
   shadow = min( shadow, 1.0 - shipSh * 0.85 );
+  // drifting cloud shadows (same field as on the islands) dim the direct light: the sun path and glitter go out
+  // under a cloud, so the shadows run on from land across the water
+  float cloudSh = cloudShadow( vWorld );
   vec3 keyLight = uLightCol * lightUp;
-  vec3 waterLight = uAmbient * 0.45 + keyLight * ( 0.12 + 0.1 * NdotL ) * mix( 0.55, 1.0, shadow );
+  vec3 waterLight = uAmbient * 0.45 + keyLight * ( 0.12 + 0.1 * NdotL ) * mix( 0.55, 1.0, shadow ) * mix( 0.7, 1.0, cloudSh );
   vec3 col = bodyCol * waterLight * shallowGlow;
 
   // ---- subsurface glow through crests (light travelling through thin wave tops) ----
@@ -292,6 +297,8 @@ void main() {
   // grazing reflections of the bright horizon haze otherwise stack into a white strip before fog
   // painted seas reflect a slightly darker, greyer sky: keeps foam the only near-white on the water
   refl = min( refl, uSkyHorizon * 0.82 + uLightCol * 0.01 );
+  // under an overcast deck the sea mirrors the dark cloud base, not the brighter horizon gap
+  refl *= 1.0 - 0.35 * uHzParams.y * smoothstep( 0.4, 0.9, uSeaState );
   // from altitude the sky reflection is flattened toward its mean: ripple-scale reflection contrast read as stripes
   // (less flattening re-printed ripple-scale cloud reflections as stripes from the battle camera: keep 0.75)
   refl = mix( refl, mix( uSkyHorizon, uSkyZenith, 0.6 ) * 0.8, altF * 0.75 );
@@ -332,14 +339,17 @@ void main() {
   vec3 specCol = uLightCol * mix( vec3( 1.0 ), vec3( 1.0, 0.96, 0.84 ), 0.6 );
   // low-sun column: a vertically stretched lobe around the mirror direction of the sun (golden path on the water)
   float lowSun = 1.0 - smoothstep( 0.02, 0.35, uLightDir.y );
+  // the moon lays its path at any elevation it reaches (shorter and narrower the higher it rides): the night sea's one
+  // bright feature, a broken silver road of flecks toward the moon
+  float pathK = max( lowSun, uIsMoon * ( 1.0 - smoothstep( 0.35, 0.85, uLightDir.y ) ) );
   vec3 Rv = reflect( -V, normalize( mix( vec3( 0.0, 1.0, 0.0 ), N, 0.7 ) ) );
   float az = dot( normalize( Rv.xz + 1e-4 ), normalize( uLightDir.xz + 1e-4 ) );
-  float colAz = pow( max( az, 0.0 ), 600.0 * ( 1.0 - lowSun * 0.6 ) );
-  float colEl = exp( -abs( Rv.y - uLightDir.y ) * mix( 30.0, 4.5, lowSun ) );   // gfx-ultra: longer golden path at sunset
-  float column = colAz * colEl * lowSun * ( 0.6 + 2.5 * smoothstep( 0.82, 1.0, NdotH ) ) * ( 1.0 - uIsMoon * 0.5 );
-  // sparkling flecks inside the column (warm white), stretched toward the viewer
+  float colAz = pow( max( az, 0.0 ), 600.0 * ( 1.0 - pathK * 0.6 ) );
+  float colEl = exp( -abs( Rv.y - uLightDir.y ) * mix( 30.0, 4.5, pathK ) );   // gfx-ultra: longer golden path at sunset
+  float column = colAz * colEl * pathK * ( 0.6 + 2.5 * smoothstep( 0.82, 1.0, NdotH ) ) * ( 1.0 - uIsMoon * 0.5 );
+  // sparkling flecks inside the column (warm white by day, silver under the moon), stretched toward the viewer
   float fl = hash12( floor( vec2( vP0.x * 1.3, vP0.y * 1.3 ) + uGlitOff * 0.65 + dn * 6.0 ) + floor( uTime * 6.0 ) * 0.37 );
-  float flecks = smoothstep( 0.8, 1.0, fl ) * subPix * colAz * lowSun * 6.0 * ( 1.0 - smoothstep( 200.0, 3000.0, dist ) );
+  float flecks = smoothstep( 0.8, 1.0, fl ) * subPix * colAz * pathK * mix( 6.0, 9.0, uIsMoon ) * ( 1.0 - smoothstep( 200.0, 3000.0, dist ) );
   // HDR highlights are capped: an unbounded GGX peak (D ~ 1/(pi a^2) ~ 260) times a bright key light feeds the bloom
   // with single-pixel spikes that smear into streaks; the cap keeps a strong but bounded sun path
   // the broad sheen lobe is capped separately and low: it covers a large solid angle, so with a high sun it washed the
@@ -347,9 +357,9 @@ void main() {
   // facing the sun from deck height the capped lobe still covered a wide band of near-white water at the waterline:
   // lower the cap at grazing view angles (the sun path stays, as flecks/glitter rather than a white sheet)
   float graze = 1.0 - smoothstep( 0.04, 0.3, V.y );
-  float hl = min( spec + glitter * F * 6.0 + column * ( 3.0 + 2.0 * lowSun ), mix( 4.0, 1.6 + 0.8 * lowSun, graze ) ) + min( sheen, mix( 0.25, 0.1, graze ) );
-  col += specCol * hl * shadow * lightUp;
-  col += vec3( 1.0, 0.957, 0.84 ) * uLightCol * min( flecks, 3.0 ) * lightUp;
+  float hl = min( spec + glitter * F * 6.0 + column * ( 2.4 + 0.6 * uIsMoon ), mix( 4.0 - 1.6 * lowSun, 1.3 + 0.3 * uIsMoon, graze ) ) + min( sheen, mix( 0.25, 0.1, graze ) );
+  col += specCol * hl * shadow * cloudSh * lightUp;
+  col += mix( vec3( 1.0, 0.957, 0.84 ), vec3( 0.86, 0.93, 1.0 ), uIsMoon ) * uLightCol * min( flecks, 2.2 ) * cloudSh * lightUp;
 
   // ---- foam ----
   float storm = uSeaState;
@@ -358,9 +368,13 @@ void main() {
   float jt = mix( 0.2, 0.75, smoothstep( 0.1, 1.0, storm ) );
   float crest = smoothstep( jt, jt - 0.2, jac ) * smoothstep( 0.15, 0.5, storm );
   // whitecap patches: breaking happens in groups, gated by a slowly drifting noise
-  float capGate = smoothstep( 0.6 - storm * 0.25, 0.85 - storm * 0.2, fN.a * 0.6 + texture2D( uFoamTex, vP0 / 61.0 + uOffF.zw * 0.5 ).r * 0.6 );
+  float capN = texture2D( uFoamTex, vP0 / 61.0 + uOffF.zw * 0.5 ).r;
+  float capGate = smoothstep( 0.6 - storm * 0.25, 0.85 - storm * 0.2, fN.a * 0.6 + capN * 0.6 );
   crest *= capGate;   // whitecaps only inside noise-gated patches, never along every crest line
   crest += smoothstep( 0.7, 1.3, crestH ) * capGate * smoothstep( 0.4, 0.9, storm ) * 0.6;
+  // gale: most wave tops break, in broad white caps spilling down the lee face (a storm sea must read white-flecked
+  // from the deck, not as a dark rippled lake)
+  crest += smoothstep( 0.8, 1.25, crestH ) * smoothstep( 0.45, 0.75, fN.a * 0.45 + capN * 0.75 ) * smoothstep( 0.65, 1.0, storm ) * 0.75;
   // fair-weather crest foam: thin lacy caps on the highest crests even in a moderate sea (painted seas always carry a
   // few white flecks), patch-gated so it never traces every crest line
   float fairGate = smoothstep( 0.48, 0.8, fN.a * 0.55 + texture2D( uFoamTex, vP0 / 47.0 + uOffF.xy * 0.7 ).r * 0.65 );
@@ -369,7 +383,7 @@ void main() {
   // wind-driven foam streaks (Beaufort 7+): long thin lines along the wind
   float streakN = texture2D( uFoamTex, vec2( pr.x / 140.0, pr.y / 11.0 ) + uOffP * 3.0 ).b;
   float streakM = texture2D( uFoamTex, vP0 / 173.0 + uOffP ).r;
-  crest += smoothstep( 0.66, 0.86, streakN ) * smoothstep( 0.45, 0.75, streakM ) * smoothstep( 0.6, 1.0, storm ) * 0.35;
+  crest += smoothstep( 0.62, 0.86, streakN ) * smoothstep( 0.4, 0.75, streakM ) * smoothstep( 0.6, 1.0, storm ) * 0.55;
   vec4 f1 = foamNT( vP0, 9.0, uOffF.xy );
   vec4 f2 = foamNT( vP0, 31.0, uOffF.zw );
   float foamTex = clamp( f1.g * 0.65 + f2.r * 0.55, 0.0, 1.0 );
@@ -380,9 +394,14 @@ void main() {
     // surf lines roll in toward the beach (phase decreases with depth), wobbling along the coast
     float wob = fN.a * 9.0 + texture2D( uFoamTex, vP0 / 151.0 + uOffP * 2.63 ).r * 4.0;   // 397 m / 151 m: no visible repeat
     float band = sin( sd * 1.6 + uTime * 1.3 + wob );
-    shore = smoothstep( 0.6, 1.0, band ) * smoothstep( 6.0, 0.8, sd ) * 0.8;
-    shore += smoothstep( 0.7, 0.05, sd ) * 1.0;
-    shore += smoothstep( 2.2, 0.3, sd ) * 0.3;
+    shore = smoothstep( 0.68, 0.97, band ) * smoothstep( 8.0, 1.0, sd );
+    // swash: the white water at the waterline surges up the shelf and drains back on the swell's rhythm, leaving a
+    // thin lace line at its high-water mark
+    float surge = 0.5 + 0.5 * sin( uTime * 0.55 + wob * 0.7 );
+    float reach = mix( 0.35, 1.1, surge );
+    shore += smoothstep( reach, reach * 0.15, sd ) * 1.0;
+    shore += exp( -pow( ( sd - 1.15 ) / 0.12, 2.0 ) ) * ( 1.0 - surge ) * 0.55;
+    shore += smoothstep( 2.2, 0.3, sd ) * 0.3 * ( 1.0 - smoothstep( 0.1, 0.5, footprint ) );
   }
   // lot 0 — breakers on reef edges: where the seabed rises steeply to within ~4 m, broken white water rolls
   // over the lip (pulsing with the swell), so a submerged reef reads as a foam line even from the chase camera
@@ -405,17 +424,30 @@ void main() {
     vec4 sp = texture2D( uSplashTex, ( vWorld.xz - uSplashCenter ) / uWakeExtent + 0.5 );
     splashF = sp.r * edge; churn += sp.b;   // round 6: splash foam kept separate (lacy, see below), no solid disc
   }
-  // churned (aerated) water under the trail: lighter turquoise
-  // (kept close to the body colour: a turquoise churn read as a glowing cyan slick under and behind every hull)
-  col = mix( col, mix( col, mix( bodyCol, uTeal, 0.35 ) * waterLight * 1.1 + refl * F * 0.5, 0.6 ), clamp( churn, 0.0, 1.0 ) * 0.14 );
+  // wake foam density -> lace: the bubble-wall lattice is thresholded by the density, so a dense wake is near-solid
+  // white with small holes, a thinning one keeps only the cell walls and its fringe breaks into marbled strands.
+  // The lattice scale steps from the 4.5 m to the 31 m tile with the pixel footprint (cells stay a few pixels wide),
+  // and once even those go sub-pixel the lace resolves to its mean coverage, a continuous stroke that never dots.
+  float wk1 = clamp( wakeFoam, 0.0, 1.4 );
+  float wCov = smoothstep( 0.04, 1.0, wk1 );
+  float laceN = foamNT( vP0, 4.5, uOffF.xy * 2.0 ).g;
+  float lace = mix( mix( laceN * 0.6 + f1.g * 0.5, f1.g * 0.55 + f2.g * 0.5, smoothstep( 0.05, 0.22, footprint ) ), f2.g, smoothstep( 0.3, 0.9, footprint ) );
+  float lt = 1.0 - wCov * 1.05;
+  float wakeLace = smoothstep( lt, lt + 0.38, lace ) * smoothstep( 0.0, 0.25, wCov );
+  // a faint veil under the lace keeps thin Kelvin arms reading as one feathered line rather than dotted specks
+  wakeLace = max( wakeLace, wCov * 0.3 );
+  wakeLace = max( wakeLace, smoothstep( 1.1, 1.4, wk1 ) );     // churned white right behind the stern
+  float wakeBody = mix( wakeLace, wCov * 0.85, smoothstep( 0.9, 2.5, footprint ) ) * ( 1.0 - 0.3 * uIsMoon );   // moonlit foam glowed along the hulls
+  // churned (aerated) water under the trail: a lighter, greener turquoise that shows through the holes of the lace
+  // (kept close to the body colour: a strong turquoise churn read as a glowing cyan slick under and behind every hull)
+  float churnK = clamp( churn, 0.0, 1.0 ) * ( 0.14 + 0.16 * ( 1.0 - altF ) );
+  col = mix( col, mix( bodyCol, mix( uTeal, uTurq, 0.35 ), 0.55 ) * waterLight * 1.15 + refl * F * 0.5, churnK );
   float foamAmt = crest * 0.9 + wakeFoam * 0.35;
   // shore foam: fine lacy texture so surf reads as lines of spume, not blobs
-  float shoreFoam = clamp( shore * smoothstep( 0.15, 0.75, f1.g * 0.8 + shore * 0.45 ), 0.0, 1.0 );
+  // (from range the lace mips to its mean and greyed the surf into a flat pale stripe: the lines stay solid there)
+  float shoreFoam = clamp( shore * mix( smoothstep( 0.15, 0.75, f1.g * 0.8 + shore * 0.45 ), 0.9, smoothstep( 0.12, 0.5, footprint ) ), 0.0, 1.0 );
   float fbreak = smoothstep( 0.0, 1.0, foamTex * 1.25 - ( 1.0 - min( foamAmt, 1.4 ) ) * 0.9 );
   float foam = clamp( fbreak * min( foamAmt * 1.5, 1.0 ), 0.0, 1.0 );
-  // wake foam: continuous body (texture only modulates density at the fringe) so trails never break into dots
-  float wk1 = clamp( wakeFoam, 0.0, 1.4 );
-  float wakeBody = smoothstep( 0.05, 0.75, wk1 ) * mix( 0.62 + 0.38 * foamTex, 1.0, smoothstep( 0.6, 1.2, wk1 ) );
   foam = max( foam, clamp( wakeBody, 0.0, 1.0 ) * 0.92 );
   // splash foam: broken lace that thins outward as it decays (the continuous wake body printed opaque white discs)
   foam = max( foam, smoothstep( 0.5, 0.95, foamTex * 0.85 + min( splashF, 1.0 ) * 0.5 ) * min( splashF * 1.3, 1.0 ) * 0.85 );
@@ -423,6 +455,8 @@ void main() {
   // (whitecaps only: wake foam must not become a pale wash at range)
   foam = mix( foam, clamp( crest * 0.4 * ( 0.6 + foamTex * 0.6 ), 0.0, 0.6 ), smoothstep( 250.0, 1200.0, dist ) );
   vec3 foamLit = uFoamCol * ( uAmbient * mix( 0.75, 0.4, uIsMoon ) + keyLight * ( 0.35 + 0.4 * NdotL ) * mix( 0.5, 1.0, shadow ) * 0.3 );
+  // under an overcast the dim key light left foam a dull grey: keep it at least as bright as the horizon sky
+  foamLit = max( foamLit, uFoamCol * uSkyHorizon * 0.95 * smoothstep( 0.5, 0.9, storm ) * ( 1.0 - uIsMoon * 0.6 ) );
   foam = max( foam, shoreFoam );
   col = mix( col, foamLit, foam );
 
@@ -452,7 +486,7 @@ export function createOceanMaterial(shared) {
   const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.lights, THREE.UniformsLib.fog]);
   // re-attach shared (by-reference) fog extras that merge() may have cloned
   for (const k of ['fogSunDir', 'fogSunGlow', 'fogAtmos']) if (THREE.UniformsLib.fog[k]) uniforms[k] = THREE.UniformsLib.fog[k];
-  Object.assign(uniforms, shared, {
+  Object.assign(uniforms, shared, CLOUD_SHADOW.uniforms, {
     uTime: { value: 0 }, uSeaState: { value: 0.5 },
     uWindDir: { value: new THREE.Vector2(1, 0) }, uWindSpeed: { value: 8 },
     uLightDir: { value: new THREE.Vector3(0, 1, 0) }, uLightCol: { value: new THREE.Color(3, 3, 3) },
