@@ -3,7 +3,9 @@
 //   const a = new SneakActors(scene, { coat, nation, maxGuards })
 //   a.update(sim, dt, camera) -> torches [{ x, y, z, heading }] (the raised hands of the torch bearers)
 //   a.throwStone()   (the captain's throwing arm)      a.stats() -> { tris, calls } per figure      a.dispose()
-// sim: { player: { x, z, heading, moving, run, picking, hidden }, guards: [{ x, z, heading, down, torch, state, wait, sus }] }
+//   a.reactGuard(id, 'flinch' | 'point')   a guard's reaction (startled when he spots you, pointing when he gives the alarm)
+// sim: { player: { x, z, heading, moving, run, picking, hidden }, guards: [{ x, z, heading, down, torch, state, wait, sus, kneelT }] }
+// A guard kneels over a knocked-out comrade while kneelT > 0; he looks around when searching.
 // Each figure: one skinned mesh (one material), its ink contour and its shadow: 3 draw calls.
 import * as THREE from 'three';
 import { CaptainFigure, LOOKS, liteFigureMaterials } from '../duel/figure.js';
@@ -41,6 +43,7 @@ export class SneakActors {
   }
 
   throwStone() { this.cap.anim.throw(); }
+  reactGuard(id, kind) { this.guards[id]?.anim.react(kind); }
 
   // triangles and draw calls of one figure (the guard's)
   stats() {
@@ -79,7 +82,7 @@ export class SneakActors {
       if (!gg.visible) continue;
       const chase = g.state === 'chase', moving = !g.down && a.speed > 0.3;
       const look = g.down ? 'calm' : (g.state === 'look' || g.state === 'investigate' || g.state === 'lured' || (chase && !moving)) ? 'search' : (!moving && (g.state === 'post' || g.wait > 0)) ? 'sentry' : 'calm';
-      a.anim.update(dt, { speed: moving ? a.speed : 0, dist: moving ? d : 0, gait: chase && a.speed > 3 ? 'run' : 'walk', pose: g.down ? 'down' : 'stand', look,
+      a.anim.update(dt, { speed: moving ? a.speed : 0, dist: moving ? d : 0, gait: chase && a.speed > 3 ? 'run' : 'walk', pose: g.down ? 'down' : g.kneelT > 0 ? 'kneel' : 'stand', look,
         carry: g.torch && !g.down ? 'torch' : chase ? 'port' : 'musket' });
       if (g.torch && !g.down) { const hp = a.anim.handPoint('r', _h); T.push({ x: hp.x, y: hp.y, z: hp.z, heading: g.heading }); }
     }

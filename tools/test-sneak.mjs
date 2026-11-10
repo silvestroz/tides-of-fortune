@@ -1,10 +1,10 @@
 // Targeted test of sneaking / prison escape: node tools/test-sneak.mjs [--browser] [--shots folder]
 // 1. pure simulation (no browser): connected towns (lanterns, hiding spots, varied houses), patrols drawn per attempt,
 //    sight (cone, walls, moon shadow, lantern light, disguise), noise, levels and alarm, hiding, knock-out and found
-//    bodies, stones, pursuit and capture, lock picking; win rates of a straight-line bot (must mostly fail) and of a
+//    bodies (the finder kneels over his comrade), guard state events, stones, pursuit and capture, lock picking; win rates of a straight-line bot (must mostly fail) and of a
 //    careful bot (dark routes, waits for gaps, hides, stones, knock-outs: must mostly win).
 // 2. --browser: ?shot=sneak on the dev server (127.0.0.1:5173, started separately or by this script): mode 'sneak',
-//    keyboard movement (physical codes), the tools' keys (H, T, K), draw calls, alarm, entering port through the
+//    keyboard movement (physical codes), barks and detection indicators, the tools' keys (H, T, K), draw calls, alarm, entering port through the
 //    tavern, hostile-port screen, escape
 //    from the prison screen, zero console errors; --shots: captures.
 import { SneakSim, buildTown, findPath, lineOfSight, C } from '../src/game/sneak/sim.js';
@@ -93,8 +93,14 @@ const timeTo = (sim, lvl, max = 12) => { const t0 = sim.time; while (sim.time - 
   ok(ko.type === 'ko' && k1.g.down && ko2.type === 'fail' && ko2.why === 'facing', 'knock-out: from behind it works, face to face it fails');
   const g2 = { ...k1.g, id: 1, down: false, ko: false, x: 100, z: 70, heading: Math.PI, sus: 0, path: [], wait: 999, _lockH: Math.PI };
   k1.sim.guards.push(g2); k1.sim.player.x = 60; k1.sim.player.z = 10;
-  let body = false; for (let i = 0; i < 40 && !body; i++) for (const e of k1.sim.step(DT)) if (e.type === 'body') body = true;
-  ok(body && k1.sim.alarm, 'a guard who finds his knocked-out comrade raises the alarm');
+  let body = false, by = null; for (let i = 0; i < 40 && !body; i++) for (const e of k1.sim.step(DT)) { if (e.type === 'body') body = true; if (e.type === 'alarm') by = e.by; }
+  ok(body && k1.sim.alarm && by === g2, 'a guard who finds his knocked-out comrade raises the alarm (the alarm event names him)');
+  let knelt = false; for (let i = 0; i < 160 && !knelt; i++) { k1.sim.step(DT); knelt = g2.kneelT > 0 && Math.hypot(g2.x - k1.g.x, g2.z - k1.g.z) < 1.6; }
+  ok(knelt, `the finder runs to his comrade and kneels over him (${Math.hypot(g2.x - k1.g.x, g2.z - k1.g.z).toFixed(1)} m)`);
+  // state changes are reported (barks, reactions): a guard who sees you turns from his patrol to look, then hunts
+  const gs = duo({ d: 10 }), seenStates = [];
+  for (let i = 0; i < 120 && !gs.sim.alarm; i++) { for (const e of gs.sim.step(DT)) if (e.type === 'guard' && e.guard === gs.g) seenStates.push(e.to); gs.g.heading = 0; }
+  ok(seenStates.includes('look') && seenStates.includes('chase'), `guard state events: ${seenStates.join(' → ')}`);
   // stone: the nearest guard goes to look where it fell
   const st = duo({ d: -11, angle: 0 }); st.g.wait = 0; st.g.path = null;
   st.sim.player.x = 95;
@@ -172,6 +178,18 @@ if (process.argv.includes('--browser')) {
   await page.keyboard.down('KeyW'); await page.waitForTimeout(2500); await page.keyboard.up('KeyW');
   const z1 = await page.evaluate(() => window.__game.sneak.sim.player.z);
   ok(z1 - z0 > 0.2, `physical-key movement (z ${z0.toFixed(1)} → ${z1.toFixed(1)})`);
+  // feedback: a guard close by who hunts you barks (speech bubble) and shows a red “!”; a suspicious one a “?”
+  await page.evaluate(() => { const s = window.__game.sneak.sim, p = s.player, [g, h] = s.guards.filter(q => !q.post && !q.down);
+    for (const [q, dx] of [[g, 5], [h, -5]]) { q.x = p.x + dx; q.z = p.z; q.heading = dx > 0 ? Math.PI / 2 : -Math.PI / 2; q.leader = null; q.lure = null; q.path = []; q.wait = 99; }
+    g.sus = 90; g.lastSeen = { x: g.x + 30, z: g.z }; h.sus = 30; h.lastSeen = { x: h.x - 30, z: h.z }; });
+  await page.waitForFunction(() => document.querySelector('.sn-bark') && document.querySelector('.sn-ind.spot'), null, { timeout: 15000, polling: 100 }).catch(() => {});
+  const fb = await page.evaluate(() => ({ bark: [...document.querySelectorAll('.sn-bark')].map(b => b.textContent).join(' | '),
+    spot: [...document.querySelectorAll('.sn-ind.spot')].filter(e => e.style.display !== 'none').length,
+    ask: [...document.querySelectorAll('.sn-ind:not(.spot)')].filter(e => e.style.display !== 'none' && e.textContent.includes('?')).length }));
+  ok(/Stop him|Halt/.test(fb.bark), `a guard who spots you barks (“${fb.bark}”)`);
+  ok(fb.spot >= 1 && fb.ask >= 1, `detection indicators: “!” over the hunter (${fb.spot}), “?” over the suspicious guard (${fb.ask})`);
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/sneak-spotted.png` });
+  await page.evaluate(() => { const s = window.__game.sneak.sim; s.guards.forEach(g => { g.sus = 0; g.x = 2; g.z = 150; g.lastSeen = null; g.route = [{ x: 2, z: 150 }, { x: 2, z: 150 }]; g.path = []; }); });
   // fugitive's tools by keyboard (key + code sent): H hides next to a hiding spot, T throws a stone, K knocks out
   const tools = await page.evaluate(() => { const s = window.__game.sneak.sim, h = s.map.hides[0]; s.player.x = h.x; s.player.z = h.z; return { stones: s.stones }; });
   await page.keyboard.press('KeyH'); await page.waitForTimeout(300);

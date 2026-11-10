@@ -21,7 +21,8 @@ export const SNEAK = {
   // fugitive's tools: stones (count, range m, noise radius m, cooldown s; a lured guard searches lureLook s);
   // hiding spots (reach m; a searching guard closer than searchR m finds you); knock-out (reach m, minimum angle
   // between the guard's facing and you, noise radius m); a knocked-out guard seen within bodySight m raises the alarm
-  tools: { stones: 3, throwMax: 16, stoneNoise: 15, cooldown: 1.2, lureLook: 5, hideR: 2.2, searchR: 2.2, koR: 1.9, koBack: 1.9, koNoise: 5, bodySight: 15, bodyTime: 0.5 },
+  // (his finder runs to him and kneels over him kneel s)
+  tools: { stones: 3, throwMax: 16, stoneNoise: 15, cooldown: 1.2, lureLook: 5, hideR: 2.2, searchR: 2.2, koR: 1.9, koBack: 1.9, koNoise: 5, bodySight: 15, bodyTime: 0.5, kneel: 1.4 },
   moonElev: 0.62,                  // rad: moon height (long cast shadows; the same direction for rendering and simulation)
   moonDir: { x: 0.85, z: -0.53 },  // direction (in plan) toward the moon: low on the sea side, the facades seen are moonlit
   // aftermath

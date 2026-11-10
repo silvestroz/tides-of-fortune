@@ -1,5 +1,6 @@
 // Town assaults. game.landBattle: attack on an enemy town, a real-time tactical land battle (2–4 min) and its
-// aftermath (plunder, governor, prison). Simulation: sim.js; rendering: view.js; settings: src/data/landbattle.js.
+// aftermath (plunder, governor, prison). Simulation: sim.js; rendering: view.js; sounds and officers' orders:
+// feedback.js; settings: src/data/landbattle.js.
 // Trigger (at sea, mode 'sail'):
 //   - within 400 m of a port of another nation: “V Attack the town” prompt → choice of an assault from the sea
 //     (the fort fires first: hull and men lost, but fewer defenders and a landing at the foot of the town) or a
@@ -15,6 +16,7 @@
 // Save: nothing mid-battle; the aftermath goes through state.gold/crew, state.towns (living.assaulted) and
 //   state.landBattles { won, lost } (missing from old saves: recreated on the fly).
 import { LandSim, T } from './sim.js';
+import { LandFeedback } from './feedback.js';
 import { LAND, UNIT_KINDS, NATION_COATS } from '../../data/landbattle.js';
 import { kc, isKey } from '../../core/keys.js';
 import { NATIONS } from '../career.js';
@@ -212,19 +214,17 @@ export class LandBattle {
     }
     v.update(sim, this.paused ? 0 : dt, this.sel, u => u.side === 'player' || sim.visible(u, 'player'));
     v.render();
+    this.fx?.frame(this.paused ? 0 : dt, sim, v);
     this._updateHud();
     this.game.audio?.music && (this.game.audio.combat = Math.max(this.game.audio.combat || 0, 0.7));
   }
 
   _onEvent(e) {
-    const g = this.game, v = this.view;
-    if (e.type === 'volley') {
-      v.volley(e.unit);
-      if ((this._volT || 0) < performance.now()) { this._volT = performance.now() + 220; g.audio?.play?.('cannon', { volume: 0.25 }); }
-    } else if (e.type === 'melee') {
-      v.clash(e.x, e.z);
-      if ((this._melT || 0) < performance.now()) { this._melT = performance.now() + 700; g.audio?.play?.('hit', { volume: 0.25 }); }
-    } else if (e.type === 'rout') this._toast(e.unit.side === 'player' ? `Your ${UNIT_KINDS[e.unit.kind].name.toLowerCase()} are giving way!` : `${UNIT_KINDS[e.unit.kind].name}: they are running!`);
+    const v = this.view;
+    this.fx?.event(e, this.sim, v);
+    if (e.type === 'volley') v.volley(e.unit);
+    else if (e.type === 'melee') v.clash(e.x, e.z);
+    else if (e.type === 'rout') this._toast(e.unit.side === 'player' ? `Your ${UNIT_KINDS[e.unit.kind].name.toLowerCase()} are giving way!` : `${UNIT_KINDS[e.unit.kind].name}: they are running!`);
     else if (e.type === 'rally') this._toast(`${UNIT_KINDS[e.unit.kind].name} rallied around the officers.`);
     else if (e.type === 'end') setTimeout(() => this._outcome(e.result), 900);
     if (e.unit && (e.type === 'destroyed' || e.type === 'fled')) this.sel.delete(e.unit);
@@ -302,6 +302,7 @@ export class LandBattle {
     const g = this.game;
     this.active = false;
     if (g.renderOverride) g.renderOverride = null;
+    this.fx?.dispose(); this.fx = null;
     this._scope?.end(); this._scope = null;   // before the dispose: the battle's programs go with its materials
     this.view?.dispose(); this.view = null;
     this.hud.classList.add('off'); this.hud.innerHTML = ''; this.box.style.display = 'none';
@@ -321,6 +322,7 @@ export class LandBattle {
       <div class="lb-cards">${P.map((u, i) => `<div class="lb-card tof-parch" data-id="${u.id}"><span class="kc">${i + 1}</span><b>${UNIT_KINDS[u.kind].name}</b><span class="n"></span><div class="mor"><i></i></div></div>`).join('')}</div>
       <div class="lb-help tof-parch">Left click: select (drag = box) · right click: march / charge · ${kc('KeyW')}${kc('KeyA')}${kc('KeyS')}${kc('KeyD')} camera · ${kc('KeyQ')}${kc('KeyE')} rotate · wheel: zoom · ${kc('KeyT')} all · ${kc('KeyH')} halt · ${kc('Space')} pause · ${kc('KeyR')}${kc('KeyR')} retreat</div>
       <div class="lb-tags"></div><div class="lb-obj"><b></b><i><s></s></i></div><div class="lb-toast"></div><div class="lb-pause">Pause</div>`;
+    this.fx = new LandFeedback(this.game, this.hud);   // positional battle sounds, officers' orders
     this.hud.querySelectorAll('.lb-card').forEach(c => c.onclick = e => { const u = this.sim.units.find(x => x.id === +c.dataset.id); if (!u) return; if (!e.shiftKey) this.sel.clear(); this.sel.add(u); });
     this._tags = new Map();
   }
@@ -407,6 +409,7 @@ export class LandBattle {
       if (!units.length) return;
       const tgt = this.sim.order(units, pt.x, pt.z);
       this.view.order(pt.x, pt.z, tgt);
+      this.fx?.order(units, tgt, this.sim, this.view);
       this.game.audio?.play?.('ui:click');
       this._toast(tgt ? `Attack: ${UNIT_KINDS[tgt.kind].name.toLowerCase()}!` : this.sim.cellAt(pt.x, pt.z) === T.WOOD ? 'Into the cover of the woods.' : this.sim.cellAt(pt.x, pt.z) === T.HILL ? 'Take the high ground.' : 'Forward, march.');
     }

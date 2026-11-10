@@ -1,17 +1,19 @@
 // Procedural locomotion for a CaptainFigure rig (or a clone of one): idle with breathing and weight shift, walk,
 // sneak (crouched, careful steps, arms in), run (long stride, forward lean), crouched hiding, kneeling at a lock,
-// knocked out on the back, sentry and searching head sweeps, carried props (musket shouldered or at port arms,
-// a torch raised in the right hand) and a quick overhand throw. Every state is a target the animator eases toward,
+// kneeling over a comrade, knocked out on the back, sentry and searching head sweeps, carried props (musket shouldered
+// or at port arms, a torch raised in the right hand), a quick overhand throw and two reactions (a startled flinch,
+// pointing ahead with the right arm). Every state is a target the animator eases toward,
 // so changes of state blend smoothly. The step phase advances with the distance travelled and the feet are placed
 // by a two-bone leg IK on a footprint cycle whose stance sweep matches that distance: the feet do not slide.
 //   const rig = cloneFigure(figure)            -> { group, j } sharing geometry and materials (one skeleton)
 //   const a = new GaitAnimator(rig, { scale, seed })     scale = the group's scale (world metres per figure metre)
 //   a.update(dt, { speed, dist, gait, pose, look, carry, lookYaw })
 //     speed: ground speed (world m/s) · dist: distance travelled this frame (world m)
-//     gait: 'walk' | 'sneak' | 'run'          pose: 'stand' | 'hide' | 'work' (kneeling at a lock) | 'down'
+//     gait: 'walk' | 'sneak' | 'run'          pose: 'stand' | 'hide' | 'work' (kneeling at a lock) | 'kneel' | 'down'
 //     look: 'calm' | 'sentry' | 'search'      carry: 'none' | 'musket' | 'port' | 'torch' (torch: right hand, musket on the left shoulder)
 //     lookYaw: extra head turn (radians)
 //   a.throw()                  quick overhand throw with the right arm
+//   a.react(kind)              'flinch' (0.5 s: recoils, arms up) | 'point' (1.5 s: the right arm points ahead)
 //   a.handPoint(side, out)     world position of the 'r' / 'l' fist after update (the group's world matrix must be current)
 // Figure frame: +Z forward, +Y up, right hand on -X; joint lengths are CaptainFigure's (thigh and shin 0.45 m).
 import * as THREE from 'three';
@@ -58,13 +60,15 @@ export class GaitAnimator {
     this.ph = (seed * 0.6180339) % 1 * TAU;   // own rhythm of the idle motions
     this.t = 0; this.phase = (seed * 0.37) % 1;
     // eased state: share of motion, of each gait style, of each pose, look and carry
-    this.w = { move: 0, walk: 1, sneak: 0, run: 0, hide: 0, work: 0, down: 0, sentry: 0, search: 0, musket: 0, port: 0, torch: 0 };
+    this.w = { move: 0, walk: 1, sneak: 0, run: 0, hide: 0, work: 0, kneel: 0, down: 0, sentry: 0, search: 0, musket: 0, port: 0, torch: 0 };
     this.thr = -1;   // time into a throw (-1: none)
+    this.rx = { flinch: -1, point: -1 };   // time into a reaction (-1: none)
     this.P = {}; for (const k of JOINTS) this.P[k] = [0, 0, 0];
     this.par = {}; for (const k of KEYS) this.par[k] = STYLES.walk[k];
   }
 
   throw() { this.thr = 0; }
+  react(kind) { if (kind in this.rx) this.rx[kind] = 0; }
 
   handPoint(side, out) {
     const wr = this.j[side === 'l' ? 'lWrist' : 'rWrist'];
@@ -81,7 +85,7 @@ export class GaitAnimator {
     for (const g of ['walk', 'sneak', 'run']) w[g] = ease(w[g], gait === g ? 1 : 0, 6, dt);
     const ws = w.walk + w.sneak + w.run || 1;
     for (const k of KEYS) par[k] = (STYLES.walk[k] * w.walk + STYLES.sneak[k] * w.sneak + STYLES.run[k] * w.run) / ws;
-    for (const q of ['hide', 'work']) w[q] = ease(w[q], pose === q ? 1 : 0, 7, dt);
+    for (const q of ['hide', 'work', 'kneel']) w[q] = ease(w[q], pose === q ? 1 : 0, 7, dt);
     w.down = ease(w.down, pose === 'down' ? 1 : 0, pose === 'down' ? 3.2 : 2, dt);
     w.sentry = ease(w.sentry, look === 'sentry' ? 1 : 0, 3, dt);
     w.search = ease(w.search, look === 'search' ? 1 : 0, 3, dt);
@@ -106,28 +110,29 @@ export class GaitAnimator {
     fr[0] += idle * -0.03; fl[0] += idle * 0.09;
     for (const [ft, z] of [[fr, 0.2], [fl, -0.24]]) { ft[0] += (z - ft[0]) * w.hide; ft[1] *= 1 - w.hide; ft[2] *= 1 - w.hide; }
     for (const [ft, z] of [[fr, 0.32], [fl, -0.12]]) { ft[0] += (z - ft[0]) * w.work; ft[1] *= 1 - w.work; ft[2] *= 1 - w.work; }
+    for (const [ft, z, r] of [[fr, 0.36, 0], [fl, -0.34, 0.9]]) { ft[0] += (z - ft[0]) * w.kneel; ft[1] *= 1 - w.kneel; ft[2] += (r - ft[2]) * w.kneel; }   // the left knee down, toes bent
     // ---- hips: height (bob, crouch, breathing), pitch, yaw twist, roll sway, lateral weight shift ----
     const breath = Math.sin(t * 1.7 + ph);
     const runBob = (1 - Math.cos(TAU * 2 * (phi - f / 2))) / 2, walkBob = (1 - Math.cos(TAU * 2 * (phi - f / 2))) / 2;
     let hipsY = 0.98 - par.crouch * (0.4 + 0.6 * a) - par.bob * a * (w.run / ws * -runBob + (1 - w.run / ws) * walkBob) + 0.004 * breath * idle;
-    hipsY += (0.5 - hipsY) * w.hide; hipsY += (0.6 - hipsY) * w.work;
+    hipsY += (0.5 - hipsY) * w.hide; hipsY += (0.6 - hipsY) * w.work; hipsY += (0.5 - hipsY) * w.kneel;
     for (const ft of [fr, fl]) hipsY = Math.min(hipsY, 0.08 + ft[1] + Math.sqrt(Math.max(0, LMAX * LMAX - ft[0] * ft[0])));
     const lookSweep = w.sentry * 0.75 * Math.sin(t * 0.55 + ph) + w.search * (0.95 * Math.sin(t * 1.05 + ph) + 0.3 * Math.sin(t * 2.3 + ph * 2));
     const idleYaw = 0.22 * Math.sin(t * 0.37 + ph) * idle * (1 - w.sentry) * (1 - w.search);
-    const hipsPitch = par.pelvis * (0.5 + 0.5 * a) + 0.3 * w.hide + 0.12 * w.work;
+    const hipsPitch = par.pelvis * (0.5 + 0.5 * a) + 0.3 * w.hide + 0.12 * w.work + 0.15 * w.kneel;
     const hipsYaw = par.twist * a * cR, hipsRoll = -par.sway * a * Math.sin(TAU * phi) + 0.035 * idle * (1 - w.hide) * (0.8 + 0.2 * Math.sin(t * 0.3 + ph));
     const rootX = -par.shift * a * Math.sin(TAU * phi) - 0.02 * idle * (1 - w.hide) * (0.8 + 0.2 * Math.sin(t * 0.3 + ph));
     set(P.root, 0, 0, 0);
     set(P.hips, hipsPitch, hipsYaw, hipsRoll);
     // ---- torso and head: forward lean, counter-twist, breathing; the head stays level and looks around ----
-    const spineX = par.lean * (0.35 + 0.65 * a) + 0.4 * w.hide + 0.3 * w.work, chestX = par.chest * (0.4 + 0.6 * a) + 0.018 * breath + 0.12 * w.hide;
+    const spineX = par.lean * (0.35 + 0.65 * a) + 0.4 * w.hide + 0.3 * w.work + 0.5 * w.kneel, chestX = par.chest * (0.4 + 0.6 * a) + 0.018 * breath + 0.12 * w.hide;
     const spineY = -hipsYaw * 0.5 + lookSweep * 0.18, chestY = -hipsYaw * 0.6 + lookSweep * 0.22;
     set(P.spine, spineX, spineY, -hipsRoll * 0.6);
     set(P.chest, chestX, chestY, -hipsRoll * 0.4);
     const lean = hipsPitch + spineX + chestX;
     const peek = w.hide * 0.55 * Math.sin(t * 0.5 + ph);
     set(P.neck, -lean * 0.35, 0, 0);
-    set(P.head, par.headP * (0.4 + 0.6 * a) - lean * 0.45 + (w.search * 0.12 * Math.sin(t * 0.8 + ph)) + 0.25 * w.work,
+    set(P.head, par.headP * (0.4 + 0.6 * a) - lean * 0.45 + (w.search * 0.12 * Math.sin(t * 0.8 + ph)) + 0.25 * w.work + 0.35 * w.kneel,
       -(hipsYaw + spineY + chestY) + lookSweep * 0.6 + idleYaw + peek + (s.lookYaw || 0), 0);
     // ---- arms: counter-swing to the legs ----
     const arm = par.arm * a * (1 - 0.6 * w.port);
@@ -159,6 +164,21 @@ export class GaitAnimator {
       const elx = u < 0.36 ? -1.7 : -1.7 + 1.5 * smooth(0.36, 0.6, u);
       mix(P.rShoulder, k, shx, 0, -0.45); mix(P.rElbow, k, elx, 0, 0);
       P.chest[1] += k * (u < 0.4 ? 0.35 : 0.35 - 0.8 * smooth(0.4, 0.7, u));
+    }
+    // kneeling over a comrade: the right hand reaches down to him, the left forearm on the knee
+    if (w.kneel > 0) { mix(P.rShoulder, w.kneel, -0.85, 0, -0.1); mix(P.rElbow, w.kneel, -0.25, 0, 0); mix(P.lShoulder, w.kneel, -0.5, 0, 0.2); mix(P.lElbow, w.kneel, -1.2, 0, 0); }
+    // reactions: a startled recoil (arms up, leaning back), pointing ahead with the right arm
+    const rx = this.rx;
+    if (rx.flinch >= 0) {
+      const u = rx.flinch / 0.5; rx.flinch += dt; if (rx.flinch > 0.5) rx.flinch = -1;
+      const k = smooth(0, 0.12, u) * (1 - smooth(0.45, 1, u));
+      P.chest[0] -= 0.35 * k; P.spine[0] -= 0.15 * k; P.head[0] -= 0.25 * k; hipsY -= 0.04 * k;
+      mix(P.rShoulder, k * 0.8, -1.3, 0, -0.4); mix(P.rElbow, k * 0.8, -1.7, 0, 0); mix(P.lShoulder, k * 0.6, -1.1, 0, 0.4); mix(P.lElbow, k * 0.6, -1.6, 0, 0);
+    }
+    if (rx.point >= 0) {
+      const u = rx.point / 1.5; rx.point += dt; if (rx.point > 1.5) rx.point = -1;
+      const k = smooth(0, 0.12, u) * (1 - smooth(0.8, 1, u)), jab = 0.08 * Math.sin(rx.point * 14) * (1 - u);
+      mix(P.rShoulder, k, -1.5 + jab, 0, -0.12); mix(P.rElbow, k, -0.08, 0, 0); P.chest[1] += 0.2 * k; P.head[0] -= 0.1 * k;
     }
     // ---- knocked out: falls on his back, arms flung out, head to the side ----
     let rootRx = 0, rootY = 0;
