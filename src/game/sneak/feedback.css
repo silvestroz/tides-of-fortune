@@ -1,0 +1,37 @@
+/* Feedback layers of the town scenes: speech bubbles (sneak and land battle), the sneak's detection indicators,
+   edge arrows, vignettes and ground-ring canvas. */
+.sn-fx, .lb-fx { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.sn-fx-cv { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* hidden: the edges of the screen darken (a little in deep shadow) */
+.sn-vig { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse 70% 62% at 50% 52%, transparent 42%, rgba(4, 8, 22, .55) 72%, rgba(2, 4, 14, .92) 100%); }
+/* spotted: a short red pulse from the rim */
+.sn-spot { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse 75% 70% at 50% 50%, transparent 50%, rgba(170, 20, 10, .5) 85%, rgba(120, 0, 0, .8) 100%); }
+.sn-spot.on { animation: snSpot .9s ease-out; }
+@keyframes snSpot { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
+/* above a guard: a “?” filling with his suspicion, a red “!” when he hunts you */
+.sn-ind { position: absolute; left: 0; top: 0; width: 1.4em; height: 1.6em; margin: -1.7em 0 0 -.7em; font: bold 1.6em/1.6em Georgia, serif; text-align: center; }
+.sn-ind b, .sn-ind i { position: absolute; inset: 0; font-style: normal; font-weight: bold; }
+.sn-ind b { color: rgba(20, 14, 8, .55); -webkit-text-stroke: 1.5px #ffe7a0; text-shadow: 0 0 .25em rgba(0, 0, 0, .8); }
+.sn-ind i { color: #ffc23a; -webkit-text-stroke: 1.5px #ffe7a0; text-shadow: 0 0 .3em rgba(255, 170, 40, .7); }
+.sn-ind.spot b { color: #e8261a; -webkit-text-stroke: 1.5px #ffe0d0; }
+.sn-ind.spot i { color: #ff3a24; -webkit-text-stroke: 1.5px #fff0e0; text-shadow: 0 0 .4em rgba(255, 40, 20, .9); }
+.sn-ind.spot { animation: snPop .45s cubic-bezier(.2, 1.8, .4, 1); }
+@keyframes snPop { from { font-size: .6em; } 50% { font-size: 2.4em; } to { font-size: 1.6em; } }
+/* toward a guard watching you: around the captain, or at the rim when he is off screen */
+.sn-edge { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.sn-edge::before { content: ''; position: absolute; left: -9px; top: -13px; border: 13px solid transparent; border-left: 20px solid #ffd36a;
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, .9)); }
+.sn-edge[data-hot="1"]::before { border-left-color: #ff9a30; }
+.sn-edge[data-hot="2"]::before { border-left-color: #ff3a24; animation: snEdge .35s ease-in-out infinite alternate; }
+@keyframes snEdge { to { filter: drop-shadow(0 0 7px rgba(255, 50, 20, 1)); } }
+/* speech bubbles */
+.tw-bubbles { position: absolute; inset: 0; }
+.tw-bubble { position: absolute; left: 0; top: 0; max-width: 16em; padding: .25em .7em .3em; margin: 0; border-radius: .7em; white-space: nowrap;
+  font: italic .95em Georgia, serif; color: #2a1a0c; background: #f6ecd2; box-shadow: 0 .1em .4em rgba(0, 0, 0, .55), 0 0 0 1px #6a4a20;
+  translate: -50% -100%; }
+.tw-bubble::after { content: ''; position: absolute; left: 50%; bottom: -.5em; margin-left: -.4em; border: .4em solid transparent; border-top-color: #f6ecd2; border-bottom: 0; }
+.tw-bubble.on { animation: twBubble .22s cubic-bezier(.2, 1.6, .4, 1); }
+@keyframes twBubble { from { scale: .4; } to { scale: 1; } }
+.tw-bubble.shout { font-style: normal; font-weight: bold; color: #5a0c06; background: #fff3dc; box-shadow: 0 .1em .5em rgba(0, 0, 0, .6), 0 0 0 1.5px #a0281a; }
+.tw-bubble.lb-order { font-size: .85em; }
+.tw-bubble.lb-order.enemy { color: #3a1010; background: #e9d8c4; }

@@ -1,5 +1,6 @@
 // game.sneak: short mode (1–3 min) of sneaking into a hostile port or escaping from prison.
-// Simulation: sim.js; rendering: view.js; settings: src/data/sneak.js.
+// Simulation: sim.js; rendering: view.js; feedback (barks, detection indicators, noise rings, town sounds):
+// feedback.js; settings: src/data/sneak.js.
 // Trigger:
 //   - ports.enter() in a hostile port, when the soldiers would arrest you: “Soldiers guard the quay” screen
 //     (offerPort) → “Slip into town” (start kind 'infiltrate'), pay the fine (the old arrest) or leave;
@@ -16,6 +17,7 @@
 // attempt number, which draws the guards' routes and posts again at every attempt).
 import { SneakSim } from './sim.js';
 import { SneakView } from './view.js';
+import { SneakFeedback } from './feedback.js';
 import { SNEAK } from '../../data/sneak.js';
 import { NATION_COATS } from '../../data/landbattle.js';
 import { kc, isKey } from '../../core/keys.js';
@@ -122,29 +124,31 @@ export class Sneak {
     if (k.has('KeyW') || k.has('ArrowUp')) z += 1; if (k.has('KeyS') || k.has('ArrowDown')) z -= 1;
     if (k.has('KeyA') || k.has('ArrowLeft')) x += 1; if (k.has('KeyD') || k.has('ArrowRight')) x -= 1;   // x toward the left of the screen
     if (!this._scripted) sim.input = { x, z, run: k.has('ShiftLeft') || k.has('ShiftRight'), act: k.has('Space') };
+    const ts = this.fx?.timeScale ?? 1;   // the short slow motion of the moment you are spotted
     if (!this._fighting && !sim.over) {
       const steps = Math.max(1, Math.round(this.speed));
-      for (let s = 0; s < steps; s++) for (const e of sim.step(dt * this.speed / steps)) this._onEvent(e);
+      for (let s = 0; s < steps; s++) for (const e of sim.step(dt * ts * this.speed / steps)) this._onEvent(e);
     }
     this.level = sim.level;
-    v.update(sim, this._fighting ? 0 : dt);
+    v.update(sim, this._fighting ? 0 : dt * ts);
     v.render();
+    if (!this._fighting) this.fx?.frame(dt, sim, v);
     this._updateHud();
   }
 
   _onEvent(e) {
     const g = this.game;
+    this.fx?.event(e, this.sim, this.view);
     if (e.type === 'level') {
       if (e.to > e.from && e.to < 4) g.audio?.play?.('ui:click');
       if (e.to === 3 && e.from < 3) this._toast(`You have been spotted! Vanish into the shadows.`);
-    } else if (e.type === 'alarm') { g.audio?.play?.('bell', { volume: 1.1 }); this._toast(`Alarm! The whole guard is on your heels.`); }
+    } else if (e.type === 'alarm') this._toast(`Alarm! The whole guard is on your heels.`);
     else if (e.type === 'calm') this._toast('The guard loses your trail.');
-    else if (e.type === 'lock') g.audio?.play?.('ui:click', { volume: 0.5 });
-    else if (e.type === 'unlocked') { g.audio?.play?.('ui:page'); this._toast(`The grille gives way! Make for the quay.`); }
-    else if (e.type === 'stone') { g.audio?.play?.('ui:click', { volume: 0.35 }); this.view?.throwStone(e); }
-    else if (e.type === 'landed') { g.audio?.play?.('ui:click', { volume: 0.6 }); this.view?.ping(e.x, e.z); if (e.guard) this._toast('A guard goes to see what made that noise.'); }
+    else if (e.type === 'unlocked') { this._toast(`The grille gives way! Make for the quay.`); }
+    else if (e.type === 'stone') this.view?.throwStone(e);
+    else if (e.type === 'landed') { this.view?.ping(e.x, e.z); if (e.guard) this._toast('A guard goes to see what made that noise.'); }
     else if (e.type === 'hide') { if (e.on) this._toast('Hidden. Only a guard searching right here would find you.'); }
-    else if (e.type === 'ko') { g.audio?.play?.('ui:page', { volume: 0.8 }); this._toast('The guard slumps without a sound. If his comrades find him, they will sound the alarm.'); }
+    else if (e.type === 'ko') { this._toast('The guard slumps without a sound. If his comrades find him, they will sound the alarm.'); }
     else if (e.type === 'body') this._toast('A guard has found his comrade knocked out!');
     else if (e.type === 'barred') this._toast(this.kind === 'escape' ? 'The longboat is watched while the alarm rings: lose the guards first.' : 'The door is barred while the alarm rings: lose the guards first.');
     else if (e.type === 'fail') {
@@ -227,6 +231,7 @@ export class Sneak {
     const g = this.game;
     this.active = false;
     if (g.renderOverride) g.renderOverride = null;
+    this.fx?.dispose(); this.fx = null;
     this.view?.dispose(); this.view = null;
     this.hud.classList.add('off'); this.hud.innerHTML = '';
     g.mode = this._prevMode === 'sneak' ? 'sail' : (this._prevMode || 'sail');
@@ -250,9 +255,8 @@ export class Sneak {
       <div class="lb-help tof-parch">${kc('KeyW')}${kc('KeyA')}${kc('KeyS')}${kc('KeyD')} move · <span class="kc">Shift</span> run (noisy) · ${kc('KeyT')} or click: throw a stone · ${kc('KeyH')} hide · ${kc('KeyK')} knock out from behind · ${esc_ ? `${kc('Space')} pick the lock · ` : ''}${kc('KeyR')}${kc('KeyR')} surrender</div>
       <div class="sn-marks"></div><div class="sn-ctx"></div><div class="lb-toast"></div>`;
     this._ctx = this.hud.querySelector('.sn-ctx');
-    this._marks = [];
     const box = this.hud.querySelector('.sn-marks');
-    for (let i = 0; i < sim.guards.length; i++) { const d = document.createElement('div'); d.className = 'sn-mark'; box.appendChild(d); this._marks.push(d); }
+    this.fx = new SneakFeedback(this.game, this.hud);   // barks, detection indicators, noise rings, town sounds
     this._goalEls = sim.goals.map(gl => { const d = document.createElement('div'); d.className = 'sn-goalmark'; d.textContent = gl.id === 'quay' ? 'Quay' : gl.id === 'tavern' ? 'Tavern' : 'Governor'; box.appendChild(d); return d; });
   }
   _updateHud() {
@@ -267,14 +271,6 @@ export class Sneak {
     const lk = h.querySelector('.sn-lock');
     lk.classList.toggle('on', !s.map.gate.open && s.lockT > 0);
     lk.firstChild.style.width = `${Math.min(100, s.lockT / s.lockTime * 100)}%`;
-    s.guards.forEach((g, i) => {
-      const m = this._marks[i]; if (!m) return;
-      const t = g.down ? '' : s.alarm || g.state === 'chase' ? '!!' : g.state === 'investigate' ? '!' : g.state === 'look' || g.state === 'lured' ? '?' : '';
-      if (!t) { m.style.display = 'none'; return; }
-      const p = this.view.project(g.x, g.z, 3.6);
-      m.style.display = ''; m.textContent = t; m.dataset.l = t.length;
-      m.style.transform = `translate(${p.x.toFixed(0)}px, ${p.y.toFixed(0)}px)`;
-    });
     this.hud.querySelector('.sn-stones').innerHTML = `Stones <b>${'●'.repeat(s.stones)}${'○'.repeat(Math.max(0, SNEAK.tools.stones - s.stones))}</b>${s.player.hidden ? ' · <i>hidden</i>' : ''}`;
     // contextual prompt under the captain
     const ctx = s.player.hidden ? `${kc('KeyH')} leave the hiding place` : s.koTarget() ? `${kc('KeyK')} knock him out` : s.nearHide() ? `${kc('KeyH')} hide` : '';

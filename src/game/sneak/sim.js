@@ -3,11 +3,14 @@
 //   const sim = new SneakSim({ seed, patrolSeed, kind:'infiltrate'|'escape', garrison, disguise, lockpick })
 //     seed: the town (one layout per port); patrolSeed: guards, routes and posts (drawn again at every attempt)
 //   sim.input = { x, z, run, act }   (x, z: wanted direction in plan, act: action held = pick the lock)
-//   sim.step(dt) -> events [{ type:'level'|'alarm'|'calm'|'caught'|'unlocked'|'lock'|'goal'|'barred'|'landed'|'hide'|'ko'|'body', ... }]
+//   sim.step(dt) -> events [{ type:'level'|'alarm'|'calm'|'caught'|'unlocked'|'lock'|'goal'|'barred'|'landed'|'hide'|'ko'|'body'|'guard', ... }]
+//     'guard' { guard, from, to }: a guard's state changed (patrol, post, follow, look, investigate, lured, chase)
+//     'alarm' { by }: the guard who gives it (null when raised from outside); 'body' { guard, body }: the finder runs to
+//     his comrade and kneels over him a moment (guard.tend, guard.kneelT) before joining the hunt
 //   sim.level (0 calm · 1 suspicion · 2 wariness · 3 hunt · 4 alarm)   sim.gauge (0–100)   sim.over · sim.result
 //   sim.canSee(guard) -> factor 0..1   sim.lightAt(x, z) -> 0..1   sim.exposure -> { vis, rate, light, shade }
 //   Fugitive's tools: sim.throwStone(x, z) · sim.toggleHide() · sim.tryKnockOut()  -> event or { type:'fail', why }
-//   sim.knockOut(guard) (duel won)   sim.raiseAlarm(at)   sim.stones · sim.player.hidden (hiding spot or null)
+//   sim.knockOut(guard) (duel won)   sim.raiseAlarm(at, by)   sim.stones · sim.player.hidden (hiding spot or null)
 // Map: grid of SNEAK.W × SNEAK.H cells of SNEAK.cell m; x toward the left of the screen, z up (z = 0: the sea).
 // Cells: 0 street, 1 house (blocks walking and sight), 2 water, 3 quay, 4 yard (grass), 5 grate (prison, locked),
 //        6 crates (block walking and sight).
@@ -272,7 +275,7 @@ export class SneakSim {
     const n = Math.max(G.min, Math.min(G.max, Math.round(G.min + garrison * G.perGarrison)));
     this.guards = [];
     const mk = (o) => { const g = { id: this.guards.length, heading: 0, route: null, ri: 1, path: null, wait: 0, look: 0, sus: 0, see: 0, state: 'patrol',
-      lastSeen: null, down: false, ko: false, found: false, phase: r() * 6, torch: false, post: null, leader: null, lure: null, bodyT: 0, ...o }; this.guards.push(g); return g; };
+      lastSeen: null, down: false, ko: false, found: false, kneelT: 0, tend: null, phase: r() * 6, torch: false, post: null, leader: null, lure: null, bodyT: 0, ...o }; this.guards.push(g); return g; };
     // posts: the exit you are heading for is always guarded, the others by chance
     const want = Math.min(n - 1, G.posts[garrison >= 60 ? 1 : 0]);
     const first = p => (this.kind === 'escape' ? p.id === 'quay' : p.id !== 'quay') ? 0 : 1;
@@ -337,12 +340,12 @@ export class SneakSim {
     return Math.max(0.2, Math.min(1.25, 1.25 - d / range));
   }
 
-  raiseAlarm(at = null) {
+  raiseAlarm(at = null, by = null) {
     if (this.alarm) return [];
     this.alarm = true; this.unseenT = 0; this.stats.alarms++;
     this.lastKnown = at ? { x: at.x, z: at.z } : { x: this.player.x, z: this.player.z };
     for (const g of this.guards) if (!g.down) { g.sus = Math.max(g.sus, 85); g.path = null; g.lure = null; }
-    return [{ type: 'alarm' }];
+    return [{ type: 'alarm', by }];
   }
   // knocked out in a duel (the fight was seen and heard: the body is not a hidden one)
   knockOut(g) { g.down = true; g.state = 'down'; g.sus = 0; g.found = true; this.caught = null; }
@@ -478,12 +481,14 @@ export class SneakSim {
         const bx = b.x - g.x, bz = b.z - g.z, bd = Math.hypot(bx, bz);
         if (bd < S.tools.bodySight && (bd < S.view.near * 1.5 || Math.abs(angDiff(Math.atan2(bx, bz), g.heading)) < S.view.half * 1.2) && lineOfSight(m, g.x, g.z, b.x, b.z)) {
           b.bodyT += dt;
-          if (b.bodyT > S.tools.bodyTime) { b.found = true; ev.push({ type: 'body', guard: g, body: b }, ...this.raiseAlarm(b)); }
+          if (b.bodyT > S.tools.bodyTime) { b.found = true; g.tend = b; g.path = null; ev.push({ type: 'body', guard: g, body: b }, ...this.raiseAlarm(b, g)); }
         }
       }
-      if (g.sus >= 100 && !this.alarm) ev.push(...this.raiseAlarm());
+      if (g.sus >= 100 && !this.alarm) ev.push(...this.raiseAlarm(null, g));
       maxSus = Math.max(maxSus, g.sus);
+      const was = g.state;
       this._guardMove(g, dt);
+      if (g.state !== was) ev.push({ type: 'guard', guard: g, from: was, to: g.state });
       // caught
       const reach = S.catchR + (g.state === 'chase' ? 0.4 : 0);
       if (Math.hypot(p.x - g.x, p.z - g.z) < reach && (p.hidden ? f > 0 : (g.sus >= S.levels[1] || this.alarm || (f > 0 && g._cone)))) {
@@ -516,6 +521,16 @@ export class SneakSim {
 
   _guardMove(g, dt) {
     const G = SNEAK.guards, L = SNEAK.levels, m = this.map;
+    if (g.tend) {   // runs to the knocked-out comrade he found, kneels over him a moment, then joins the hunt
+      const b = g.tend, dx = b.x - g.x, dz = b.z - g.z;
+      if (g.kneelT > 0) { g.kneelT -= dt; if (g.kneelT <= 0) { g.kneelT = 0; g.tend = null; g.path = null; } return; }
+      if (Math.hypot(dx, dz) < 1.5) { g.kneelT = SNEAK.tools.kneel; g.heading = Math.atan2(dx, dz); return; }
+      g.repath = (g.repath || 0) - dt;
+      if (!g.path || g.repath <= 0) { g.repath = 0.6; g.path = findPath(m, g.x, g.z, b.x, b.z) || []; }
+      if (!g.path.length) { g.tend = null; return; }
+      this._walk(g, G.chase, dt);
+      return;
+    }
     let target = null, speed = G.walk;
     const prev = g.state;
     if (g.leader?.down) g.leader = null;
@@ -580,6 +595,10 @@ export class SneakSim {
         return;
       }
     }
+    this._walk(g, speed, dt);
+  }
+  // one step along the guard's path
+  _walk(g, speed, dt) {
     const nx = g.path[0];
     const dx = nx.x - g.x, dz = nx.z - g.z, d = Math.hypot(dx, dz);
     if (d < 0.4) { g.path.shift(); return; }
