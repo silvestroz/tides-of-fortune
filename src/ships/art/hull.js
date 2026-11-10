@@ -686,9 +686,9 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     const ym = dl(m.s), yl = ym + 2.3, rM = m.r * (0.8 + B * 0.035);
     const zl = zs(m.s) + (yl - ym) * Math.tan(m.rake) - rM - 0.32;
     const s = 0.3 + L * 0.003;
-    gb.add(G.box, trs(0, yl + s * 1.2, zl + 0.16, 0, 0, 0, 0.05, 0.05, 0.42), { color: iron, surf: SURF.iron, brk: 2.3 });
-    gb.add(LANTERN, trs(0, yl, zl, 0, 0, 0, s * 0.6, s * 1.5, s * 0.6), { color: glass, surf: SURF.lamp, brk: 2.3 });
-    gb.add(G.cone, trs(0, yl + s * 0.98, zl, 0, 0, 0, s * 0.52, s * 0.45, s * 0.52), { color: iron, surf: SURF.iron, brk: 2.3 });
+    gb.add(G.box, trs(0, yl + s * 1.2, zl + 0.16, 0, 0, 0, 0.05, 0.05, 0.42), { color: iron, surf: SURF.iron, brk: 2.3, lod: 1 });
+    gb.add(LANTERN, trs(0, yl, zl, 0, 0, 0, s * 0.6, s * 1.5, s * 0.6), { color: glass, surf: SURF.lamp, brk: 2.3, lod: 1 });
+    gb.add(G.cone, trs(0, yl + s * 0.98, zl, 0, 0, 0, s * 0.52, s * 0.45, s * 0.52), { color: iron, surf: SURF.iron, brk: 2.3, lod: 1 });
     info.lights.push(V3(0, yl, zl));
   }
   // ---------------- channels (chainwales) for shrouds: one per mast per side
