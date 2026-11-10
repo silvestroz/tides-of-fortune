@@ -92,7 +92,10 @@ export class SneakActors {
 
   dispose() {
     for (const a of [this.cap, ...this.guards]) { this.scene.remove(a.rig.group); a.rig.group.traverse(o => { if (o.isSkinnedMesh) o.skeleton.dispose(); }); }
-    for (const f of [this.capFig, ...this.templates]) f.dispose();
+    // every geometry under the figures (outline shells, blade, scabbard, musket are not all in f.meshes)
+    const geos = new Set();
+    for (const f of [this.capFig, ...this.templates]) { f.group.traverse(o => { if (o.geometry) geos.add(o.geometry); }); f.dispose(); }
+    for (const g of geos) g.dispose();
     this.mats.dispose();
   }
 }
