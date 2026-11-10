@@ -90,15 +90,16 @@ export class Nameplates {
     if (!hud || this._watched === hud) return;
     this._watched = hud;
     const dirty = () => { this._dirty = true; };
-    this._mo = new MutationObserver(dirty);
+    // a class written again with the same value (the hint card rewrites its className every frame) is no change
+    this._mo = new MutationObserver(list => { for (const m of list) if (m.type !== 'attributes' || m.oldValue !== m.target.getAttribute(m.attributeName)) { this._dirty = true; return; } });
     this._ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(dirty) : null;
-    this._mo.observe(hud, { attributes: true, attributeFilter: ['class'], childList: true });   // #hud.hidden, new panels
+    this._mo.observe(hud, { attributes: true, attributeFilter: ['class'], attributeOldValue: true, childList: true });   // #hud.hidden, new panels
     this._seen = new WeakSet();
   }
   _observe(el) {
     if (this._seen.has(el)) return;
     this._seen.add(el);
-    this._mo.observe(el, { attributes: true, attributeFilter: ['class', 'hidden'], childList: el.classList.contains('toasts') });
+    this._mo.observe(el, { attributes: true, attributeFilter: ['class', 'hidden'], attributeOldValue: true, childList: el.classList.contains('toasts') });
     this._ro?.observe(el);   // size: new text, folded card, [hidden] (display: none)
   }
   // one layout read for every obstacle, only when something changed (and once more after the transitions)
