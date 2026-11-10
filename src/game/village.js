@@ -119,7 +119,6 @@ export class Villages {
     g.hud?.show?.(true);
     g.events.emit('village:leave', { village: v });
     g.events.emit('state:change', { from: 'port', to: 'sail' });
-    g.events.emit('notify', { text: `You leave ${v.name}.`, kind: 'info' });
     this.village = null;
   }
 

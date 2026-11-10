@@ -119,7 +119,6 @@ export class PortSystem {
     g.hud?.show?.(true);
     g.events.emit('port:leave', { port });
     g.events.emit('state:change', { from: 'port', to: 'sail' });
-    g.events.emit('notify', { text: `Anchor weighed at ${port.name}.`, kind: 'info' });
     g.audio?.play?.('bell');
   }
 

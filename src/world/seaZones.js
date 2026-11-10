@@ -7,7 +7,7 @@
 //   seaZones.playerPower()     the player's ship rating
 //   seaZones.current           the player's zone (updated at sea); on each confirmed change (ZONE_NOTE.confirm s)
 //                              'zone:enter' { tier, name, from } and a message (once per zone and per ZONE_NOTE.repeat s,
-//                              none in ?shot= showcases)
+//                              none in ?shot= showcases, none while the zone2 / zone3 hint that explains it is unseen)
 // Readers: combat.js (traffic, convoys), ai.js (targets, pursuit, cruising), living.js (hunters), pirateLords.js
 // (lairs, spawns, avenging pirate), fortune.js (treasure cove), career.js (missions: ship, bounty).
 import { buildZones, zoneAt, forbidden, capFor, livePower, zoneEnterText, ZONE_NOTE } from '../data/seaZones.js';
@@ -45,6 +45,10 @@ export class SeaZones {
     const last = this._told.get(key);
     if (last != null && g.time - last < ZONE_NOTE.repeat) return;
     this._told.set(key, g.time);
+    // the first entry into tiers II / III is explained by a hint card (hints.js 'zone2' / 'zone3', triggered on
+    // 'zone:enter' above): no toast saying the same thing while that hint has not been seen (hints switched on)
+    const hk = z.tier >= 2 ? `zone${z.tier}` : null;
+    if (hk && g.hud?.hints?.on && !g.state?.tutorials?.hints?.[hk]) return;
     g.events.emit('notify', { text: zoneEnterText(z), kind: z.tier === 3 ? 'bad' : z.tier === 1 ? 'good' : 'info', topic: 'zone', key: 'zone' });
   }
 }

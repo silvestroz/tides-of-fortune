@@ -10,7 +10,7 @@
 // Keys handled here: M (toggle the large sea chart; a world-map system can take over with game.mapKeyHandled = true),
 //   Esc (pause menu / back), F (enter nearest port within 400 m: emits 'port:enter' {port} and
 //   'state:change' {from:'sail', to:'port'} — a port system can take over by setting game.portKeyHandled = true).
-// Listens: 'notify', 'cannon:hit', 'ship:sunk', 'ship:struck', 'port:enter', 'state:change'.
+// Listens: 'notify', 'cannon:hit', 'ship:sunk', 'state:change'.
 // Emits: 'ui:pause' { paused }, 'settings:change' (via settings.js).
 // URL: ?menu=1 forces the title screen, ?menu=captain the captain sheet; in ?shot= scenes the menu is not
 //   auto-shown otherwise. ?nohud=1 → game.hud is null (Game doesn't construct it).
@@ -18,6 +18,7 @@ import { installTextures } from './textures.js';
 import { ensureSettings } from './settings.js';
 import { isKey, kc } from '../core/keys.js';
 import { Toasts } from './toasts.js';
+import { concernsPlayer } from '../game/notifyRules.js';
 import { Compass, compassPoint } from './compass.js';
 import { Minimap } from './minimap.js';
 import { Menu } from './menu.js';
@@ -151,19 +152,15 @@ export class HUD {
 
     // ---- events ----
     const ev = game.events;
-    ev.on('notify', d => this.notify(d?.text ?? String(d), d?.kind || 'info', { major: d?.major, key: d?.key, topic: d?.topic, tone: d?.tone }));
+    ev.on('notify', d => this.notify(d?.text ?? String(d), d?.kind || 'info', { major: d?.major, key: d?.key, topic: d?.topic, tone: d?.tone, defer: d?.defer, logOnly: d?.logOnly }));
     ev.on('cannon:hit', d => this._onHit(d));
+    // sinkings: only ours and those of ships we fight or escort (third parties: no message); surrenders are
+    // reported once, by combat.strike; entering a port opens the port screen (no “Anchor dropped” echo)
     ev.on('ship:sunk', ({ ship } = {}) => {
       if (!ship) return;
       if (ship === game.player) this.notify('Our ship is going down!', 'bad');
-      else this.notify(`${theShip(ship, true)} sinks and disappears beneath the waves.`, ship.faction === game.player?.faction ? 'bad' : 'good');
+      else if (concernsPlayer(game, ship)) this.notify(`${theShip(ship, true)} sinks and disappears beneath the waves.`, ship.faction === game.player?.faction ? 'bad' : 'good');
     });
-    ev.on('ship:struck', ({ ship } = {}) => {
-      if (!ship) return;
-      if (ship === game.player) this.notify('We have struck our colours.', 'bad');
-      else this.notify(`${theShip(ship, true)} strikes her colours!`, 'good');
-    });
-    ev.on('port:enter', ({ port } = {}) => port && this.notify(`Anchor dropped at ${port.name}.`, 'info'));
 
     addEventListener('keydown', e => this._key(e));
 
@@ -201,8 +198,9 @@ export class HUD {
         const part = Object.entries(a.parts).sort((x, y) => y[1] - x[1])[0]?.[0] || 'hull';
         const W = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve'];
         const balls = a.n > 1 ? `${W[a.n] || a.n} shots` : 'One shot';
-        if (a.kind === 'bad') this.notify(`${balls} ${ofShip(a.d.attacker)} hit${a.n > 1 ? '' : 's'} ${PART_ART[part]}!`, 'bad');
-        else this.notify(`${balls} hit${a.n > 1 ? '' : 's'} ${a.d.target ? `the ${PART_NAMES[part]} ${ofShip(a.d.target)}` : 'their target'}.`, 'good');
+        // our hits: journal only (the target card shows the damage); hits taken: one coalesced toast
+        if (a.kind === 'bad') this.notify(`${balls} ${ofShip(a.d.attacker)} hit${a.n > 1 ? '' : 's'} ${PART_ART[part]}!`, 'bad', { key: 'hit-in' });
+        else this.notify(`${balls} hit${a.n > 1 ? '' : 's'} ${a.d.target ? `the ${PART_NAMES[part]} ${ofShip(a.d.target)}` : 'their target'}.`, 'good', { logOnly: true });
       }, 650);
     }
     a.n++; a.dmg += d.damage || 0; a.parts[d.part || 'hull'] = (a.parts[d.part || 'hull'] || 0) + 1;
@@ -330,10 +328,7 @@ export class HUD {
         this._cache.tac = key; this.$.tac.hidden = !parts.length;
         this.$.tac.innerHTML = parts.map(([c, t]) => `<span class="${c}">${t}</span>`).join('<i>·</i>');
       }
-      // gaining / losing the weather gauge is an event: one coalesced toast
-      if (this._cache.wg !== undefined && this._cache.wg !== wg && wg !== 0)
-        this.notify(wg > 0 ? 'To windward of the enemy: truer fire, quicker reloading and handling.' : 'To leeward of the enemy: he has the advantage in fire and handling.', wg > 0 ? 'good' : 'bad', { key: 'wind', topic: 'wind' });
-      this._cache.wg = wg;
+      // gaining / losing the weather gauge: one message, from combat._gaugeNote (hysteresis, fighting foe only)
     }
     // action chips: R repairs (active / waiting for the ship to stop / available / nothing to repair), B boarding (ready / approach / none)
     {
@@ -376,11 +371,12 @@ export class HUD {
       this._set('pname', this.$.pname, nm); this._set('pdist', this.$.pdist, `${fmtInt(np.dist)} m`);
       const mis = np.port.village ? 'fishing village' : g.career?.missionAtPort?.(np.port);   // what entering the port achieves for a mission
       this._set('pmis', this.$.pmis, mis ? `· ${mis}` : '');
-      this.$.prompt.style.setProperty('--near', (0.55 + 0.45 * clamp01(1 - (np.dist - 150) / 250)).toFixed(2));
+      this.$.prompt.style.setProperty('--near', (0.85 + 0.15 * clamp01(1 - (np.dist - 150) / 250)).toFixed(2));   // text never below 0.85
     }
 
     // ---------- boarding prompt ----------
-    const bh = g.mode === 'sail' && !this.menu.isOpen ? g.combat?.boardHint : null;
+    let bh = g.mode === 'sail' && !this.menu.isOpen ? g.combat?.boardHint : null;
+    if (bh && (!bh.ship || bh.ship.alive === false || bh.ship.sinking || bh.ship.sunk)) bh = null;   // stale hint (paused frame)
     this._set('bOff', this.$.bprompt, bh ? (bh.inReach ? 'prompt board ready tof-parch' : 'prompt board tof-parch') : 'prompt board tof-parch off', 'className');
     if (bh) {
       this._set('bname', this.$.bname, bh.ship.name);

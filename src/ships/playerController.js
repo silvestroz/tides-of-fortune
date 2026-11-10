@@ -16,17 +16,15 @@
 //   G            “Assisted” mode (game.state.assist): fire at will ↔ cease fire (this.holdFire); broadsides
 //                go off by themselves at the engaged enemy (src/ships/autoFire.js); manual fire stays possible
 //   Mouse right-drag orbit, wheel zoom — handled by CameraRig.
-// Emits 'notify' for sail orders / ammo / time compression and 'player:sail' { step } / 'player:ammo' { ammo }.
+// Emits 'notify' for time compression, fire mode and refused orders (sail and ammo changes: shown by the helm bar, no toast) and 'player:sail' { step } / 'player:ammo' { ammo }.
 import { wrapAngle } from '../core/constants.js';
 import { autoFire } from './autoFire.js';   // “Assisted” mode
 import { isAssist } from '../data/assist.js';
 import { keyLabel } from '../core/keys.js';
 
 export const SAIL_STEPS = [0, 0.5, 1];
-const SAIL_NAMES = ['Sails furled', 'Fighting sail', 'Full sail'];
 const AMMO = { Digit1: 'round', Digit2: 'chain', Digit3: 'grape', Numpad1: 'round', Numpad2: 'chain', Numpad3: 'grape' };
 const AMMO_LOCKED = { chain: 'Chain shot', grape: 'Grapeshot' };
-const AMMO_NAMES = { round: 'Round shot loaded', chain: 'Chain shot loaded', grape: 'Grapeshot loaded' };
 export const COMPRESSION_SAFE_DIST = 400;
 
 // Key bindings. Position commands by KeyboardEvent.code; `keys` = mnemonic commands by character
@@ -49,7 +47,7 @@ export class PlayerController {
     this._checkT = 0;
   }
 
-  notify(text, kind = 'info') { this.game.events.emit('notify', { text, kind }); }
+  notify(text, kind = 'info', key) { this.game.events.emit('notify', { text, kind, ...(key ? { key } : {}) }); }
 
   isEnemy(o) {
     const s = this.ship;
@@ -88,28 +86,28 @@ export class PlayerController {
     const g = this.game;
     if (!isAssist(g.state)) { this.notify('Automatic fire: “Assisted” game mode (Options)'); return; }
     this.holdFire = !this.holdFire;
-    this.notify(this.holdFire ? 'Cease fire! Firing by hand (G: fire at will)' : 'Fire at will! The gunners fire on their own', this.holdFire ? 'info' : 'good');
+    this.notify(this.holdFire ? 'Cease fire! Firing by hand (G: fire at will)' : 'Fire at will! The gunners fire on their own', this.holdFire ? 'info' : 'good', 'fire');
     g.events.emit('assist:fire-mode', { hold: !!this.holdFire });
   }
 
-  // opts.quiet: no “Sails …” toast (R furls the sails and says so itself)
-  setSailStep(step, { quiet = false } = {}) {
+  // no toast: the sail glyphs of the helm bar show the setting (callers may still pass { quiet })
+  setSailStep(step) {
     step = Math.max(0, Math.min(2, step));
     if (step === this.sailStep) return;
     if (step > 0 && this.ship.repairing) this.game.combat?.stopRepair?.(this.ship, 'sail');   // making sail ends repairs
     this.sailStep = step;
     this.ship.sailSetting = SAIL_STEPS[step];
-    if (!quiet) this.notify(SAIL_NAMES[step]);
     this.game.events.emit('player:sail', { step });
   }
 
-  setTimeCompression(on) {
+  // one coalesced 'time' message (no HUD indicator of the ×4); quiet: the caller says why
+  setTimeCompression(on, { quiet = false } = {}) {
     const g = this.game;
-    if (on && this.nearestEnemy(COMPRESSION_SAFE_DIST)) { this.notify('Enemy sails too close to hurry time', 'bad'); on = false; }
+    if (on && this.nearestEnemy(COMPRESSION_SAFE_DIST)) { this.notify('Enemy sails too close to hurry time', 'bad', 'time'); on = false; }
     if (on === this.timeCompression) return;
     this.timeCompression = on;
     g.timeScale = on ? 4 : 1;
-    this.notify(on ? 'Time sped up ×4' : 'Normal time');
+    if (!quiet) this.notify(on ? 'Time sped up ×4' : 'Normal time', 'info', 'time');
   }
 
   // X twice within 3 s: strike the colours to the nearest enemy (boarding.js then shows the captivity sheet)
@@ -148,7 +146,7 @@ export class PlayerController {
       // chain / grape are bought at a shipyard (game.state.ammoUnlocked; absent = old save or scene: all unlocked)
       const lock = g.state?.ammoUnlocked;
       if (K.ammo[code] !== 'round' && lock && !lock[K.ammo[code]]) { this.notify(`${AMMO_LOCKED[K.ammo[code]]}: buy it at the shipyard`, 'bad'); continue; }
-      s.ammo = K.ammo[code]; this.notify(AMMO_NAMES[s.ammo]); g.events.emit('player:ammo', { ammo: s.ammo, ship: s });
+      s.ammo = K.ammo[code]; g.events.emit('player:ammo', { ammo: s.ammo, ship: s });
     }
 
     if (i.pressedKey?.('b')) g.combat?.requestBoard?.();
@@ -177,7 +175,7 @@ export class PlayerController {
     this._checkT -= realDt;
     if (this.timeCompression && this._checkT <= 0) {
       this._checkT = 0.25;
-      if (this.nearestEnemy(COMPRESSION_SAFE_DIST)) { this.setTimeCompression(false); this.notify('Sail ho! Time back to normal', 'bad'); }
+      if (this.nearestEnemy(COMPRESSION_SAFE_DIST)) { this.setTimeCompression(false, { quiet: true }); this.notify('Sail ho! Time back to normal', 'bad', 'time'); }
     }
   }
 }

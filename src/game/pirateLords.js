@@ -16,6 +16,7 @@ import { SHIP_SPECS } from '../ships/shipModel.js';
 import { GUARDED, LAIRS, ZONE_TIERS, capFor } from '../data/seaZones.js';   // sea tiers
 import { classOf } from '../data/shipTypes.js';
 import { fmtInt } from '../core/i18n.js';
+import { inPrologue } from './notifyRules.js';
 
 const dayNum = d => d.year * 372 + d.month * 31 + d.day;
 export const ord = n => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
@@ -136,7 +137,8 @@ export class PirateLords {
     sh._captain = { name: lordTitle(l), faction: 'pirate', difficulty: l.difficulty, weapon: 'cutlass' };
     if (hunt && g.player) sh.ai?.setTarget?.(g.player);
     g.events.emit('lord:spawn', { id: l.id, ship: sh });
-    if (!hunt) g.events.emit('notify', { text: `A black sail near the lair: the ${l.ship}, ship of ${lordTitle(l)}.`, kind: 'bad', major: true, tone: 'bad', topic: 'lord' });
+    // a lord sighted near his lair: news, not an emergency; dropped during the guided prologue (it would be stale)
+    if (!hunt && !inPrologue(g)) g.events.emit('notify', { text: `A black sail near the lair: the ${l.ship}, ship of ${lordTitle(l)}.`, kind: 'bad', major: true, tone: 'bad', topic: 'lord' });
     return sh;
   }
 
