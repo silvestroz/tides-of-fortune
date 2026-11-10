@@ -332,14 +332,17 @@ void main() {
   vec3 specCol = uLightCol * mix( vec3( 1.0 ), vec3( 1.0, 0.96, 0.84 ), 0.6 );
   // low-sun column: a vertically stretched lobe around the mirror direction of the sun (golden path on the water)
   float lowSun = 1.0 - smoothstep( 0.02, 0.35, uLightDir.y );
+  // the moon lays its path at any elevation it reaches (shorter and narrower the higher it rides): the night sea's one
+  // bright feature, a broken silver road of flecks toward the moon
+  float pathK = max( lowSun, uIsMoon * ( 1.0 - smoothstep( 0.35, 0.85, uLightDir.y ) ) );
   vec3 Rv = reflect( -V, normalize( mix( vec3( 0.0, 1.0, 0.0 ), N, 0.7 ) ) );
   float az = dot( normalize( Rv.xz + 1e-4 ), normalize( uLightDir.xz + 1e-4 ) );
-  float colAz = pow( max( az, 0.0 ), 600.0 * ( 1.0 - lowSun * 0.6 ) );
-  float colEl = exp( -abs( Rv.y - uLightDir.y ) * mix( 30.0, 4.5, lowSun ) );   // gfx-ultra: longer golden path at sunset
-  float column = colAz * colEl * lowSun * ( 0.6 + 2.5 * smoothstep( 0.82, 1.0, NdotH ) ) * ( 1.0 - uIsMoon * 0.5 );
-  // sparkling flecks inside the column (warm white), stretched toward the viewer
+  float colAz = pow( max( az, 0.0 ), 600.0 * ( 1.0 - pathK * 0.6 ) );
+  float colEl = exp( -abs( Rv.y - uLightDir.y ) * mix( 30.0, 4.5, pathK ) );   // gfx-ultra: longer golden path at sunset
+  float column = colAz * colEl * pathK * ( 0.6 + 2.5 * smoothstep( 0.82, 1.0, NdotH ) ) * ( 1.0 - uIsMoon * 0.5 );
+  // sparkling flecks inside the column (warm white by day, silver under the moon), stretched toward the viewer
   float fl = hash12( floor( vec2( vP0.x * 1.3, vP0.y * 1.3 ) + uGlitOff * 0.65 + dn * 6.0 ) + floor( uTime * 6.0 ) * 0.37 );
-  float flecks = smoothstep( 0.8, 1.0, fl ) * subPix * colAz * lowSun * 6.0 * ( 1.0 - smoothstep( 200.0, 3000.0, dist ) );
+  float flecks = smoothstep( 0.8, 1.0, fl ) * subPix * colAz * pathK * mix( 6.0, 9.0, uIsMoon ) * ( 1.0 - smoothstep( 200.0, 3000.0, dist ) );
   // HDR highlights are capped: an unbounded GGX peak (D ~ 1/(pi a^2) ~ 260) times a bright key light feeds the bloom
   // with single-pixel spikes that smear into streaks; the cap keeps a strong but bounded sun path
   // the broad sheen lobe is capped separately and low: it covers a large solid angle, so with a high sun it washed the
@@ -347,9 +350,9 @@ void main() {
   // facing the sun from deck height the capped lobe still covered a wide band of near-white water at the waterline:
   // lower the cap at grazing view angles (the sun path stays, as flecks/glitter rather than a white sheet)
   float graze = 1.0 - smoothstep( 0.04, 0.3, V.y );
-  float hl = min( spec + glitter * F * 6.0 + column * ( 3.0 + 2.0 * lowSun ), mix( 4.0, 1.6 + 0.8 * lowSun, graze ) ) + min( sheen, mix( 0.25, 0.1, graze ) );
+  float hl = min( spec + glitter * F * 6.0 + column * ( 3.0 + 2.0 * pathK ), mix( 4.0, 1.6 + 0.8 * pathK, graze ) ) + min( sheen, mix( 0.25, 0.1, graze ) );
   col += specCol * hl * shadow * lightUp;
-  col += vec3( 1.0, 0.957, 0.84 ) * uLightCol * min( flecks, 3.0 ) * lightUp;
+  col += mix( vec3( 1.0, 0.957, 0.84 ), vec3( 0.86, 0.93, 1.0 ), uIsMoon ) * uLightCol * min( flecks, 3.0 ) * lightUp;
 
   // ---- foam ----
   float storm = uSeaState;
@@ -405,17 +408,29 @@ void main() {
     vec4 sp = texture2D( uSplashTex, ( vWorld.xz - uSplashCenter ) / uWakeExtent + 0.5 );
     splashF = sp.r * edge; churn += sp.b;   // round 6: splash foam kept separate (lacy, see below), no solid disc
   }
-  // churned (aerated) water under the trail: lighter turquoise
-  // (kept close to the body colour: a turquoise churn read as a glowing cyan slick under and behind every hull)
-  col = mix( col, mix( col, mix( bodyCol, uTeal, 0.35 ) * waterLight * 1.1 + refl * F * 0.5, 0.6 ), clamp( churn, 0.0, 1.0 ) * 0.14 );
+  // wake foam density -> lace: the bubble-wall lattice is thresholded by the density, so a dense wake is near-solid
+  // white with small holes, a thinning one keeps only the cell walls and its fringe breaks into marbled strands.
+  // The lattice scale steps from the 4.5 m to the 31 m tile with the pixel footprint (cells stay a few pixels wide),
+  // and once even those go sub-pixel the lace resolves to its mean coverage, a continuous stroke that never dots.
+  float wk1 = clamp( wakeFoam, 0.0, 1.4 );
+  float wCov = smoothstep( 0.04, 1.0, wk1 );
+  float laceN = foamNT( vP0, 4.5, uOffF.xy * 2.0 ).g;
+  float lace = mix( mix( laceN * 0.6 + f1.g * 0.5, f1.g * 0.55 + f2.g * 0.5, smoothstep( 0.05, 0.22, footprint ) ), f2.g, smoothstep( 0.3, 0.9, footprint ) );
+  float lt = 1.0 - wCov * 1.05;
+  float wakeLace = smoothstep( lt, lt + 0.38, lace ) * smoothstep( 0.0, 0.25, wCov );
+  // a faint veil under the lace keeps thin Kelvin arms reading as one feathered line rather than dotted specks
+  wakeLace = max( wakeLace, wCov * 0.3 );
+  wakeLace = max( wakeLace, smoothstep( 1.1, 1.4, wk1 ) );     // churned white right behind the stern
+  float wakeBody = mix( wakeLace, wCov * 0.85, smoothstep( 0.9, 2.5, footprint ) );
+  // churned (aerated) water under the trail: a lighter, greener turquoise that shows through the holes of the lace
+  // (kept close to the body colour: a strong turquoise churn read as a glowing cyan slick under and behind every hull)
+  float churnK = clamp( churn, 0.0, 1.0 ) * ( 0.14 + 0.16 * ( 1.0 - altF ) );
+  col = mix( col, mix( bodyCol, mix( uTeal, uTurq, 0.35 ), 0.55 ) * waterLight * 1.15 + refl * F * 0.5, churnK );
   float foamAmt = crest * 0.9 + wakeFoam * 0.35;
   // shore foam: fine lacy texture so surf reads as lines of spume, not blobs
   float shoreFoam = clamp( shore * smoothstep( 0.15, 0.75, f1.g * 0.8 + shore * 0.45 ), 0.0, 1.0 );
   float fbreak = smoothstep( 0.0, 1.0, foamTex * 1.25 - ( 1.0 - min( foamAmt, 1.4 ) ) * 0.9 );
   float foam = clamp( fbreak * min( foamAmt * 1.5, 1.0 ), 0.0, 1.0 );
-  // wake foam: continuous body (texture only modulates density at the fringe) so trails never break into dots
-  float wk1 = clamp( wakeFoam, 0.0, 1.4 );
-  float wakeBody = smoothstep( 0.05, 0.75, wk1 ) * mix( 0.62 + 0.38 * foamTex, 1.0, smoothstep( 0.6, 1.2, wk1 ) );
   foam = max( foam, clamp( wakeBody, 0.0, 1.0 ) * 0.92 );
   // splash foam: broken lace that thins outward as it decays (the continuous wake body printed opaque white discs)
   foam = max( foam, smoothstep( 0.5, 0.95, foamTex * 0.85 + min( splashF, 1.0 ) * 0.5 ) * min( splashF * 1.3, 1.0 ) * 0.85 );
