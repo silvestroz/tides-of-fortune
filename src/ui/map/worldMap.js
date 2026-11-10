@@ -626,7 +626,7 @@ export class WorldMap {
     this._drawLabels(ctx, s);
     if (this.layers.missions) this._drawMissions(ctx, s);   // governor's missions under way (career.missionTargets)
     this._drawShips(ctx, s);
-    const cb = this._cartoucheBox(f), under = this._hits.some(h => h.x > cb.x - 12 && h.x < cb.x + cb.w + 12 && h.y > cb.y - 12 && h.y < cb.y + cb.h + 12);
+    const cb = this._cartoucheBox(f), under = this._hits.some(h => !h.soft && h.x > cb.x - 12 && h.x < cb.x + cb.w + 12 && h.y > cb.y - 12 && h.y < cb.y + cb.h + 12);
     if (!under) this._rects.push([cb.x - 8, cb.y - 8, cb.w + 16, cb.h + 16]);
     this._flushLabels(ctx);
     this._drawCartouche(ctx, f, under ? 0.28 : 1);
@@ -646,7 +646,7 @@ export class WorldMap {
   // ('r' right of the point, 'l', 't' above, 'b' below, 'c' centred). Higher prio is placed first; a label that
   // would overlap an already placed one (or the chart furniture) at every candidate is dropped.
   label(text, x, y, o = {}) { this._labels.push({ text, x, y, font: o.font || `13px 'IM Fell English SC', Georgia, serif`, color: o.color || INK, halo: o.halo ?? 'rgba(240,226,190,0.85)', prio: o.prio ?? 1, pos: o.pos || ['r', 'l', 't', 'b'], gap: o.gap ?? 6, hw: o.halfW || 0 }); }
-  hit(x, y, r, html) { this._hits.push({ x, y, r, html }); }
+  hit(x, y, r, html, soft = false) { this._hits.push({ x, y, r, html, soft }); }   // soft: areas (waters, weather), not places
   // title cartouche (bottom right): smaller than before (it hid the south-east quarter), and drawn faint, without
   // pushing labels away, while a port, a ship or our course lies under it
   _cartoucheBox(f) { const w = clamp(f.w * 0.21, 240, 340), h = Math.round(w * 0.38); return { x: f.x + f.w - w - 22, y: f.y + f.h - h - 22, w, h }; }
@@ -903,13 +903,13 @@ export class WorldMap {
       const [x, y] = this.w2s(lx, lz), fs = clamp(14 + (z - 1) * 2.5, 14, 24);
       this.label(p.name, x, y - fs * 0.45, { font: `italic ${fs.toFixed(0)}px 'IM Fell English', Georgia, serif`, color: '#6e1c10', halo: 'rgba(240,226,190,0.82)', prio: 5, pos: ['c', 't', 'b'], gap: 0 });
       this.label('perilous seas', x, y + fs * 0.62, { font: `italic ${Math.max(12, fs * 0.78).toFixed(0)}px 'Spectral', Georgia, serif`, color: '#7a2414', halo: 'rgba(240,226,190,0.8)', prio: 4.9, pos: ['c', 'b'], gap: 0 });
-      this.hit(x, y, 46, `<b>${esc(p.name)}</b><span class="bad">Perilous seas</span><span>${tip(3)}</span><em>${this._bearing(lx, lz)}</em>`);
+      this.hit(x, y, 46, `<b>${esc(p.name)}</b><span class="bad">Perilous seas</span><span>${tip(3)}</span><em>${this._bearing(lx, lz)}</em>`, true);
     }
     for (const g of zd.guarded) {
       const [x, y] = this.w2s(g.x, g.z - g.r), r = g.r * s;
       if (r < 18) continue;
       this.label('guarded waters', x, y, { font: `italic ${clamp(12 + (z - 1) * 1.5, 12, 18).toFixed(0)}px 'Spectral', Georgia, serif`, color: '#1e552d', halo: 'rgba(240,226,190,0.85)', prio: 4.8, pos: ['b', 't', 'c'], gap: 5 });
-      this.hit(x, y + 10, 30, `<b>${esc(g.name)}</b><span class="good">Guarded waters</span><span>${tip(1)}</span>`);
+      this.hit(x, y + 10, 30, `<b>${esc(g.name)}</b><span class="good">Guarded waters</span><span>${tip(1)}</span>`, true);
     }
   }
 
@@ -940,7 +940,7 @@ export class WorldMap {
         ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(x, y, R * 0.42, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
         if (this.view.zoom > 1.2) this.label('Storm', x, y - R, { font: `italic 11.5px 'Spectral', Georgia, serif`, color: 'rgba(40,30,30,0.9)', prio: 3, pos: ['t', 'c'], gap: 4 });
       }
-      this.hit(x, y, Math.max(14, R * 0.8), zn.kind === 'squall' ? `<b>Squall</b><span>The breeze freshens under the squall: +28% speed.</span><em>${this._bearing(zn.x, zn.z)}</em>` : `<b>Storm</b><span>A fair wind at the edges, but the heart wrecks hull and sails.</span><em>${this._bearing(zn.x, zn.z)}</em>`);
+      this.hit(x, y, Math.max(14, R * 0.8), zn.kind === 'squall' ? `<b>Squall</b><span>The breeze freshens under the squall: +28% speed.</span><em>${this._bearing(zn.x, zn.z)}</em>` : `<b>Storm</b><span>A fair wind at the edges, but the heart wrecks hull and sails.</span><em>${this._bearing(zn.x, zn.z)}</em>`, true);
     }
     ctx.restore();
   }
