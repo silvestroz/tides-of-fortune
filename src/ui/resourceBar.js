@@ -9,6 +9,23 @@ import { GOODS } from '../data/world.js';
 import { holdUsed, holdCapacity } from '../game/economy.js';
 import { SPECIALISTS, SPECIALIST_IDS } from '../data/fortune.js';
 import { fmtInt } from '../core/i18n.js';
+import { DAY_SCALE } from '../game/career.js';
+
+// Provisions in ONE unit for the player: calendar days at sea for the present crew (the date of the ledger strip
+// turns once a day). Consumption as in Career.advanceDays: crew / 25 barrels per design day of 45 s (cooper −30 %).
+// The barrels stay the trade unit at the market and in the hold, with the days alongside.
+export function provisionDays(game, food = game.state?.food ?? 0, crew = game.player?.crew ?? game.state?.crew ?? 0) {
+  const perDay = crew / 25 * (game.fortune?.fx?.foodMul ?? 1) / DAY_SCALE;   // barrels eaten per calendar day
+  return perDay > 0 ? food / perDay : Infinity;
+}
+// 0 days · < ½ day · ½ day · 1 day · 2½ days · 12 days (halves below ten, rounded down: never more than there is)
+export function fmtDays(d) {
+  if (!Number.isFinite(d)) return '—';
+  if (d >= 10) return `${fmtInt(Math.floor(d))} days`;
+  const h = Math.floor(d * 2) / 2, n = Math.floor(h), half = h - n ? '½' : '';
+  if (h <= 0) return d > 0 ? '< ½ day' : '0 days';
+  return `${n || ''}${half} ${h > 1 ? 'days' : 'day'}`;
+}
 
 const fmt = n => fmtInt(n);
 const FOOD_I = '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 7 H24 C26 12 26 20 24 25 H8 C6 20 6 12 8 7Z" fill="#a8743a" stroke="#4a2c0e" stroke-width="1.6"/><path d="M7 12 H25 M7 20 H25" stroke="#4a2c0e" stroke-width="1.6"/></svg>';
@@ -24,7 +41,7 @@ export class ResourceBar {
     el.className = 'res-band tof-parch await';
     el.innerHTML = `
       <span class="res gold" title="Gold"><i>${ICONS.gold}</i><b class="v"></b><small>gold</small></span>
-      <span class="res food" title="Provisions (days at sea)"><i>${FOOD_I}</i><b class="v"></b><small>provisions</small></span>
+      <span class="res food" title="Provisions: days at sea for the present crew"><i>${FOOD_I}</i><b class="v"></b><small>provisions</small></span>
       <span class="res crew" title="Crew"><i class="ink">${ICONS.crew}</i><b class="v"></b><small>men</small></span>
       <span class="res hold" title="Cargo (hold)"><i>${HOLD_I}</i><b class="v"></b><small>hold</small></span>
       <span class="res mor" title="Crew morale"><i>${MOR_I}</i><b class="v"></b><small>morale</small></span>
@@ -55,10 +72,12 @@ export class ResourceBar {
     this._t = 0.2;
     const g = this.game, st = g.state || {}, p = g.player, s = this._snap();
     const crewMax = p?.crewMax || s.crew;
-    const need = Math.max(1, Math.ceil(s.crew / 25 * (g.fortune?.fx.foodMul ?? 1))), days = Math.floor(s.food / need), mo = Math.round(st.morale ?? 70);
+    const days = provisionDays(g, s.food, s.crew), mo = Math.round(st.morale ?? 70);
     let used = 0, cap = 0; try { used = holdUsed(g); cap = holdCapacity(g); } catch { /* no ship yet */ }
     this._v('gold', fmt(s.gold));
-    this._v('food', `${days} ${days === 1 ? 'day' : 'days'}`, days < 4);
+    this._v('food', fmtDays(days), days < 1);
+    const ft = `Provisions: ${fmtDays(days)} at sea for ${Math.round(s.crew)} men (${fmt(s.food)} ${s.food === 1 ? 'barrel' : 'barrels'})`;
+    if (this.$.food.title !== ft) this.$.food.title = ft;
     this._v('crew', `${Math.round(s.crew)}/${Math.round(crewMax)}`, s.crew < crewMax * 0.35);
     this._v('hold', `${Math.round(used)}/${Math.round(cap)}`, cap > 0 && used >= cap - 0.5);
     this._v('mor', `${mo}`, mo < 30);
@@ -72,7 +91,7 @@ export class ResourceBar {
       const why = performance.now() - this._whyT < 4000 ? this._why : null;
       if (s.gold - pr.gold >= 1) this._q.push(['gold', `+${fmt(s.gold - pr.gold)} gold`, why]);
       if (s.crew - pr.crew >= 1) this._q.push(['crew', `+${fmt(s.crew - pr.crew)} ${s.crew - pr.crew >= 2 ? 'men' : 'man'}`, why]);
-      if (s.food - pr.food >= 1) this._q.push(['food', `+${fmt(s.food - pr.food)} provisions`, why]);
+      if (s.food - pr.food >= 1) { const d = provisionDays(g, s.food - pr.food, s.crew); this._q.push(['food', d >= 0.5 && Number.isFinite(d) ? `+${fmtDays(d)} of provisions` : `+${fmt(s.food - pr.food)} ${s.food - pr.food >= 2 ? 'barrels' : 'barrel'} of provisions`, why]); }
       for (const k in s.cargo) {
         const d = s.cargo[k] - (pr.cargo[k] || 0);
         if (d >= 1) this._q.push(['hold', `+${fmt(d)} ${(GOODS[k]?.name || k).toLowerCase()}`, why]);

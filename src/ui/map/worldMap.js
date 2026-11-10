@@ -626,8 +626,10 @@ export class WorldMap {
     this._drawLabels(ctx, s);
     if (this.layers.missions) this._drawMissions(ctx, s);   // governor's missions under way (career.missionTargets)
     this._drawShips(ctx, s);
+    const cb = this._cartoucheBox(f), under = this._hits.some(h => !h.soft && h.x > cb.x - 12 && h.x < cb.x + cb.w + 12 && h.y > cb.y - 12 && h.y < cb.y + cb.h + 12);
+    if (!under) this._rects.push([cb.x - 8, cb.y - 8, cb.w + 16, cb.h + 16]);
     this._flushLabels(ctx);
-    this._drawCartouche(ctx, f);
+    this._drawCartouche(ctx, f, under ? 0.28 : 1);
     this._drawScale(ctx, f, s);
     this._drawWindRose(ctx, f);
     // vignette / burnt edge inside the frame
@@ -644,10 +646,11 @@ export class WorldMap {
   // ('r' right of the point, 'l', 't' above, 'b' below, 'c' centred). Higher prio is placed first; a label that
   // would overlap an already placed one (or the chart furniture) at every candidate is dropped.
   label(text, x, y, o = {}) { this._labels.push({ text, x, y, font: o.font || `13px 'IM Fell English SC', Georgia, serif`, color: o.color || INK, halo: o.halo ?? 'rgba(240,226,190,0.85)', prio: o.prio ?? 1, pos: o.pos || ['r', 'l', 't', 'b'], gap: o.gap ?? 6, hw: o.halfW || 0 }); }
-  hit(x, y, r, html) { this._hits.push({ x, y, r, html }); }
+  hit(x, y, r, html, soft = false) { this._hits.push({ x, y, r, html, soft }); }   // soft: areas (waters, weather), not places
+  // title cartouche (bottom right): smaller than before (it hid the south-east quarter), and drawn faint, without
+  // pushing labels away, while a port, a ship or our course lies under it
+  _cartoucheBox(f) { const w = clamp(f.w * 0.21, 240, 340), h = Math.round(w * 0.38); return { x: f.x + f.w - w - 22, y: f.y + f.h - h - 22, w, h }; }
   _reserveFurniture(f) {
-    const cw = clamp(f.w * 0.3, 300, 470);
-    this._rects.push([f.x + f.w - cw - 30, f.y + f.h - cw * 0.42 - 30, cw + 30, cw * 0.42 + 30]);   // cartouche
     const R = clamp(f.h * 0.075, 46, 80); this._rects.push([f.x + 20, f.y + 20, R * 2 + 40, R * 2 + 50]);   // wind rose
     this._rects.push([f.x, f.y + f.h - 60, 260, 60]);   // scale of leagues
     const lg = this.legend?.getBoundingClientRect?.(); if (lg?.width) this._rects.push([lg.left - 6, lg.top - 6, lg.width + 12, lg.height + 12]);
@@ -757,6 +760,8 @@ export class WorldMap {
         const px = x + (k - (wl - 1) / 2) * 5.2, py = y + u * 1.25;
         ctx.beginPath(); ctx.arc(px, py, 2.1, 0, Math.PI * 2); ctx.fillStyle = '#d9b55a'; ctx.fill(); ctx.lineWidth = 0.8; ctx.strokeStyle = INK; ctx.stroke();
       }
+      // the town and its flag are kept clear of the other labels (the ship's name used to run over Port Royal)
+      this._rects.push([x - u * 1.5, y - u * 2.4, u * 2.6 + 18 * big + 2, u * 4]);
       // name (decluttered: right of the flag, else left, above, below)
       const fs = clamp(12 + 2 * big + (z - 1) * 1.5, 12, 22);
       this.label(p.name, x, y - u * 0.6, { font: `${fs.toFixed(0)}px 'IM Fell English SC', Georgia, serif`, color: p.haven ? '#4a0e0e' : hostile ? '#6e1414' : INK, prio: 8 + big, halfW: u * 1.1 + 18 * big, gap: 4 });
@@ -898,13 +903,13 @@ export class WorldMap {
       const [x, y] = this.w2s(lx, lz), fs = clamp(14 + (z - 1) * 2.5, 14, 24);
       this.label(p.name, x, y - fs * 0.45, { font: `italic ${fs.toFixed(0)}px 'IM Fell English', Georgia, serif`, color: '#6e1c10', halo: 'rgba(240,226,190,0.82)', prio: 5, pos: ['c', 't', 'b'], gap: 0 });
       this.label('perilous seas', x, y + fs * 0.62, { font: `italic ${Math.max(12, fs * 0.78).toFixed(0)}px 'Spectral', Georgia, serif`, color: '#7a2414', halo: 'rgba(240,226,190,0.8)', prio: 4.9, pos: ['c', 'b'], gap: 0 });
-      this.hit(x, y, 46, `<b>${esc(p.name)}</b><span class="bad">Perilous seas</span><span>${tip(3)}</span><em>${this._bearing(lx, lz)}</em>`);
+      this.hit(x, y, 46, `<b>${esc(p.name)}</b><span class="bad">Perilous seas</span><span>${tip(3)}</span><em>${this._bearing(lx, lz)}</em>`, true);
     }
     for (const g of zd.guarded) {
       const [x, y] = this.w2s(g.x, g.z - g.r), r = g.r * s;
       if (r < 18) continue;
       this.label('guarded waters', x, y, { font: `italic ${clamp(12 + (z - 1) * 1.5, 12, 18).toFixed(0)}px 'Spectral', Georgia, serif`, color: '#1e552d', halo: 'rgba(240,226,190,0.85)', prio: 4.8, pos: ['b', 't', 'c'], gap: 5 });
-      this.hit(x, y + 10, 30, `<b>${esc(g.name)}</b><span class="good">Guarded waters</span><span>${tip(1)}</span>`);
+      this.hit(x, y + 10, 30, `<b>${esc(g.name)}</b><span class="good">Guarded waters</span><span>${tip(1)}</span>`, true);
     }
   }
 
@@ -935,7 +940,7 @@ export class WorldMap {
         ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(x, y, R * 0.42, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
         if (this.view.zoom > 1.2) this.label('Storm', x, y - R, { font: `italic 11.5px 'Spectral', Georgia, serif`, color: 'rgba(40,30,30,0.9)', prio: 3, pos: ['t', 'c'], gap: 4 });
       }
-      this.hit(x, y, Math.max(14, R * 0.8), zn.kind === 'squall' ? `<b>Squall</b><span>The breeze freshens under the squall: +28% speed.</span><em>${this._bearing(zn.x, zn.z)}</em>` : `<b>Storm</b><span>A fair wind at the edges, but the heart wrecks hull and sails.</span><em>${this._bearing(zn.x, zn.z)}</em>`);
+      this.hit(x, y, Math.max(14, R * 0.8), zn.kind === 'squall' ? `<b>Squall</b><span>The breeze freshens under the squall: +28% speed.</span><em>${this._bearing(zn.x, zn.z)}</em>` : `<b>Storm</b><span>A fair wind at the edges, but the heart wrecks hull and sails.</span><em>${this._bearing(zn.x, zn.z)}</em>`, true);
     }
     ctx.restore();
   }
@@ -981,10 +986,10 @@ export class WorldMap {
     void s;
   }
 
-  _drawCartouche(ctx, f) {
-    const w = clamp(f.w * 0.3, 300, 470), h = w * 0.42;
-    const x = f.x + f.w - w - 26, y = f.y + f.h - h - 26;
+  _drawCartouche(ctx, f, alpha = 1) {
+    const { x, y, w, h } = this._cartoucheBox(f);
     ctx.save();
+    ctx.globalAlpha = alpha;
     ctx.translate(x, y);
     // scroll: parchment banner with rolled ends + strapwork frame
     ctx.shadowColor = 'rgba(40,20,5,0.45)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 4;
@@ -1007,16 +1012,15 @@ export class WorldMap {
     }
     // text
     ctx.textAlign = 'center'; ctx.fillStyle = INK; ctx.textBaseline = 'alphabetic';
-    ctx.font = `italic ${Math.round(h * 0.11)}px 'IM Fell English', Georgia, serif`;
-    ctx.fillText('A new and exact chart of the', w / 2, h * 0.27);
-    ctx.font = `${Math.round(h * 0.2)}px 'IM Fell English SC', Georgia, serif`;
+    ctx.font = `italic ${Math.max(12, Math.round(h * 0.13))}px 'IM Fell English', Georgia, serif`;
+    ctx.fillText('A new and exact chart of the', w / 2, h * 0.3);
+    ctx.font = `${Math.round(h * 0.25)}px 'IM Fell English SC', Georgia, serif`;
     ctx.fillStyle = '#5a1410';
-    ctx.fillText('Windward Seas', w / 2, h * 0.5);
+    ctx.fillText('Windward Seas', w / 2, h * 0.58);
     ctx.fillStyle = INK;
-    ctx.font = `italic ${Math.round(h * 0.095)}px 'IM Fell English', Georgia, serif`;
-    ctx.fillText('with their islands, harbours and shoals,', w / 2, h * 0.67);
+    ctx.font = `italic ${Math.max(12, Math.round(h * 0.115))}px 'IM Fell English', Georgia, serif`;
     const d = this.game.state?.date;
-    ctx.fillText(`corrected by the captain’s own hand${d ? ', anno ' + d.year : ''}`, w / 2, h * 0.8);
+    ctx.fillText(`corrected by the captain’s own hand${d ? ', anno ' + d.year : ''}`, w / 2, h * 0.78);
     // small flourish
     ctx.strokeStyle = INK; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(w * 0.3, h * 0.88); ctx.bezierCurveTo(w * 0.4, h * 0.82, w * 0.45, h * 0.94, w * 0.5, h * 0.88); ctx.bezierCurveTo(w * 0.55, h * 0.82, w * 0.6, h * 0.94, w * 0.7, h * 0.88); ctx.stroke();

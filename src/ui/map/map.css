@@ -44,3 +44,6 @@
 .tof-worldmap .wm-legend { font-size: clamp(12px, 1.45vh, 16px); }
 .tof-worldmap .wl-row:not(.on) { opacity: .66; }
 .tof-worldmap .wm-tip em { font-size: max(.9em, 12px); }
+/* readability (2026-11-10): legend 13 px at 768 px, key line 13 px */
+.tof-worldmap .wm-legend { font-size: clamp(13px, 1.5vh, 16px); }
+.tof-worldmap .wm-hint { font-size: max(.95em, 13px); }
