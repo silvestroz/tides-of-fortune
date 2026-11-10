@@ -20,12 +20,14 @@
 //   ?tod=h forces time;  ?weather=clear|cloudy|storm forces weather at startup.
 // Timeline: sunrise 6.0, sunset ~19.4 (19.2 = sun touching the horizon), solar noon 12.7, max elevation ~66°.
 // Global aerial-perspective fog is installed by ./sky/atmosphere.js (patches fog chunks; scene.fog is a FogExp2).
+// Drifting cloud shadows on the islands: ./sky/cloudShadow.js (driven from update()).
 import * as THREE from 'three';
 import { ATMOS } from './sky/atmosphere.js';
 import { createSkyUniforms, createSkyMaterial } from './sky/skyDome.js';
 import { createPaletteState, samplePalette } from './sky/palette.js';
 import { CloudLayer } from './sky/clouds.js';
 import { Rain, Lightning } from './sky/weather.js';
+import { CLOUD_SHADOW } from './sky/cloudShadow.js';
 import { QUALITY } from '../core/constants.js';
 
 const SUNRISE = 6.0, SUNSET = 19.4;
@@ -297,6 +299,7 @@ export class Sky {
     const cam = g.camera;
     this.dome.position.copy(cam.position);
     this.clouds.update(dt, cam, this._windOff);
+    CLOUD_SHADOW.update(this._windOff, this.clouds.coverage, this.clouds.uniforms.uSunUp.value, w.overcast);
     this.rain.update(dt, t, cam, g.wind, w.rain, this.ambientColor);
 
     // shadow camera centred on the camera target, snapped to shadow texels to avoid shimmering

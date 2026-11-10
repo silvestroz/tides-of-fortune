@@ -11,6 +11,8 @@
 //   post.setRenderSize(w, h | null)  size of the scene and every pass (DynRes); null = the canvas drawing buffer.
 //     Smaller than the canvas -> the FSR pass upsamples to the canvas (post.fsr.enabled). ?fsr=0 keeps the old path.
 // Follows game.settings.quality when present ('settings:change' event).
+// The sea scene's layered aerial perspective (ATMOS.params.w, see world/sky/atmosphere.js) is switched on only around
+// this chain's render: port, duel and land scenes (game.renderOverride) keep plain fog.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -23,6 +25,7 @@ import { QUALITY } from './constants.js';
 import { GodRaysPass } from '../post/godRaysPass.js';
 import { createGradePass } from '../post/gradePass.js';
 import { FsrPass } from '../post/fsrPass.js';
+import { ATMOS } from '../world/sky/atmosphere.js';
 
 const _v = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
@@ -129,7 +132,10 @@ export class PostFX {
     gu.uSat.value = 1.1 + golden * 0.08 - storm * 0.28 - night * 0.08;
     gu.uSplitAmt.value = 0.1 + golden * 0.08 + storm * 0.04;
     gu.uSplitHigh.value.setRGB(1.0, 0.78 - golden * 0.06, 0.5 - golden * 0.08);
-    gu.uSplitShadow.value.setRGB(0.2 - storm * 0.02, 0.42 + storm * 0.05, 0.62);
+    // shadows: teal by day, violet at golden hour (a teal split against the warm haze turned shaded cloud bellies olive)
+    gu.uSplitShadow.value.setRGB(0.2 + golden * 0.18 - storm * 0.02, 0.42 - golden * 0.12 + storm * 0.05, 0.62 + golden * 0.04);
+    // low sun: slightly deeper mid-tones so the warm haze doesn't flatten the frame
+    gu.uGamma.value.setScalar(this.game.mode === 'duel' ? 1 : 1 - golden * 0.07 * (1 - storm));
     gu.uLift.value.set(0.012, 0.02, 0.04 + night * 0.02);
     gu.uGain.value.set(1.02 + golden * 0.02, 1.0, 0.97 - golden * 0.02);
     gu.uVignette.value = 0.3 + storm * 0.12 + night * 0.08;
@@ -148,9 +154,13 @@ export class PostFX {
     const edge = Math.max(Math.abs(_v.x), Math.abs(_v.y));
     const onScreen = facing > 0 ? 1 - THREE.MathUtils.smoothstep(edge, 0.9, 1.25) : 0;
     this.godRays.sunScreen.set(sx, sy);
-    const lowBoost = 0.25 + 0.8 * golden;
-    this.godRays.strength = onScreen * (sky.sunVisibility ?? 1) * lowBoost * 2.6 * (duel ? 0.3 : 1);
-    this.godRays.threshold = 0.45 + (1 - golden) * 0.45;
+    // low sun: distinct shafts, but a threshold high enough that sunlit canvas and the sea glare don't feed them
+    // (a lower one veiled the whole frame and washed the back-lit ships out of their silhouettes)
+    const lowBoost = 0.25 + 0.6 * golden;
+    this.godRays.strength = onScreen * (sky.sunVisibility ?? 1) * lowBoost * 2.2 * (duel ? 0.3 : 1);
+    this.godRays.threshold = 0.65 + (1 - golden) * 0.4;
+    // layered haze on distant land: full by day, lighter at night and in a storm (already grey and close)
+    this._layerHaze = duel ? 0 : 1.0 * (1 - night * 0.5) * (1 - storm * 0.5);
     this.godRays.tint.copy(sky.sunColor);
   }
 
@@ -164,7 +174,9 @@ export class PostFX {
       this.ao.setSceneClipBox(this._aoBox);
       // menus/duel/mini-games keep AO too (port and duel scenes gain the most); off when the post chain is disabled
     }
+    ATMOS.params.w = this._layerHaze || 0;
     this.composer.render(dt);
+    ATMOS.params.w = 0;
   }
 
   setRenderSize(w, h) { this._renderSize = w ? { w, h } : null; this.resize(); }

@@ -1,5 +1,5 @@
 // Instanced vegetation & props: coconut palms (curved trunk + alpha fronds, wind sway), broadleaf canopy clumps,
-// bushes, rocks, driftwood. Scattered once from the baked heightfield (deterministic), then streamed:
+// bushes, rocks, driftwood (direct light dimmed under drifting cloud shadows, like the terrain). Scattered once from the baked heightfield (deterministic), then streamed:
 //   near set (< NEAR m from camera): detailed geometry, all instances, shadows
 //   far set  (< FAR m): low-poly geometry, a thinned subset scaled up to keep coverage
 // Exclusion zones (towns/forts) are registered via addExclusion({x,z,r}) or rect before scatter() runs.
@@ -17,6 +17,7 @@ function mergeGeometries(list) {
 import { mulberry32 } from '../../core/rng.js';
 import { QUALITY } from '../../core/constants.js';
 import { getFrondTexture, getDetailTexture } from './textures.js';
+import { CLOUD_SHADOW, cloudShadowPars, cloudShadowApply } from '../sky/cloudShadow.js';
 
 // LOD distances follow the quality tier; set by tierDistances() when Vegetation is built (QUALITY is applied by Game
 // after the modules are imported, so module-level constants would always read the default tier)
@@ -336,7 +337,7 @@ function vegMaterial({ map = null, alphaTest = 0, side = THREE.FrontSide, swayAm
   const u = { uLeaf: { value: translucency > 0.3 && !map ? 1 : 0 }, uDay: { value: 1 }, uTime: { value: 0 }, uWind: { value: new THREE.Vector2(0.7, 0.7) }, uDetail: { value: getDetailTexture() } };
   mat.userData.uniforms = u;
   mat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, u);
+    Object.assign(sh.uniforms, u, CLOUD_SHADOW.uniforms);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
         uniform float uTime; uniform vec2 uWind;
@@ -357,7 +358,10 @@ function vegMaterial({ map = null, alphaTest = 0, side = THREE.FrontSide, swayAm
         vVWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform sampler2D uDetail; uniform float uDay; uniform float uLeaf; varying vec3 vVWorld; varying float vSway;`)
+        uniform sampler2D uDetail; uniform float uDay; uniform float uLeaf; varying vec3 vVWorld; varying float vSway;
+        ${cloudShadowPars}`)
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        ${cloudShadowApply('vVWorld')}`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         totalEmissiveRadiance += vegMoon;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -382,7 +386,7 @@ function vegMaterial({ map = null, alphaTest = 0, side = THREE.FrontSide, swayAm
         #include <opaque_fragment>`);
     }
   };
-  mat.customProgramCacheKey = () => 'veg2-' + (map ? 'm' : '') + alphaTest + side + swayAmp + translucency;
+  mat.customProgramCacheKey = () => 'veg3-' + (map ? 'm' : '') + alphaTest + side + swayAmp + translucency;
   return mat;
 }
 

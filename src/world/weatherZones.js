@@ -46,7 +46,8 @@ function puffTexture() {
     const r = S * (0.12 + rnd() * 0.16), a = rnd() * Math.PI * 2, d = rnd() * S * 0.24;
     const cx = S / 2 + Math.cos(a) * d, cy = S / 2 + Math.sin(a) * d * 0.7;
     const g = x.createRadialGradient(cx, cy, 0, cx, cy, r);
-    g.addColorStop(0, 'rgba(255,255,255,0.55)'); g.addColorStop(0.6, 'rgba(255,255,255,0.22)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    // firm-edged lobes (heaped cumulus) rather than airbrushed blobs
+    g.addColorStop(0, 'rgba(255,255,255,0.7)'); g.addColorStop(0.62, 'rgba(255,255,255,0.5)'); g.addColorStop(0.85, 'rgba(255,255,255,0.18)'); g.addColorStop(1, 'rgba(255,255,255,0)');
     x.fillStyle = g; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fill();
   }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
@@ -69,7 +70,8 @@ const PUFF_FS = /* glsl */`
   varying vec2 vUv; varying vec3 vCol; varying float vFade; varying float vShade;
   void main() {
     vec4 t = texture2D(uMap, vUv);
-    vec3 col = mix(vCol * vShade, uTint, 0.28) * uLight;
+    // the dimmer the light, the more the puff melts into the sky colour (no white blobs on a night horizon)
+    vec3 col = mix(vCol * vShade * uLight, uTint, 0.28 + 0.6 * (1.0 - uLight));
     float a = t.a * vFade * 0.95;
     if (a < 0.01) discard;
     gl_FragColor = vec4(col, a);
@@ -316,7 +318,7 @@ export class WeatherZones {
     const fog = this.game.scene.fog?.color;
     if (fog) this.puffMat.uniforms.uTint.value.copy(fog);
     const sun = this.game.sky?.sunDir?.y ?? this.game.sky?.sunElevation;
-    if (typeof sun === 'number') this.puffMat.uniforms.uLight.value = Math.max(0.28, Math.min(1, 0.45 + sun * 2));
+    if (typeof sun === 'number') this.puffMat.uniforms.uLight.value = Math.max(0.12, Math.min(1, 0.45 + sun * 2));
     const show = this.game.mode !== 'port' && this.game.mode !== 'duel';
     this.puffs.visible = this.rain.visible = show;
   }
