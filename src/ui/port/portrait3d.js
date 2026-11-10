@@ -32,6 +32,15 @@ export function portraitLook(role, seed = 1, nation = 'english') {
     // the governor's hall: oil portraits of an ancestor in a wig or a lady in her finery (paintedBust)
     case 'noble': return { ...LOOKS.governor, ...base, skin: pick(['#e8c0a0', '#e0b090']), coat: pick(['#2a2a3a', '#4a1a2a', '#1e2e4a', '#2a3a2a']), wig: pick(['#e9e4da', '#c8bfae', '#8a6a4a']), moustache: r() < 0.4, expr: 'stern' };
     case 'lady': return { ...LOOKS.woman, ...base, hat: 'none', apron: false, skin: pick(['#ecc6a4', '#e8c0a0']), hair: pick(['#2a1a10', '#4a2414', '#7a5a30', '#c8a060']), dress: pick(['#1e2e5a', '#5a1a2a', '#2a4a3a']), bodice: pick(['#1e2e5a', '#5a1a2a', '#2a4a3a']), ribbon: '#e8dcc0', expr: 'calm' };
+    // the first mate who guides the prologue (src/ui/mateGuide.js): 'mate' | 'mate:pleased' | 'mate:worried' — a
+    // weathered officer in a sober coat of the player's nation, bare-headed (the face stays large); face = live
+    // expression held for the render (rest mouth and brows from expr)
+    case 'mate': case 'mate:pleased': case 'mate:worried': {
+      const mood = role.slice(5);
+      return { ...base, skin: '#cf9a74', hair: '#5a3a22', coat: { english: '#2a3550', spanish: '#3a2e26', french: '#2e4a7a', dutch: '#33302a' }[nation] || '#2e3448',
+        trim: '#b8954a', lapel: '#5a4a3a', waistcoat: '#d8c8a0', hat: 'none', longHair: true, moustache: true, beard: false, eyes: '#3a5468',
+        expr: mood === 'pleased' ? 'smile' : mood === 'worried' ? 'stern' : 'calm', face: mood === 'pleased' ? 'joy' : mood === 'worried' ? 'strain' : 'neutral' };
+    }
     case 'guard': return { ...LOOKS.guard, ...base, coat: nation === 'spanish' ? '#a88a3a' : COATS[nation] || '#8a2222', tool: null, expr: 'stern' };
     default: return { ...LOOKS.merchant, ...base, hat: 'wide', hatColor: '#5a3a1c', moustache: true, expr: 'smile' };
   }
@@ -78,7 +87,7 @@ function render(renderer, look, small = false) {
   const fig = new CaptainFigure({ ...look });
   // three-quarter bust: head turned a little toward the viewer, shoulders squared, arms at rest
   fig.j.head.rotation.y = 0.22; fig.j.neck.rotation.y = 0.08; fig.j.chest.rotation.y = -0.1;
-  fig.setExpression?.('neutral', 1e3);
+  fig.setExpression?.(look.face || 'neutral', 1e3);
   scene.add(fig.group); fig.group.updateMatrixWorld(true);
   // the figure's eyes sit near 1.83 m (heroic proportions); a tall hat raises the frame a little
   const tall = ['tricorn', 'bicorne', 'morion', 'wide'].includes(look.hat);   // (a wig is not a hat: keep the face large)

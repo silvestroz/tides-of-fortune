@@ -13,12 +13,15 @@
 // 'game:new' event (menu, Appareiller); missing from old saves (no goals); a discreet line at the top centre of the
 // HUD; advances when the Governor tab is open (polled), on 'career:mission' (accepted / done / failed / void) and
 // 'career:promote'; finished once a rank is earned. Hidden when hints are off.
-// Prologue (src/game/prologue.js, this.prologue): on a new game, goals.step = 'offer' → “Prologue” card
-// (Commencer / Passer); 'p-*' steps on the goal line (“skip” button), then 'visit'.
+// Prologue (src/game/prologue.js, this.prologue), told by the first mate (src/ui/mateGuide.js, this.mate): on a new
+// game, goals.step = 'offer' → the mate's panel (Begin / Skip); 'p-*' orders in the same panel (no goal line, no hint
+// card meanwhile except urgent ones, prio ≥ URGENT, stacked above it; the hints whose keys an order shows are marked
+// seen when it starts: MATE.steps[step].teach), then a farewell (MATE.bye, prologue.bye) and 'visit'.
 // API: ensure() · trigger(key) · seen(key) · mark(key) · reset() · dismiss() · advance(secs) (tests) · current ·
 //   queue · goal() · update()
-import { HINTS, HINT_KEYS, HINT_TIMING as T, VETERAN_SEEN, GOAL_TEXT, GOAL_PORT_TEXT, PROLOGUE } from '../data/hints.js';
+import { HINTS, HINT_KEYS, HINT_TIMING as T, VETERAN_SEEN, GOAL_TEXT, GOAL_PORT_TEXT, MATE, MATE_ORDERS } from '../data/hints.js';
 import { Prologue } from '../game/prologue.js';
+import { MateGuide } from './mateGuide.js';
 import { TOAST_ICONS } from './toasts.js';
 import { ensureSettings } from './settings.js';
 import { nationAdj } from '../core/i18n.js';
@@ -26,6 +29,7 @@ import { missionBriefs } from './missionBrief.js';
 
 const NATIONS = ['english', 'spanish', 'french', 'dutch'];
 const strip = h => String(h).replace(/<[^>]+>/g, '');
+const URGENT = 3;   // during the prologue, only hints of this priority or more (damage, storm, shallows, board) show
 
 export class Hints {
   constructor(game, hudEl) {
@@ -39,11 +43,7 @@ export class Hints {
       const el = this.el = document.createElement('div');
       el.className = 'hint-card tof-parch interactive off';
       el.setAttribute('role', 'status');
-      el.addEventListener('click', e => {
-        const b = e.target.closest?.('[data-pro]');
-        if (b) { e.stopPropagation(); return this._proAct(b.dataset.pro); }
-        if (this.current?.key !== 'offer') this.dismiss();
-      });
+      el.addEventListener('click', () => this.dismiss());
       hudEl.appendChild(el);
       const gl = this.goalEl = document.createElement('div');
       gl.className = 'goal-line off';
@@ -51,6 +51,7 @@ export class Hints {
       hudEl.appendChild(gl);
     }
     this.prologue = new Prologue(game, this);
+    this.mate = new MateGuide(game, hudEl, a => this._proAct(a));
     const ev = game.events;
     ev.on('game:loaded', () => this.ensure({ loaded: true }));
     ev.on('game:new', () => this._newGame());
@@ -81,6 +82,7 @@ export class Hints {
     }
     if (t.goals && this._hasRank()) t.goals.step = 'done';
     if (t.goals && (t.goals.step === 'offer' || /^p-/.test(t.goals.step))) t.goals.step = 'visit';   // prologue isn't saved
+    this.prologue.bye = null;
     this.queue = []; this._hide(); this._seaT = 0; this._sailSeenAt = null;
     this._renderGoal(true);
   }
@@ -127,16 +129,16 @@ export class Hints {
         else this.el?.classList.add('held');
       } else {
         this.el?.classList.remove('held');
-        if (c.key === 'offer' && this.goal()?.step !== 'offer') { this._hide(); return this._renderGoal(); }
         c.shown += real;
         if (this._bar) this._bar.style.transform = `scaleX(${Math.max(0, 1 - c.shown / c.life).toFixed(3)})`;
         if (c.shown >= c.life) { this._hide(); this._gap = T.gap; }
       }
     } else if (!blocked) {
       this._gap -= real;
-      if (this.goal()?.step === 'offer') this._showOffer();
-      else if (this._gap <= 0) this._next();
+      if (this._gap <= 0) this._next();
     }
+    const bye = this.prologue.bye;
+    if (bye && !blocked && (bye.t += real) >= MATE.byeTime) { this.prologue.bye = null; this._renderGoal(true); this._flashGoal(); }
     this._renderGoal();
   }
   _blocked() {
@@ -146,8 +148,11 @@ export class Hints {
       || !!g.hold?.isOpen || !!g.worldMap?.isOpen || !!g.ports?.isOpen;
   }
   _next() {
-    while (this.queue.length) {
-      const k = this.queue.shift();
+    const pro = this._inPrologue();
+    for (let i = 0; i < this.queue.length; i++) {
+      const k = this.queue[i];
+      if (pro && (HINTS[k].prio || 0) < URGENT) continue;   // the mate is speaking: ordinary hints wait their turn
+      this.queue.splice(i--, 1);
       if (this.seen(k)) continue;
       if (!this._live(k)) continue;   // the moment has passed (port or enemy out of range): it will come back
       return this._show(k);
@@ -175,23 +180,13 @@ export class Hints {
     void this.el.offsetWidth; this.el.classList.add('in');
     this.game.audio?.play?.('ui:hover');
   }
-  _inPrologue() { const st = this.goal()?.step || ''; return st === 'offer' || /^p-/.test(st); }
-  _showOffer() {
-    const O = PROLOGUE.offer;
-    this.current = { key: 'offer', shown: 0, life: Infinity };
-    if (!this.el) return;
-    this.el.innerHTML = `<span class="hc-ico">${TOAST_ICONS.combat}</span>
-      <div class="hc-body"><div class="hc-title">${O.title}</div><div class="hc-txt">${O.text()}</div>
-      <div class="hc-acts"><button class="btn" data-pro="start">${O.start}</button><button class="btn ghost" data-pro="skip">${O.skip}</button></div></div>`;
-    this.el.dataset.hint = 'offer'; this._bar = null;
-    this.el.className = 'hint-card offer tof-parch interactive';
-    void this.el.offsetWidth; this.el.classList.add('in');
-  }
+  // the mate is on (offer, orders or farewell): ordinary hints and the goal line wait
+  _inPrologue() { const st = this.goal()?.step || ''; return st === 'offer' || /^p-/.test(st) || !!this.prologue?.bye; }
   _proAct(a) {
     const st = this.goal()?.step;
     this.game.audio?.play?.('ui:select');
-    if (a === 'start' && st === 'offer') { this._hide(); this._gap = 0.6; this.prologue.start(); }
-    else if (a === 'skip' && (st === 'offer' || /^p-/.test(st || ''))) { this._hide(); this._gap = T.gap; this.prologue.skip(); }
+    if (a === 'start' && st === 'offer') { this._gap = 0.6; this.prologue.start(); }
+    else if (a === 'skip' && (st === 'offer' || /^p-/.test(st || ''))) { this._gap = T.gap; this.prologue.skip(); this._flashGoal(); }
   }
   _hide() {
     this.current = null;
@@ -240,7 +235,9 @@ export class Hints {
     }
     const port = best || any;
     s.tutorials = { hints: {}, goals: { step: this.on ? 'offer' : 'visit', port: port?.id || null, portName: port?.name || null } };
-    this.queue = []; this._hide(); this._seaT = 0; this._sailSeenAt = null; this._wantMap = false;
+    this.queue = []; this._hide(); this._seaT = 0; this._sailSeenAt = null; this._wantMap = false; this.prologue.bye = null;
+    // the mate's portraits, painted now (under the fade to black), never at sea
+    if (this.on && this.allowed) this.mate.prepare(nat);
     this._renderGoal(true);
   }
   _advance(step, patch = {}) {
@@ -250,9 +247,12 @@ export class Hints {
     // the port screen hides the HUD: the next goal is announced there by a message
     if (this.on && GOAL_PORT_TEXT[step] && (this.game.ports?.isOpen || step === 'done'))
       this.game.events.emit('notify', { text: GOAL_PORT_TEXT[step](o), kind: step === 'done' ? 'good' : 'info', topic: 'rank' });
+    // an order of the mate: the hints whose keys it shows are now known (never queued behind it)
+    for (const k of MATE.steps[step]?.teach || []) { this.mark(k); this.queue = this.queue.filter(q => q !== k); if (this.current?.key === k) this._hide(); }
     this._renderGoal(true);
-    if (this.goalEl && step !== 'done') { this.goalEl.classList.remove('flash'); void this.goalEl.offsetWidth; this.goalEl.classList.add('flash'); }
+    if (step !== 'done') this._flashGoal();
   }
+  _flashGoal() { const el = this.goalEl; if (el) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } }
   _goalDone() { const o = this.goal(); if (o && o.step !== 'done') this._advance('done'); }
   _onMission({ mission: m, status }) {
     const o = this.goal();
@@ -280,19 +280,38 @@ export class Hints {
     }
   }
   _renderGoal(force = false) {
+    this._renderMate();
     const el = this.goalEl; if (!el) return;
-    const o = this.goal(), show = this.on && !!o && o.step !== 'done' && !!GOAL_TEXT[o.step];
-    const pro = show && /^p-/.test(o.step);
+    const o = this.goal(), show = this.on && !!o && o.step !== 'done' && !!GOAL_TEXT[o.step] && !this.prologue.bye;
     // mission that ends in port: what to do there and where (F key), taken from the mission reminder
     let how = show && o.step === 'mission' ? missionBriefs(this.game).find(b => b.id === o.missionId)?.short : '';
     if (how && !how.includes('(F)')) how = '';   // at sea (hunt under way…): the mission's title is enough
     const oo = how ? { ...o, how: how.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])) } : o;
-    const html = show ? `<span class="gl-lbl">${pro ? 'Prologue' : 'Goal'}</span><span class="gl-txt">${GOAL_TEXT[o.step](oo)}</span>${pro ? '<button class="gl-skip" data-pro="skip">skip</button>' : ''}` : '';
+    const html = show ? `<span class="gl-lbl">Goal</span><span class="gl-txt">${GOAL_TEXT[o.step](oo)}</span>` : '';
     if (!force && html === this._goalHtml) return;
     this._goalHtml = html;
     if (show) el.innerHTML = html;
     el.classList.toggle('off', !show);
     if (show) el.dataset.step = o.step; else delete el.dataset.step;
+  }
+  // the first mate's panel: offer, current order (text, what is left to do), farewell
+  _renderMate() {
+    const m = this.mate; if (!m?.el) return;
+    const o = this.goal(), st = o?.step || '', bye = this.prologue.bye, S = MATE.steps[st];
+    let v = null;
+    if (!this.on || !o) v = null;
+    else if (st === 'offer') v = { mode: 'offer', mood: 'neutral', text: MATE.offer.text(o), acts: 'offer', step: 'offer' };
+    else if (S) v = { mode: 'order', mood: S.mood, text: S.text(o), todo: S.todo(o), order: MATE.order(S.n, MATE_ORDERS), acts: 'skip', step: st };
+    else if (bye) { const B = MATE.bye[bye.how] || MATE.bye.lost; v = { mode: 'bye', mood: B.mood, text: B.text(bye.name, o), step: 'bye' }; }
+    if (!v) { if (m.visible) { m.hide(); this._stack(0); } return; }
+    const changed = m.show(v), held = m.hold(this._blocked());
+    if (changed || held) this._stack(m.height());
+  }
+  // an urgent hint during the prologue sits above the mate's panel
+  _stack(h) {
+    if (!this.el) return;
+    const v = h ? `${h + 10}px` : '';
+    if (this.el.style.getPropertyValue('--mate-h') !== v) { if (v) this.el.style.setProperty('--mate-h', v); else this.el.style.removeProperty('--mate-h'); }
   }
 }
 export { HINT_KEYS };

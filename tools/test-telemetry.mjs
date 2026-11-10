@@ -80,7 +80,7 @@ async function browserPart() {
     g.state.assist = true; g.state.tutorials ||= {}; g.state.tutorials.goals = { step: 'offer' };
     g.events.emit('game:new', {});
     g.state.tutorials.goals = { step: 'offer' }; t._tick();
-    for (const s of ['p-sail', 'p-helm', 'p-fire', 'p-strike', 'visit', 'accept', 'mission', 'rank', 'done']) set(s);
+    for (const s of ['p-sail', 'p-cam', 'p-fire', 'p-strike', 'p-board', 'visit', 'accept', 'mission', 'rank', 'done']) set(s);
   });
   L = await log();
   const want = ['/jeu/parcours/1-nouvelle-partie', '/jeu/mode/assistance', '/jeu/parcours/2-prologue-commence', '/jeu/parcours/3-prologue-gagne',

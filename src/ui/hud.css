@@ -604,7 +604,7 @@
 
 /* ---------- onboarding: hint card (bottom left), goal line (top centre), “First steps” screen
    (pause menu). Logic: src/ui/hints.js; texts: src/data/hints.js ---------- */
-.hint-card { position: absolute; left: 1.2em; bottom: 1.1em; width: min(23em, calc(50vw - 23em)); min-width: 17em;
+.hint-card { position: absolute; left: 1.2em; bottom: calc(1.1em + var(--mate-h, 0px)); width: min(23em, calc(50vw - 23em)); min-width: 17em;
   display: grid; grid-template-columns: 2.1em minmax(0, 1fr); column-gap: 0.65em; align-items: start;
   padding: 0.6em 1.8em 0.8em 0.75em; border-radius: 0.2em; color: var(--ink); cursor: pointer; font-size: max(1em, 13px);
   box-shadow: inset 0 0 1.2em rgba(110,66,18,0.5), 0 0 0 0.12em #6e4f1a, 0 0 0 0.26em rgba(246,224,154,0.5), 0 0.45em 1.3em rgba(0,0,0,0.5);
@@ -650,14 +650,41 @@
 .hints-reset-row { margin-top: -0.2em; }
 .hints-reset-row .btn.ghost { justify-self: start; grid-column: 2 / span 2; padding-left: 0; font-size: 0.95em; }
 .hints-reset-row .btn:disabled { opacity: 0.8; cursor: default; text-decoration: none; }
-/* prologue: offer card (Commencer / Passer), “skip” button of the goal line */
-.hint-card.offer { cursor: default; }
-.hint-card .hc-acts { display: flex; gap: 1em; align-items: center; margin-top: 0.55em; }
-.hint-card .hc-acts .btn { font-size: max(0.95em, 13px); padding: 0.3em 1.1em; }
-.hint-card .hc-acts .btn.ghost { padding: 0.3em 0.2em; }
-.goal-line .gl-skip { appearance: none; border: 0; background: none; cursor: pointer; font: inherit; font-family: var(--txt); font-style: italic;
-  font-size: max(0.85em, 11px); color: #e8c978; text-decoration: underline; text-underline-offset: 0.2em; padding: 0 0 0 0.3em; }
-.goal-line .gl-skip:hover { color: #fff0bf; }
+/* prologue: the first mate's panel (src/ui/mateGuide.js), bottom left, in place of the hint card and the goal line;
+   bigger for the offer (Begin / Skip), raised above the bottom bar; an urgent hint card stacks above it (--mate-h) */
+.mate-guide { position: absolute; left: 1.2em; bottom: 1.1em; width: min(26em, calc(50vw - 24.5em)); min-width: 21em;
+  display: grid; grid-template-columns: 6.4em minmax(0, 1fr); column-gap: 0.85em; align-items: start;
+  padding: 0.7em 1.1em 0.75em 0.8em; border-radius: 0.2em; color: var(--ink); font-size: max(1em, 13px);
+  box-shadow: inset 0 0 1.2em rgba(110,66,18,0.5), 0 0 0 0.12em #6e4f1a, 0 0 0 0.26em rgba(246,224,154,0.5), 0 0.45em 1.3em rgba(0,0,0,0.5);
+  transition: opacity 0.35s ease, transform 0.4s cubic-bezier(.2,.9,.3,1.15); }
+.mate-guide.off { opacity: 0; transform: translateY(0.8em); visibility: hidden; pointer-events: none;
+  transition: opacity 0.3s, transform 0.3s, visibility 0s linear 0.3s; }
+.mate-guide.held { opacity: 0; visibility: hidden; pointer-events: none; }
+.mate-guide.in { animation: hintIn 0.5s cubic-bezier(.2,.9,.3,1.15) both; }
+.mate-guide.offer { width: min(31em, calc(100vw - 4em)); bottom: 5.6em; grid-template-columns: 8.6em minmax(0, 1fr); padding: 0.9em 1.4em 1em 1em; }
+.mate-guide .mg-face { margin-top: -1.9em; position: relative; }
+.mate-guide .mg-face .portrait { width: 100%; height: auto; display: block; filter: drop-shadow(0 0.25em 0.45em rgba(0,0,0,0.55)); }
+.mate-guide .mg-head { display: flex; align-items: baseline; gap: 0.5em; flex-wrap: wrap; margin-bottom: 0.3em;
+  border-bottom: 1px solid rgba(110,66,18,0.35); padding-bottom: 0.2em; }
+.mate-guide .mg-name { font-family: var(--sc); font-size: 1.15em; letter-spacing: 0.04em; color: #5a3a08; line-height: 1.1; }
+.mate-guide .mg-role { font-family: var(--txt); font-style: italic; font-size: 0.95em; color: var(--ink-soft); }
+.mate-guide .mg-order { margin-left: auto; font-family: var(--sc); font-size: max(0.85em, 12px); letter-spacing: 0.08em; color: var(--blood); }
+.mate-guide .mg-txt { font-family: var(--txt); font-size: 1.04em; line-height: 1.42; color: var(--ink); }
+.mate-guide.offer .mg-txt { font-size: 1.14em; }
+.mate-guide .kc { font-size: max(0.8em, 11px); min-width: 1.55em; height: 1.5em; padding: 0 0.3em; margin: 0 0.1em; vertical-align: 0.06em; }
+.mate-guide .mg-todo { list-style: none; margin: 0.45em 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.2em; }
+.mate-guide .mg-todo li { display: grid; grid-template-columns: 1.1em minmax(0, 1fr); gap: 0.45em; align-items: center;
+  font-family: var(--txt); font-size: max(0.95em, 13px); line-height: 1.3; color: var(--ink); }
+.mate-guide .mg-todo i { width: 0.95em; height: 0.95em; border-radius: 50%; box-shadow: inset 0 0 0 1.5px #6e4f1a; }
+.mate-guide .mg-todo li.ok { color: var(--ink-soft); }
+.mate-guide .mg-todo li.ok span { text-decoration: line-through; text-decoration-color: rgba(110,66,18,0.55); }
+.mate-guide .mg-todo li.ok i { background: radial-gradient(circle at 40% 35%, #f0d27a, #b08a2a 70%); box-shadow: inset 0 0 0 1.5px #6e4f1a; }
+.mate-guide .mg-acts { display: flex; gap: 1em; align-items: center; margin-top: 0.7em; }
+.mate-guide .mg-acts .btn { font-size: max(1em, 13px); padding: 0.35em 1.4em; }
+.mate-guide .mg-acts .btn.ghost { padding: 0.35em 0.3em; }
+.mate-guide .mg-skip { appearance: none; border: 0; background: none; cursor: pointer; display: block; margin: 0.4em 0 0 auto; padding: 0;
+  font-family: var(--txt); font-style: italic; font-size: max(0.88em, 12px); color: var(--ink-soft); text-decoration: underline; text-underline-offset: 0.2em; }
+.mate-guide .mg-skip:hover { color: var(--blood); }
 
 /* reminder of the current missions (src/ui/missionBrief.js), bottom right above the key line: dark pill
    (text over the 3D), titles in capitals, objective in Spectral */

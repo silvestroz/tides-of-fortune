@@ -82,31 +82,63 @@ export const HINT_KEYS = Object.keys(HINTS);
 // hints a seasoned captain already knows (old save without `tutorials`, career under way)
 export const VETERAN_SEEN = ['sail', 'time', 'guns', 'board', 'port', 'map', 'storm', 'shoal'];
 
-// ---- playable prologue (src/game/prologue.js), offered with a new game, skippable ----
+// ---- playable prologue (src/game/prologue.js), offered with a new game, skippable; told by the first mate ----
 export const PROLOGUE = {
   type: 'sloop', target: 'Cormorant', captain: 'Nat Crowe',   // name without the article (“the Cormorant” in the texts)
   hull: 0.6, crew: 0.9, duel: 0.12,          // the target's starting hull and crew (at least half of ours + 2), boarding duel
   strikeAt: 0.42,                            // strikes her colours below this fraction of hull
-  turn: 1.4,                                 // rad of accumulated heading change for the “helm” step (~80°)
+  turn: 1.4,                                 // rad of accumulated heading change for the “helm” part of order 1 (~80°)
+  look: 0.6,                                 // rad of camera orbit (right-drag) that counts as “having a look” (order 2)
   dist: [650, 850, 1100, 480],               // m ahead of the player; deep water is searched around the heading
-  offer: {
-    title: 'Prologue',
-    text: () => `A few orders at the helm, a broadside and a first prize taken from a crippled freebooter off the port. About two minutes.`,
-    start: 'Begin', skip: 'Skip',
-  },
-  sighted: n => `Sail ho! The ${n}, a crippled pirate sloop, lies at anchor offshore: her guns are silent.`,
-  done: n => `Your first prize! Board the ${n} (B) to seize her cargo. Prologue complete.`,
-  doneSunk: n => `The ${n} goes to the bottom. Prologue complete: set course for the governor.`,
-  doneBoarded: n => `The ${n} is yours: your first prize. Prologue complete: set course for the governor.`,
 };
 
+// The first mate (src/ui/mateGuide.js): portrait painted from the game's 3D character (portrait3d.js, roles 'mate',
+// 'mate:pleased', 'mate:worried', at the player's nation), one panel at the bottom left instead of the hint card and
+// the goal line during the prologue. Texts: British, second person, short, keys as badges. `o` = state.tutorials.goals.
+// Orders (state.tutorials.goals.step): 'p-sail' (sails and helm) → 'p-cam' (look around) → 'p-fire' then 'p-strike'
+// (broadside, then keep firing) → 'p-board' (she has struck: B). Each is cleared by the player's action, never by a
+// button. `teach`: hints whose keys the order shows (marked as seen when it starts: never queued behind).
+export const MATE = {
+  name: 'Mr Hale', role: 'First mate',
+  offer: {
+    text: () => `Welcome aboard, Captain. Before we put in, shall I show you how she handles? Four orders, about two minutes.`,
+    start: 'Begin', skip: 'Skip',
+  },
+  skip: 'Skip the prologue',
+  order: (i, n) => `Order ${i} of ${n}`,
+  steps: {
+    'p-sail': { n: 1, mood: 'neutral', teach: [],
+      text: () => `Let’s get her moving. ${kc('KeyW')} sets more sail, ${kc('KeyS')} takes it in; ${kc('KeyA')} and ${kc('KeyD')} steer.`,
+      todo: o => [[`Full sail: ${kc('KeyW')} twice`, !!o.sailed], [`Quarter turn: ${kc('KeyA')} or ${kc('KeyD')}`, (o.turned || 0) >= PROLOGUE.turn]] },
+    'p-cam': { n: 2, mood: 'neutral', teach: ['camera'],
+      text: o => `Sail ho, off the bow: the ${o.target || PROLOGUE.target}. Have a look at her. ${K('C')} changes the view; you can also drag with the right mouse button.`,
+      todo: o => [[`Change the view: ${K('C')} or right-drag`, !!o.looked]] },
+    'p-fire': { n: 3, mood: 'neutral', teach: ['guns'],
+      text: o => `The ${o.target || PROLOGUE.target} is a crippled pirate sloop, and her guns are silent. Bring her alongside and fire: ${kc('KeyQ')} to port (left), ${kc('KeyE')} to starboard (right), ${K('Space')} on whichever side faces her.`,
+      todo: () => [[`Hit her with a broadside`, false]] },
+    'p-strike': { n: 3, mood: 'pleased', teach: ['guns'],
+      text: () => `Good shooting! Keep at her until she strikes her colours. The bars by the compass show each side reloading.`,
+      todo: () => [[`Hit her with a broadside`, true], [`Keep firing until she strikes`, false]] },
+    'p-board': { n: 4, mood: 'pleased', teach: ['board'],
+      text: () => `She’s struck her colours! Come alongside and press ${K('B')} to board her. You’ll face her captain, sword in hand.`,
+      todo: () => [[`Board her: ${K('B')} when alongside`, false]] },
+  },
+  // farewell once the prologue is over (shown ~9 s, then the goal line takes over); o.portName = nearest friendly port
+  byeTime: 9,
+  bye: {
+    boarded: { mood: 'pleased', text: (n, o) => `The ${n} is ours, Captain: your first prize. Now let’s see the governor at ${o.portName || 'the nearest port'}. Sail into the harbour and press ${K('F')}.` },
+    struck: { mood: 'pleased', text: (n, o) => `Your first prize, Captain. Now let’s see the governor at ${o.portName || 'the nearest port'}. Sail into the harbour and press ${K('F')}.` },
+    sunk: { mood: 'worried', text: (n, o) => `The ${n} has gone to the bottom, and her cargo with her. No matter: let’s see the governor at ${o.portName || 'the nearest port'}. Sail in and press ${K('F')}.` },
+    defeat: { mood: 'worried', text: (n, o) => `They beat us back, but we’re still afloat. Let’s see the governor at ${o.portName || 'the nearest port'}. Sail in and press ${K('F')}.` },
+    lost: { mood: 'worried', text: (n, o) => `We’ve lost sight of the ${n}. No matter: let’s see the governor at ${o.portName || 'the nearest port'}. Sail in and press ${K('F')}.` },
+  },
+};
+export const MATE_ORDERS = 4;
+
 // ---- guided goals of the early career (new game only) ----
-// step: ['offer' → 'p-sail' → 'p-helm' → 'p-fire' → 'p-strike' →] 'visit' → 'accept' → 'mission' → 'rank' → 'done'. Texts (short HTML, Spectral): `o` = state.tutorials.goals.
+// step: ['offer' → 'p-sail' → 'p-cam' → 'p-fire' → 'p-strike' → 'p-board' →] 'visit' → 'accept' → 'mission' → 'rank' → 'done'. Texts (short HTML, Spectral): `o` = state.tutorials.goals.
+// (the prologue's orders are told by the first mate, MATE above: no goal line meanwhile)
 export const GOAL_TEXT = {
-  'p-sail': () => `Leave the roads: set full sail (${kc('KeyW')})`,
-  'p-helm': () => `Put the helm over (${kc('KeyA')} or ${kc('KeyD')}) and turn a quarter circle`,
-  'p-fire': o => `Fire a broadside at the ${o.target || 'freebooter'}: ${kc('KeyQ')} port, ${kc('KeyE')} starboard`,
-  'p-strike': o => `Pound the ${o.target || 'freebooter'} until she strikes her colours`,
   visit: o => `Enter ${o.portName || 'a friendly port'} (${K('F')}) and see the governor`,
   accept: o => o.again ? 'Accept a new mission from a governor' : 'Accept a mission from the governor',
   // o.how: short objective of a mission that ends in port (missionBriefs, set by hints._renderGoal), “(F)” as a key
