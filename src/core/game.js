@@ -74,7 +74,7 @@ export class Game {
     // ?shot= showcases), which freeze the loop before a capture; players keep the direct swap
     const keepBuffer = !!navigator.webdriver || this.params.has('shot') || this.params.get('keepbuffer') === '1';
     const r = this.renderer = new THREE.WebGLRenderer({ antialias: QUALITY.antialias || this.params.get('post') === '0', powerPreference: 'high-performance', preserveDrawingBuffer: keepBuffer });
-    this.pacer = new FramePacer({ mode: this.settings.fps || 'auto' });   // refresh rate, even dt, cadence (settings.fps)
+    this.pacer = new FramePacer({ mode: this.settings.fps || 'auto', calibrate: !navigator.webdriver });   // refresh rate, even dt, cadence (settings.fps)
     this.events.on('settings:change', ({ patch }) => { if (patch.fps) this.pacer.mode = patch.fps; });
     this.dynres = new DynRes(this);   // pixel ratio: tier cap (1.0 unless 'high') + dynamic scale, ?dynres=0 / ?pr=N
     r.setPixelRatio(this.dynres.scale);
