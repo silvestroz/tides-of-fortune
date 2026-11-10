@@ -2,7 +2,10 @@
 // state.tutorials.hints, never repeated, suspended behind screens, switched off in Options, « Réafficher les
 // conseils »), the « Premiers pas » sheet from the pause menu, the guided career goals of a new game (visit → accept →
 // mission → rank → done) and an old save without `tutorials` (no error, no goals, veteran hints pre-marked).
-// Also the playable prologue (offer card, Commencer / Passer, sail → helm → broadside → struck prize).
+// Also the playable prologue told by the first mate (offer panel with his 3D-painted portrait, Begin / Skip; four orders
+// each cleared by the player's action: sails and helm → view (C) → broadside → board (B); no ordinary hint meanwhile,
+// an urgent one stacks above the panel; the order's keys never queued behind; Skip mid-way; target sunk or vanished →
+// no dead end; other ships ignore the target).
 // Usage: node tools/test-onboarding.mjs [--shots folder] [--q "quality=low"]   (dev server at TOF_URL)
 // Drives the real game (title → Appareiller) with the render loop stopped: game.step() + hud.update(), keys dispatched
 // on document.body with `key` and `code`. hints.advance(s) fast-forwards the reading clock. Viewport 1366×768.
@@ -45,7 +48,7 @@ const shot = async name => {
   await ev(() => { const g = window.__game; g.hud?.update?.(1 / 60); g.post.render(1 / 60); });
   try { await page.screenshot({ path: `${SHOTS}/${name}.png`, timeout: 120000 }); } catch (e) { console.log(`(capture ${name} skipped: ${e.message.split('\n')[0]})`); }
 };
-const KEYS = { KeyJ: 'j', Escape: 'Escape', KeyW: 'z', KeyM: 'm' };
+const KEYS = { KeyJ: 'j', Escape: 'Escape', KeyW: 'z', KeyM: 'm', KeyC: 'c' };
 const tap = async code => {
   await ev(([code, key]) => document.body.dispatchEvent(new KeyboardEvent('keydown', { code, key, bubbles: true })), [code, KEYS[code] || code]);
   await ev(() => { const g = window.__game; g.step(g.frozen ? 0 : 1 / 30); g.hud?.update?.(0); g.input.endFrame(); });
@@ -58,9 +61,13 @@ const hs = () => ev(() => {
   const g = window.__game, h = g.hud.hints, cards = [...document.querySelectorAll('.hint-card')];
   const vis = cards.filter(c => !c.classList.contains('off') && !c.classList.contains('held'));
   const gl = document.querySelector('.goal-line');
+  const mg = document.querySelector('.mate-guide'), mOn = !!mg && !mg.classList.contains('off') && !mg.classList.contains('held');
   return { cur: h.current?.key || null, queue: h.queue.slice(), seen: { ...(g.state.tutorials?.hints || {}) }, vis: vis.length, held: cards.some(c => c.classList.contains('held')),
     shown: vis[0]?.dataset.hint || null, text: vis[0]?.textContent || '', goal: g.state.tutorials?.goals || null,
-    goalOn: !!gl && !gl.classList.contains('off'), goalText: gl?.textContent || '', mode: g.mode, rect: vis[0]?.getBoundingClientRect().toJSON() || null };
+    goalOn: !!gl && !gl.classList.contains('off'), goalText: gl?.textContent || '', mode: g.mode, rect: vis[0]?.getBoundingClientRect().toJSON() || null,
+    mate: mOn, mateStep: mOn ? mg.dataset.step : null, mateText: mOn ? mg.textContent.replace(/\s+/g, ' ') : '', mateRect: mOn ? mg.getBoundingClientRect().toJSON() : null,
+    mateImg: mOn ? (mg.querySelector('.mg-face image')?.getAttribute('href') || '').slice(0, 22) : '', mateMood: mOn ? mg.querySelector('.mg-face')?.dataset.mood : null,
+    mateKeys: mOn ? [...mg.querySelectorAll('.kc')].map(k => k.dataset.code || k.textContent).join(' ') : '', todoOk: mOn ? mg.querySelectorAll('.mg-todo li.ok').length : 0 };
 });
 
 // ================================================================ new game
@@ -71,13 +78,19 @@ await calm();
 await sim(0.5);
 await adv(0.5);
 let s = await hs();
-check('new game: prologue offered (card with Commencer / Passer), no objective line yet', s.goal?.step === 'offer' && s.shown === 'offer' && !s.goalOn && /Prologue/.test(s.text), s.text.slice(0, 60));
+const prep = await ev(() => ({ ms: window.__game.hud.hints.mate.prepMs, n: Object.values(window.__game.hud.hints.mate.faces).filter(Boolean).length }));
+check('new game: the first mate offers the prologue (Begin / Skip), no hint card, no goal line', s.goal?.step === 'offer' && s.mate && s.mateStep === 'offer' && s.vis === 0 && !s.goalOn
+  && /Mr Hale/.test(s.mateText) && /Begin/.test(s.mateText) && /Skip/.test(s.mateText), s.mateText.slice(0, 90));
+check('first mate: portrait painted from the 3D character (3 moods, at game creation)', s.mateImg.startsWith('data:image/png') && prep.n === 3, `${prep.n} faces in ${prep.ms?.toFixed(0)} ms`);
+const offerBox = await ev(() => { const m = document.querySelector('.mate-guide').getBoundingClientRect(), b = document.querySelector('.helm .bar')?.getBoundingClientRect();
+  const ov = b && !(m.right <= b.left || b.right <= m.left || m.bottom <= b.top || b.bottom <= m.top); return { w: m.width, h: m.height, cx: m.left + m.width / 2, ov, vw: innerWidth }; });
+check('offer panel: larger than a hint card, left of the ship, clear of the bottom bar', offerBox.w >= 380 && offerBox.cx < offerBox.vw * 0.3 && !offerBox.ov, JSON.stringify(offerBox));
 check('new game: no hint seen yet', Object.keys(s.seen).length === 0, JSON.stringify(s.seen));
 await shot('00-prologue-offre');
-await ev(() => document.querySelector('.hint-card [data-pro="skip"]').click());
+await ev(() => document.querySelector('.mate-guide [data-pro="skip"]').click());
 await adv(0.3);
 s = await hs();
-check('« Passer »: goals set (visit) and the objective line shown', s.goal?.step === 'visit' && s.goalOn && /governor/.test(s.goalText) && s.cur === null, s.goalText);
+check('« Skip »: goals set (visit), the mate leaves, the objective line shown', s.goal?.step === 'visit' && !s.mate && s.goalOn && /governor/.test(s.goalText) && s.cur === null, s.goalText);
 
 // first hints: the game starts in the harbour → « Escale » (F) at once; the wind hint follows after a few seconds
 await adv(2);
@@ -286,38 +299,66 @@ s = await hs();
 // of the transport mission then brings the « Cale » hint first
 check('old save (fresh career): no goals, hints start from scratch', s.goal === null && !s.goalOn && ['port', 'sail', 'hold'].includes(s.cur) && !s.seen.fleet, `${s.cur} ${JSON.stringify(s.seen)}`);
 
-// ================================================================ playable prologue (new game → Commencer)
+// ================================================================ playable prologue told by the first mate
 await boot();
 await ev(() => { const m = window.__game.hud.menu; m._go('captain'); m._start(); });
 await wait(1600);
 await calm();
 await sim(0.3);
 await adv(0.5);
-await ev(() => document.querySelector('.hint-card [data-pro="start"]').click());
+await ev(() => document.querySelector('.mate-guide [data-pro="start"]').click());
 await adv(0.5);
 s = await hs();
-check('prologue: « Commencer » → step « toute la toile », line labelled Prologue with a skip button', s.goal?.step === 'p-sail' && s.goalOn && /Prologue/.test(s.goalText) && /sail/.test(s.goalText) && await ev(() => !!document.querySelector('.goal-line .gl-skip')), s.goalText);
+check('prologue: « Begin » → order 1 of 4 (sails and helm) told by the mate, no goal line, skip link', s.goal?.step === 'p-sail' && s.mate && s.mateStep === 'p-sail' && !s.goalOn
+  && /Order 1 of 4/.test(s.mateText) && /KeyW/.test(s.mateKeys) && /KeyA/.test(s.mateKeys) && await ev(() => !!document.querySelector('.mate-guide .mg-skip')), s.mateText.slice(0, 90));
+// 12 s at sea: the wind hint (prio 0) is queued but waits for the mate; the harbour hint too
+await sim(1); await adv(12);
+s = await hs();
+check('prologue: no ordinary hint slips in while the mate speaks', s.vis === 0 && s.cur === null && s.queue.length > 0, `queue ${s.queue}`);
+// an urgent hint (storm) still shows, stacked above the mate's panel
+await ev(() => window.__game.hud.hints.trigger('storm'));
+await adv(2.2);
+s = await hs();
+check('prologue: an urgent hint shows above the mate’s panel (no overlap)', s.cur === 'storm' && s.rect && s.mateRect && s.rect.bottom <= s.mateRect.top + 1, `${s.cur} ${s.rect && Math.round(s.rect.bottom)} / ${s.mateRect && Math.round(s.mateRect.top)}`);
+await ev(() => window.__game.hud.hints.dismiss());
 await adv(2);
 await shot('07-prologue-voiles');
 await tap('KeyW'); await tap('KeyW');
 await adv(0.6);
 s = await hs();
-check('prologue: full sail → « mettre la barre »', s.goal?.step === 'p-helm', `${s.goal?.step} sailStep ${await ev(() => window.__game.player.controller.sailStep)}`);
+check('order 1: full sail alone is not enough (one of two ticked)', s.goal?.step === 'p-sail' && s.goal.sailed && s.todoOk === 1, `${s.goal?.step} ok ${s.todoOk}`);
 await ev(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD', key: 'd', bubbles: true })));
 await sim(6);
 await ev(() => document.body.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyD', key: 'd', bubbles: true })));
 await adv(0.6);
 s = await hs();
-const turnedByHelm = s.goal?.step === 'p-fire';
+const turnedByHelm = s.goal?.step === 'p-cam';
 if (!turnedByHelm) await ev(() => { const g = window.__game; for (let i = 0; i < 12; i++) { g.player.heading += 0.15; g.hud.hints.advance(0.25); } });
 s = await hs();
 const tg = await ev(() => {
   const g = window.__game, t = g.hud.hints.prologue.target, p = g.player; if (!t) return null;
   return { name: t.name, dist: Math.hypot(t.position.x - p.position.x, t.position.z - p.position.z), depth: g.islands.getTerrainHeight(t.position.x, t.position.z), hostile: p.controller.isEnemy(t), hull: t.hull / t.hullMax };
 });
-check('prologue: quarter turn → « tirer une bordée », pirate target anchored in deep water', s.goal?.step === 'p-fire' && tg && tg.depth < -7 && tg.hostile && tg.dist > 300 && tg.dist < 1300, `${turnedByHelm ? 'helm' : 'forced'} ${JSON.stringify(tg)}`);
-await adv(1);
-await shot('08-prologue-cible');
+check('order 1 done by sail + helm → order 2 (view), pirate target anchored in deep water', s.goal?.step === 'p-cam' && /Order 2 of 4/.test(s.mateText) && /Cormorant/.test(s.mateText)
+  && tg && tg.depth < -7 && tg.hostile && tg.dist > 300 && tg.dist < 1300, `${turnedByHelm ? 'helm' : 'forced'} ${JSON.stringify(tg)}`);
+const notes = await ev(() => window.__game.__notes.filter(t => /Sail ho|Prologue/.test(t)).length);
+check('the sighting is told by the mate, not by a message', notes === 0, `${notes} notes`);
+// other ships leave the prologue's target alone (a patrol and a pirate nearby)
+const ign = await ev(() => {
+  const g = window.__game, t = g.hud.hints.prologue.target;
+  const a = g.combat.spawnAI({ type: 'sloop', faction: 'pirate', role: 'pirate', x: t.position.x + 300, z: t.position.z, heading: 0, name: 'Test Rover' });
+  const b = g.combat.spawnAI({ type: 'sloop', faction: 'spanish', role: 'patrol', x: t.position.x - 300, z: t.position.z, heading: 0, name: 'Test Guarda' });
+  const r = { pirate: g.combat.isHostile(a, t), spanish: g.combat.isHostile(b, t), player: g.combat.isHostile(g.player, t) };
+  g.removeShip(a); g.removeShip(b); return r;
+});
+check('prologue target: ignored by other ships, still the player’s enemy', !ign.pirate && !ign.spanish && ign.player, JSON.stringify(ign));
+await shot('08-prologue-vue');
+await tap('KeyC');
+await adv(0.6);
+s = await hs();
+check('order 2: C → order 3 (broadside), its keys shown now, « Broadsides » hint marked (never queued behind)', s.goal?.step === 'p-fire' && /Order 3 of 4/.test(s.mateText) && /KeyQ/.test(s.mateKeys) && /KeyE/.test(s.mateKeys)
+  && s.seen.guns && s.seen.camera && !s.queue.includes('guns') && !s.queue.includes('camera'), `${s.goal?.step} ${s.mateKeys}`);
+await shot('09-prologue-cible');
 // bring the target abeam at 230 m and fire a real broadside
 const fired = await ev(() => {
   const g = window.__game, p = g.player, t = g.hud.hints.prologue.target, r = p.right();
@@ -336,15 +377,54 @@ await adv(0.3);
 s = await hs();
 const realHit = await ev(() => window.__game.__hits);
 if (s.goal?.step !== 'p-strike') await ev(() => { const g = window.__game; g.events.emit('cannon:hit', { attacker: g.player, target: g.hud.hints.prologue.target, damage: 1, part: 'hull' }); });
+await adv(0.3);
 s = await hs();
-check('prologue: a broadside on target → « pilonner jusqu’à ce qu’il amène »', fired && s.goal?.step === 'p-strike', `${fired}: ${realHit} real hits`);
+check('order 3: a broadside on target → « keep firing » (pleased face)', fired && s.goal?.step === 'p-strike' && s.mateMood === 'pleased' && s.todoOk === 1, `${fired}: ${realHit} real hits`);
 await ev(() => { const t = window.__game.hud.hints.prologue.target; t.hull = t.hullMax * 0.3; });
 await adv(0.6);
 await sim(0.3);
+await adv(0.3);
 s = await hs();
-const pend = await ev(() => { const g = window.__game, t = g.hud.hints.prologue.target; return { struck: !!t?.struck, board: g.combat.boardHint?.ship === t, notes: g.__notes.slice(-4).join(' | ') }; });
-check('prologue: target strikes → first prize, prologue done, ordinary goals (visit)', pend.struck && s.goal?.step === 'visit' && /Prologue complete/.test(pend.notes) && s.goalOn && /governor/.test(s.goalText), pend.notes.slice(0, 140));
-check('prologue: the struck prize can be boarded (B)', pend.board);
+const pend = await ev(() => { const g = window.__game, t = g.hud.hints.prologue.target; return { struck: !!t?.struck, board: g.combat.boardHint?.ship === t }; });
+check('she strikes → order 4 (board with B), « Board her! » hint marked', pend.struck && s.goal?.step === 'p-board' && /Order 4 of 4/.test(s.mateText) && /\bB\b/.test(s.mateKeys) && s.seen.board, s.mateText.slice(0, 80));
+check('the struck prize can be boarded (B)', pend.board);
+await shot('10-prologue-abordage');
+// boarding is the player's (B): its outcome ends the prologue
+await ev(() => { const g = window.__game; g.events.emit('boarding:end', { enemy: g.hud.hints.prologue.target, result: 'captured' }); });
+await adv(0.5);
+s = await hs();
+check('boarded → prologue over: farewell from the mate (port named), goal line held back', s.goal?.step === 'visit' && s.mateStep === 'bye' && /first prize/.test(s.mateText) && !s.goalOn && s.vis === 0, s.mateText.slice(0, 100));
+await shot('11-prologue-fin');
+await adv(10);
+s = await hs();
+check('then the goal line takes over and the waiting hints resume', !s.mate && s.goalOn && /governor/.test(s.goalText) && s.cur && !['guns', 'camera', 'board'].includes(s.cur), `${s.goalText} · hint ${s.cur}`);
+
+// Skip mid-way, target sunk, target vanished: never a dead end
+const restart = async () => {
+  await ev(() => { const g = window.__game, h = g.hud.hints; if (h.prologue.target) { g.removeShip(h.prologue.target); h.prologue.target = null; } g.events.emit('game:new', {}); });
+  await adv(0.3);
+  await ev(() => document.querySelector('.mate-guide [data-pro="start"]').click());
+  await adv(0.3);
+};
+const toFire = () => ev(() => { const g = window.__game, h = g.hud.hints, o = h.goal(); o.sailed = true; o.turned = 9; h.advance(0.3); h.goal().looked = true; h.advance(0.3); return h.goal().step; });
+await restart();
+await ev(() => document.querySelector('.mate-guide .mg-skip').click());
+await adv(0.3);
+s = await hs();
+check('« Skip the prologue » mid-way: ordinary goals, the mate leaves at once', s.goal?.step === 'visit' && !s.mate && s.goalOn, s.goalText);
+await restart();
+const st1 = await toFire();
+await ev(() => { const g = window.__game; g.combat.startSinking(g.hud.hints.prologue.target); });
+await adv(0.5);
+s = await hs();
+check('target sinks during order 3 → prologue ends (worried farewell), not stuck', st1 === 'p-fire' && s.goal?.step === 'visit' && s.mateStep === 'bye' && s.mateMood === 'worried', `${st1} → ${s.goal?.step} ${s.mateText.slice(0, 60)}`);
+await adv(10);
+await restart();
+const st2 = await toFire();
+await ev(() => { const g = window.__game; g.combat._despawn(g.hud.hints.prologue.target); });
+await adv(0.6);
+s = await hs();
+check('target despawned far away during order 3 → prologue ends, not stuck', st2 === 'p-fire' && s.goal?.step === 'visit' && s.mateStep === 'bye', `${st2} → ${s.goal?.step}`);
 
 await browser.close();
 if (warnings.length) console.log(`(${warnings.length} console warnings, first: ${warnings[0]})`);
