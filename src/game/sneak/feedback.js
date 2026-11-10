@@ -99,7 +99,7 @@ export class SneakFeedback {
     if (Math.hypot(g.x - p.x, g.z - p.z) > 46) return;
     s.barkT = this._barkT = this._t;
     const text = pick(BARKS[kind]), urgent = kind === 'chase' || kind === 'alarm' || kind === 'body' || kind === 'caught';
-    this.bubbles.say('g' + g.id, text, () => ({ x: g.x, z: g.z, y: 5.4 }), { kind: urgent ? 'shout sn-bark' : 'sn-bark' });
+    this.bubbles.say('g' + g.id, text, () => ({ x: g.x, z: g.z, y: 7.4 }), { kind: urgent ? 'shout sn-bark' : 'sn-bark' });
     this.sounds.voice(text, this._sp(sim, view, g.x, g.z, 10, 60), { pitch: 0.85 + (g.id * 0.137 % 1) * 0.35, urgent });
   }
   _react(view, g, kind) { view.actors?.reactGuard?.(g.id, kind); }
