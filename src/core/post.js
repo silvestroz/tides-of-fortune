@@ -132,7 +132,10 @@ export class PostFX {
     gu.uSat.value = 1.1 + golden * 0.08 - storm * 0.28 - night * 0.08;
     gu.uSplitAmt.value = 0.1 + golden * 0.08 + storm * 0.04;
     gu.uSplitHigh.value.setRGB(1.0, 0.78 - golden * 0.06, 0.5 - golden * 0.08);
-    gu.uSplitShadow.value.setRGB(0.2 - storm * 0.02, 0.42 + storm * 0.05, 0.62);
+    // shadows: teal by day, violet at golden hour (a teal split against the warm haze turned shaded cloud bellies olive)
+    gu.uSplitShadow.value.setRGB(0.2 + golden * 0.18 - storm * 0.02, 0.42 - golden * 0.12 + storm * 0.05, 0.62 + golden * 0.04);
+    // low sun: slightly deeper mid-tones so the warm haze doesn't flatten the frame
+    gu.uGamma.value.setScalar(this.game.mode === 'duel' ? 1 : 1 - golden * 0.07 * (1 - storm));
     gu.uLift.value.set(0.012, 0.02, 0.04 + night * 0.02);
     gu.uGain.value.set(1.02 + golden * 0.02, 1.0, 0.97 - golden * 0.02);
     gu.uVignette.value = 0.3 + storm * 0.12 + night * 0.08;
