@@ -297,7 +297,8 @@ await adv(10);
 s = await hs();
 // character creation: the start is bow seaward, so the saved ship is no longer necessarily in the roads; the cargo
 // of the transport mission then brings the « Cale » hint first
-check('old save (fresh career): no goals, hints start from scratch', s.goal === null && !s.goalOn && ['port', 'sail', 'hold'].includes(s.cur) && !s.seen.fleet, `${s.cur} ${JSON.stringify(s.seen)}`);
+// (the « Cale » card, ~9.7 s, may already have closed after the 10 s: shown or seen both count)
+check('old save (fresh career): no goals, hints start from scratch', s.goal === null && !s.goalOn && (['port', 'sail', 'hold'].includes(s.cur) || ['port', 'sail', 'hold'].some(k => s.seen[k])) && !s.seen.fleet, `${s.cur} ${JSON.stringify(s.seen)}`);
 
 // ================================================================ playable prologue told by the first mate
 await boot();
