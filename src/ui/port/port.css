@@ -188,6 +188,12 @@
 .cb { height: 0.7em; border-radius: 0.35em; background: rgba(42,28,16,0.2); box-shadow: inset 0 0.05em 0.1em rgba(0,0,0,0.35); overflow: hidden; }
 .cb i { display: block; height: 100%; } .cb i.hull { background: linear-gradient(180deg, #e2a35a, #a8642a 55%, #7a4116); } .cb i.sails { background: linear-gradient(180deg, #fbf3dc, #d9c48e 55%, #a89060); }
 .uico svg { width: 1.7em; height: 1.7em; color: var(--ink); display: block; }
+/* refit icons (refitIcons.js): one drawing, three states. k = ink, the rest = washes set per icon (--m --s --l --i --h) */
+.ri .k { fill: #3a2408; } .ri .m { fill: var(--m); } .ri .s { fill: var(--s); } .ri .l { fill: var(--l); } .ri .i { fill: var(--i); } .ri .h { fill: var(--h); }
+.uico .ri { width: 2.1em; height: 2.1em; margin: -0.2em 0 -0.2em -0.1em; }
+.uico.l0 .ri :not(.k) { fill: #e8d8ae; }                                   /* not bought yet: line drawing (the ink is a full silhouette, so the washes take the paper colour) */
+.uico.max .ri .m { fill: #f1d68a; } .uico.max .ri .s { fill: #d4a441; } .uico.max .ri .i { fill: #b88a33; } .uico.max .ri .l, .uico.max .ri .h { fill: #fff5cf; }   /* at best: gold */
+.uico.max .ri { filter: drop-shadow(0 0 0.18em rgba(255,200,90,0.75)); }
 .ut { font-family: var(--sc); letter-spacing: 0.02em; line-height: 1.05; } .ut em { display: block; font-family: var(--txt); font-size: 0.86em; line-height: 1.2; color: var(--ink-faded); letter-spacing: 0; }
 .pips { display: flex; gap: 0.3em; } .pips i { width: 0.7em; height: 0.7em; transform: rotate(45deg); box-shadow: inset 0 0 0 1.5px rgba(70,42,14,0.6); }
 .pips i.on { background: var(--brass-grad); box-shadow: 0 0 0 1px #6e4f1a, 0 0 0.35em rgba(255,200,90,0.6); }
@@ -355,7 +361,7 @@
 /* shipyard: tighter cards so the slipway list fits */
 .card { padding: 0.55em 0.9em 0.65em; margin: 0.5em 0; }
 .cond, .up { padding: 0.2em 0; gap: 0.45em; }
-.uico svg { width: 1.45em; height: 1.45em; }
+.uico svg { width: 1.45em; height: 1.45em; } .uico .ri { width: 1.8em; height: 1.8em; }
 .stitle.has-vig { grid-template-columns: 4.4em 1fr; margin-bottom: 0.3em; } .stitle .vig { width: 4.4em; height: 3.3em; }
 .stitle h2 { font-size: 1.75em; }
 @media (max-height: 800px) {

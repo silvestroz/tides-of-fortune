@@ -9,6 +9,7 @@ import './port.css';
 import { GOODS } from '../../data/world.js';
 import { flagSVG } from '../flags.js';
 import { ICONS, RULE } from '../icons.js';
+import { REFIT_ICONS } from '../refitIcons.js';   // refit icons: line drawing / materials / gold at best
 import { formatDate } from '../hud.js';
 import { GOOD_ICON, SHIP_SIL, SEAL, GLYPH, VIGNETTE, PORTRAIT } from './art.js';
 import { portraitURL, portraitLazy, portraitKey } from './portrait3d.js';   // characters: medallions painted from the 3D figures
@@ -388,7 +389,7 @@ export class PortScreen {
     const spec = SHIP_SPECS[sel], trade = s.shipTradeIn();
     const price = sel === pl?.type ? 0 : s.shipPrice(sel);
     const hullPct = pl ? Math.round(pl.hull / pl.hullMax * 100) : 100, sailPct = pl ? Math.round(pl.sails * 100) : 100;
-    const UPI = { guns: ICONS.cannon, hull: ICONS.hull, hold: GLYPH.hold, sheath: ICONS.navigation, canvas: ICONS.sails, berths: GLYPH.crew };
+    const upState = u => (u.level >= u.max ? ' max' : u.level > 0 ? '' : ' l0');   // none: line drawing · some: materials · at best: gold
     return `${this._title('The shipyard')}
       <div class="card">
         <h3>${GLYPH.hammer} Repairs to the <i>${esc(pl?.name || 'ship')}</i></h3>
@@ -397,11 +398,11 @@ export class PortScreen {
         ${this._rearmRow()}
       </div>
       <div class="card">
-        <h3>${ICONS.cannon} Refits</h3>
-        ${ups.map(u => `<div class="up"><span class="uico">${UPI[u.id]}</span><span class="ut">${u.name}<em>${u.desc}</em></span><span class="pips">${Array.from({ length: u.max }, (_, i) => `<i class="${i < u.level ? 'on' : ''}"></i>`).join('')}</span><button class="btn sm" data-act="upgrade" data-k="${u.id}" ${u.level >= u.max || st.gold < u.cost ? 'disabled' : ''}>${u.level >= u.max ? 'At best' : `${coin}${fmt(u.cost)}`}</button></div>`).join('')}
+        <h3>${REFIT_ICONS.refits} Refits</h3>
+        ${ups.map(u => `<div class="up"><span class="uico${upState(u)}">${REFIT_ICONS[u.id] || ICONS.cannon}</span><span class="ut">${u.name}<em>${u.desc}</em></span><span class="pips">${Array.from({ length: u.max }, (_, i) => `<i class="${i < u.level ? 'on' : ''}"></i>`).join('')}</span><button class="btn sm" data-act="upgrade" data-k="${u.id}" ${u.level >= u.max || st.gold < u.cost ? 'disabled' : ''}>${u.level >= u.max ? 'At best' : `${coin}${fmt(u.cost)}`}</button></div>`).join('')}
       </div>
       ${s.ammoLocked('chain') || s.ammoLocked('grape') ? `<div class="card">
-        <h3>${ICONS.cannon} Special shot</h3>
+        <h3>${REFIT_ICONS.shot} Special shot</h3>
         ${[['chain', 'Chain shot', 'Cuts sails and rigging, shorter range'], ['grape', 'Grapeshot', 'Sweeps the decks before boarding, short range']].filter(([k]) => s.ammoLocked(k)).map(([k, n, d]) => `<div class="up"><span class="uico">${ICONS[k] || ICONS.cannon}</span><span class="ut">${n}<em>${d}</em></span><span class="pips"></span><button class="btn sm" data-act="buyammo" data-k="${k}" ${st.gold < s.ammoPrice(k) ? 'disabled' : ''}>${coin}${fmt(s.ammoPrice(k))}</button></div>`).join('')}
       </div>` : ''}
       <div class="card">
