@@ -33,7 +33,7 @@ export const PATHS = {
   // goal steps (state.tutorials.goals.step): entering a step = the previous one is cleared
   step: {
     'p-sail': '/jeu/parcours/2-prologue-commence',
-    visit: { 'p-strike': '/jeu/parcours/3-prologue-gagne', offer: '/jeu/parcours/3-prologue-passe', other: '/jeu/parcours/3-prologue-quitte' },
+    visit: { 'p-strike': '/jeu/parcours/3-prologue-gagne', 'p-board': '/jeu/parcours/3-prologue-gagne', offer: '/jeu/parcours/3-prologue-passe', other: '/jeu/parcours/3-prologue-quitte' },
     accept: '/jeu/parcours/4-gouverneur-vu',
     mission: '/jeu/parcours/5-mission-acceptee',
     rank: '/jeu/parcours/6-mission-reussie',

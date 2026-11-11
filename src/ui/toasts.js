@@ -6,13 +6,21 @@
 //         identical texts are grouped (“×3”) instead of stacking.
 //   opts.topic  icon override: 'wind' | 'weather' | 'diplomacy' | 'rumour' | 'gold' | 'combat' | 'crew' | 'shoal'
 //               | 'lord' | 'rank' | 'treasure' (otherwise guessed from the text).
-// Queue: at most MAX visible toasts (MAX_FROZEN in ?frozen screenshots), the rest waits; lifetime by importance.
+//   opts.logOnly  journal only, no toast (low-stakes news, echoes of what the HUD already shows)
+//   opts.defer 'prologue'  held back while the guided prologue runs (notifyRules.inPrologue), shown a few seconds
+//               after it ends (world news: wars, alliances, convoys)
+// Queue: at most MAX visible toasts (2; MAX_FROZEN in ?frozen screenshots), the rest waits; lifetime by importance;
+// an info still waiting after QUEUE_STALE ms is dropped from the screen (it stays in the journal).
+// Toasts carry no ship's-bell line on screen (the journal keeps it); every toast is fully opaque (no fading stack).
+// Banner: one at a time, under the goal line at the top (never over the ships); #hud gets .banner-on meanwhile so
+// the F / B prompts step down below it.
 // Journal: the last 60 messages with ship's-bell time and date, opened with J at sea (Esc / J close).
 // API: new Toasts(game, hudEl) · push(text, kind, opts) · update(real) · journal.open()/close()/toggle()
 import { isKey } from '../core/keys.js';
+import { inPrologue } from '../game/notifyRules.js';
 
-const MAX = 3, MAX_FROZEN = 2, LOG_N = 60;
-const LIFE = { info: 4200, good: 5200, bad: 6200, major: 5600 };
+const MAX = 2, MAX_FROZEN = 2, LOG_N = 60, QUEUE_STALE = 6000, DEFER_AFTER = 4000;
+const LIFE = { info: 3200, good: 4600, bad: 5600, major: 4200 };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // ---- painted icons (inline SVG, brass/ink/blood palette) ----
@@ -57,12 +65,14 @@ export class Toasts {
     const frozen = !!game.params?.get('frozen');
     this.keep = frozen && !game.params.get('logfade');   // frozen screenshots keep their toasts
     this.max = frozen ? MAX_FROZEN : MAX;
+    this.hudEl = hudEl;
     this.stack = document.createElement('div'); this.stack.className = 'toasts';
     this.banner = document.createElement('div'); this.banner.className = 'banner off';
     hudEl.appendChild(this.stack); hudEl.appendChild(this.banner);
     this.live = [];          // { el, text, kind, key, n, t0, life }
     this.queue = [];
     this.bq = []; this._bT = 0; this._bOn = false;
+    this.later = []; this._laterT = 0;   // deferred until the prologue ends (opts.defer)
     this.log = [];
     this.journal = new Journal(game, this);
   }
@@ -74,6 +84,10 @@ export class Toasts {
   }
   push(text, kind = 'info', opts = {}) {
     if (!text) return null;
+    if (opts.defer === 'prologue' && inPrologue(this.game)) {
+      if (!this.later.some(l => l.text === text)) this.later.push({ text, kind, opts: { ...opts, defer: null } });
+      return null;
+    }
     if (kind === 'warn') kind = 'bad';
     if (!LIFE[kind]) kind = 'info';
     const major = kind === 'major' || opts.major || MAJOR_RX.test(text);
@@ -83,6 +97,7 @@ export class Toasts {
     this.log.unshift({ text, kind: major ? 'major' : kind, topic, bell: opts.bell || '', date: g.state?.date ? { ...g.state.date } : null });
     if (this.log.length > LOG_N) this.log.length = LOG_N;
     this.journal.dirty = true;
+    if (opts.logOnly) return null;   // journal only: the screen already shows it (target card, gauges…) or it can wait
     if (major) { this._banner(text, tone, topic); return null; }
     // group duplicates / coalesce by key
     const same = this.live.find(t => (opts.key && t.key === opts.key) || t.text === text);
@@ -94,9 +109,9 @@ export class Toasts {
     }
     const q = this.queue.find(t => (opts.key && t.key === opts.key) || t.text === text);
     if (q) { if (q.text === text) q.n++; else Object.assign(q, { text, kind, topic }); return null; }
-    const item = { text, kind, topic, key: opts.key || null, n: 1, bell: opts.bell || '' };
-    // a bad message jumps ahead of queued infos
-    if (this.live.length >= this.max) { if (kind === 'bad') this.queue.unshift(item); else this.queue.push(item); this._evictInfo(); return null; }
+    const item = { text, kind, topic, key: opts.key || null, n: 1, q0: performance.now() };
+    // a bad message jumps ahead of queued infos; a toast fading out no longer takes a place
+    if (this.live.filter(t => !t.out).length >= this.max) { if (kind === 'bad') this.queue.unshift(item); else this.queue.push(item); this._evictInfo(); return null; }
     return this._show(item);
   }
   // journal only (no toast): flying resource gains already animate on screen
@@ -112,7 +127,7 @@ export class Toasts {
   }
   _paint(t, topic) {
     t.el.className = `toast tof-parch ${t.kind}`;
-    t.el.innerHTML = `<span class="mark">${TOAST_ICONS[topic] || TOAST_ICONS[t.kind]}</span>${t.bell ? `<span class="stamp">${esc(t.bell)}</span>` : ''}<span class="txt">${esc(t.text)}</span>${t.n > 1 ? `<span class="cnt">×${t.n}</span>` : ''}`;
+    t.el.innerHTML = `<span class="mark">${TOAST_ICONS[topic] || TOAST_ICONS[t.kind]}</span><span class="txt">${esc(t.text)}</span>${t.n > 1 ? `<span class="cnt">×${t.n}</span>` : ''}`;
   }
   _show(item) {
     const el = document.createElement('div');
@@ -134,18 +149,25 @@ export class Toasts {
       if (now - t.t0 > t.life) { t.out = true; t.el.classList.add('out'); setTimeout(() => t.el.remove(), 520); }
     }
     this.live = this.live.filter(t => !t.out || t.el.isConnected);
+    if (!this.keep) this.queue = this.queue.filter(t => t.kind !== 'info' || now - t.q0 < QUEUE_STALE);
     const vis = this.live.filter(t => !t.out).length;
     if (vis < this.max && this.queue.length) this._show(this.queue.shift());
-    this.stack.classList.toggle('dim', !!this._bOn);
+    // world news held back during the prologue: released a few seconds after it ends
+    if (this.later.length) {
+      if (inPrologue(this.game)) this._laterT = now + DEFER_AFTER;
+      else if (now > this._laterT) for (const l of this.later.splice(0)) this.push(l.text, l.kind, l.opts);
+    }
     // banner: one at a time
-    if (this._bOn && !this.keep && now > this._bT) { this._bOn = false; this.banner.className = 'banner off'; this._bGap = now + 450; }
+    if (this._bOn && !this.keep && now > this._bT) { this._bOn = false; this.banner.className = 'banner off'; this._bGap = now + 450; this.hudEl?.classList.remove('banner-on'); }
     if (!this._bOn && this.bq.length && now > (this._bGap || 0)) {
       const b = this.bq.shift();
-      this._bOn = true; this._bText = b.text; this._bT = now + LIFE.major + Math.min(2500, b.text.length * 25);
+      this._bOn = true; this._bText = b.text; this._bT = now + LIFE.major + Math.min(1800, b.text.length * 20);
+      this.hudEl?.classList.add('banner-on');
       const [head, ...rest] = splitHead(b.text);
       this.banner.innerHTML = `<div class="b-inner tof-parch"><i class="b-orn l"></i><span class="b-ico">${TOAST_ICONS[b.topic] || TOAST_ICONS.major}</span>
         <div class="b-txt"><div class="b-head">${esc(head)}</div>${rest.length ? `<div class="b-sub">${esc(rest.join(' '))}</div>` : ''}</div><i class="b-orn r"></i></div>`;
       this.banner.className = `banner on ${b.tone}`;
+      requestAnimationFrame(() => this.hudEl?.style.setProperty('--bh', `${this.banner.offsetHeight || 0}px`));   // the prompts step under it
       this.game.audio?.play?.('ui:page');
     }
   }

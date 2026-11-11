@@ -201,9 +201,9 @@
 .target .meta { display: flex; justify-content: space-between; font-size: 1em; font-style: italic; color: var(--ink-soft);
   border-top: 1px solid rgba(60,36,14,0.3); margin-top: 0.3em; padding-top: 0.25em; }
 
-/* ---------- port prompt (upper third, distance-faded) ---------- */
-.prompt { position: absolute; left: 50%; top: 21%; transform: translateX(-50%); padding: 0.4em 1.1em 0.45em; border-radius: 2em;
-  display: flex; align-items: center; gap: 0.6em; white-space: nowrap; font-size: 1.1em; opacity: var(--near, 1);
+/* ---------- port prompt (top, under the goal line; distance-faded, never below 0.85) ---------- */
+.prompt { position: absolute; left: 50%; top: var(--prompt-top, 3.1em); transform: translateX(-50%); padding: 0.3em 0.95em 0.34em; border-radius: 2em;
+  display: flex; align-items: center; gap: 0.55em; white-space: nowrap; font-size: max(0.98em, 13px); opacity: var(--near, 1);
   box-shadow: inset 0 0 0.8em rgba(110,66,18,0.5), 0 0.2em 0.6em rgba(0,0,0,0.4), 0 0 0 0.12em #5a3c14, 0 0 0 0.2em rgba(201,162,74,0.7);
   transition: opacity 0.4s, transform 0.4s cubic-bezier(.2,.8,.2,1); animation: tofPromptPulse 2.4s ease-in-out infinite; }
 .prompt.off { opacity: 0; transform: translate(-50%, -0.8em); animation: none; }
@@ -219,12 +219,10 @@
   clip-path: polygon(0 3%, 6% 0, 21% 2%, 40% 0, 63% 2.5%, 82% 0.5%, 100% 2%, 99.3% 30%, 100% 62%, 99% 100%, 77% 97.5%, 50% 100%, 28% 97%, 9% 100%, 0 98%, 0.7% 55%);
   animation: tofToastIn 0.55s cubic-bezier(.2,.9,.25,1.1) both; }
 .toast.out { animation: tofToastOut 0.6s ease-in both; }
-.toast .stamp { display: block; font-style: italic; font-size: 1em; color: var(--ink-faded); }
 .toast .mark { position: absolute; left: 0.6em; top: 50%; transform: translateY(-50%); width: 1.35em; height: 1.35em; }
 .toast.bad .mark { color: var(--blood); } .toast.good .mark { color: #2f5d2a; } .toast.info .mark { color: var(--ink-soft); }
 .toast.bad { box-shadow: inset 0.25em 0 0 rgba(142,27,27,0.75), inset 0 0 1em rgba(110,66,18,0.5); }
 .toast.good { box-shadow: inset 0.25em 0 0 rgba(47,93,42,0.75), inset 0 0 1em rgba(110,66,18,0.5); }
-.toast + .toast { opacity: 0.82; } .toast + .toast + .toast { opacity: 0.6; }
 @keyframes tofToastIn { from { opacity: 0; transform: translateX(-2.5em) rotate(-1.5deg); } }
 @keyframes tofToastOut { to { opacity: 0; transform: translateX(-1.5em); } }
 
@@ -368,8 +366,9 @@
 .fade-black { position: absolute; inset: 0; background: #050302; opacity: 0; pointer-events: none; transition: opacity 0.9s ease; }
 .fade-black.on { opacity: 1; }
 
-/* boarding prompt (B) — sits just under the port prompt; glows red when alongside */
-.prompt.board { top: 27%; }
+/* boarding prompt (B) — same place as the port prompt (top centre); glows red when alongside; when both show,
+   the port prompt steps under it */
+.prompt.board:not(.off) ~ .prompt:not(.off) { top: calc(var(--prompt-top, 3.1em) + 2.6em); }
 .prompt.board b { color: var(--blood); }
 .prompt.board:not(.ready) { filter: saturate(0.6); opacity: 0.85; }
 .prompt.board.ready { box-shadow: 0 0 0 0.12em #6e1010, 0 0 1.4em rgba(200, 40, 30, 0.55); }
@@ -486,39 +485,38 @@
 /* ---------- toasts ---------- */
 #hud .log { display: none; }
 .toasts { position: absolute; left: 1.2em; top: 8.4em; width: 21em; display: flex; flex-direction: column; gap: 0.35em; transition: opacity 0.4s; }
-.toasts.dim { opacity: 0.45; }
 .toasts .toast { position: relative; padding: 0.38em 0.8em 0.42em 2.55em; border-radius: 0.2em; font-size: 0.94em; line-height: 1.25; color: var(--ink);
   box-shadow: inset 0 0 1em rgba(110,66,18,0.45), 0 0.15em 0.5em rgba(0,0,0,0.35); animation: tofToastIn 0.45s cubic-bezier(.2,.9,.3,1.2) both; }
-.toasts .toast + .toast { opacity: 0.86; }
-.toasts .toast + .toast + .toast { opacity: 0.7; }
 .toasts .toast .mark { left: 0.5em; width: 1.6em; height: 1.6em; }
 .toasts .toast .mark svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 0.05em 0.05em rgba(0,0,0,0.35)); }
-.toasts .toast .stamp { font-size: 0.78em; line-height: 1.1; }
 .toasts .toast .cnt { position: absolute; right: 0.35em; bottom: 0.3em; min-width: 1.6em; height: 1.6em; padding: 0 0.3em; border-radius: 0.8em; display: grid; place-items: center;
   font-family: var(--sc); font-size: 0.78em; color: #f6e3c4; background: radial-gradient(circle at 40% 30%, #c0463a, #8e1b1b 60%, #5a0c0c); box-shadow: 0 0.1em 0.2em rgba(0,0,0,0.5); }
-.toasts .toast.info { opacity: 0.9; font-size: 0.88em; }
+.toasts .toast.info { font-size: 0.88em; }
 .toasts .toast.good { box-shadow: inset 0.28em 0 0 rgba(47,93,42,0.8), inset 0 0 1em rgba(110,66,18,0.45), 0 0.15em 0.5em rgba(0,0,0,0.35); }
 .toasts .toast.bad { box-shadow: inset 0.28em 0 0 rgba(142,27,27,0.85), inset 0 0 1em rgba(110,66,18,0.45), 0 0.15em 0.5em rgba(0,0,0,0.35); }
 .toasts .toast.bump { animation: toastBump 0.4s ease-out; }
 .toasts .toast.out { animation: tofToastOut 0.5s ease-in both; }
 @keyframes toastBump { 40% { transform: scale(1.04); filter: brightness(1.08); } }
 
-/* ---------- central banner (major announcements) ---------- */
-.banner { position: absolute; left: 50%; top: 13%; transform: translateX(-50%); width: max-content; max-width: min(44em, 86vw); transition: opacity 0.5s, transform 0.6s cubic-bezier(.2,.9,.3,1.1); }
+/* ---------- banner (major announcements): top centre, just under the goal line, compact; the prompts step under it ---------- */
+/* width: what the ledger and resource band (≈ 41em on the left) leave free, mirrored; on narrow screens it drops below the band */
+.banner { position: absolute; left: 50%; top: 3em; transform: translateX(-50%); width: max-content; max-width: min(46em, max(20em, calc(100vw - 84em))); transition: opacity 0.5s, transform 0.6s cubic-bezier(.2,.9,.3,1.1); }
+#hud.banner-on { --prompt-top: calc(3.6em + var(--bh, 3.4em)); }
+@media (max-aspect-ratio: 3/2) { .banner { top: 7.9em; max-width: min(46em, 86vw); } #hud.banner-on { --prompt-top: calc(8.5em + var(--bh, 3.4em)); } }
 .banner.off { opacity: 0; transform: translate(-50%, -0.8em) scale(0.96); }
 .banner.on { opacity: 1; animation: bannerIn 0.7s cubic-bezier(.2,.9,.3,1.15) both; }
 @keyframes bannerIn { from { opacity: 0; transform: translate(-50%, -1em) scaleX(0.6); } }
-.banner .b-inner { position: relative; display: flex; align-items: center; gap: 0.8em; padding: 0.55em 2.6em 0.6em; border-radius: 0.2em; color: var(--ink);
-  box-shadow: inset 0 0 1.4em rgba(110,66,18,0.55), 0 0 0 0.14em #6e4f1a, 0 0 0 0.3em rgba(246,224,154,0.65), 0 0 0 0.42em #4a3108, 0 0.6em 1.6em rgba(0,0,0,0.55); }
-.banner .b-ico { width: 2.6em; height: 2.6em; flex: none; }
+.banner .b-inner { position: relative; display: flex; align-items: center; gap: 0.6em; padding: 0.32em 1.7em 0.36em; border-radius: 0.2em; color: var(--ink);
+  box-shadow: inset 0 0 1.2em rgba(110,66,18,0.55), 0 0 0 0.12em #6e4f1a, 0 0 0 0.24em rgba(246,224,154,0.65), 0 0 0 0.34em #4a3108, 0 0.4em 1.1em rgba(0,0,0,0.5); }
+.banner .b-ico { width: 1.9em; height: 1.9em; flex: none; }
 .banner .b-ico svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 0.1em 0.1em rgba(0,0,0,0.4)); }
-.banner .b-head { font-family: var(--sc); font-size: 1.6em; letter-spacing: 0.06em; line-height: 1.05; }
-.banner .b-sub { font-style: italic; font-size: 1.02em; color: var(--ink-soft); margin-top: 0.15em; max-width: 34em; }
+.banner .b-head { font-family: var(--sc); font-size: 1.22em; letter-spacing: 0.05em; line-height: 1.1; }
+.banner .b-sub { font-style: italic; font-size: max(0.95em, 13px); line-height: 1.25; color: var(--ink-soft); margin-top: 0.08em; max-width: 40em; }
 .banner.bad .b-head { color: var(--blood); }
 .banner.good .b-head { color: #5a3a08; }
-.banner .b-orn { position: absolute; top: 50%; width: 1.4em; height: 1.4em; transform: translateY(-50%) rotate(45deg); background: var(--brass-grad);
+.banner .b-orn { position: absolute; top: 50%; width: 1em; height: 1em; transform: translateY(-50%) rotate(45deg); background: var(--brass-grad);
   box-shadow: 0 0 0 0.1em #4a3108, 0 0.1em 0.3em rgba(0,0,0,0.5); }
-.banner .b-orn.l { left: -0.75em; } .banner .b-orn.r { right: -0.75em; }
+.banner .b-orn.l { left: -0.55em; } .banner .b-orn.r { right: -0.55em; }
 
 /* ---------- journal (J) ---------- */
 .journal-layer { position: absolute; inset: 0; display: none; pointer-events: auto; background: radial-gradient(90% 80% at 50% 50%, rgba(8,10,14,0.35), rgba(4,4,6,0.78)); z-index: 25; }
@@ -553,13 +551,8 @@
    ====================================================================================================== */
 /* resource band: “gold, provisions…” captions */
 .res-band .res small { font-size: max(0.72em, 11px); }
-/* messages: 13 px minimum, timestamp 11 px; dimming during a banner no longer makes them unreadable */
+/* messages: 13 px minimum, fully opaque (no fading stack, no dimming under a banner) */
 .toasts .toast, .toasts .toast.info { font-size: max(0.94em, 13px); }
-.toasts .toast .stamp { font-size: max(0.78em, 11px); }
-.toasts .toast.info { opacity: 1; }
-.toasts .toast + .toast { opacity: 0.94; }
-.toasts .toast + .toast + .toast { opacity: 0.84; }
-.toasts.dim { opacity: 0.82; }
 /* helm bar: 14 px base instead of 13 on short screens, no caption below 11 px */
 .helm { font-size: max(1em, 14px); }
 .helm .gauge .lbl, .helm .gauge .val { font-size: 0.84em; }
@@ -602,9 +595,66 @@
 .controls-sheet .lede[style] { margin-top: 0.35em !important; margin-bottom: 0.25em; }
 .controls-sheet .actions { margin-top: 0.5em; }
 
+/* ======================================================================================================
+   Readability, second pass (2026-11-10). Floors raised by 1–2 px on short screens (1366×768: #ui = 13 px,
+   helm = 14 px); 1080p mostly unchanged. Targets: text to read ≥ 14 px, notes / units / keys ≥ 12 px.
+   Captions no longer pale italics; text over the 3D always on a dark pill or a double shadow.
+   #hud prefix: these rules win over the later per-feature sections (C pill, mission reminder).
+   ====================================================================================================== */
+/* ledger strip */
+#hud .ledger-strip .shipclass, #hud .ledger-strip .date { font-size: max(1em, 14px); }
+/* resource band: captions in upright ink, 12.5 px at least */
+#hud .res-band .res small { font-size: max(0.76em, 12.5px); font-style: normal; color: #4a3018; letter-spacing: 0.03em; margin-top: 0.08em; }
+/* minimap legend (sea tier · range): on a dark pill, 14 px */
+#hud .chart .legend { font-size: max(1em, 14px); bottom: -1.55em; padding: 0.05em 0.7em 0.1em; border-radius: 1em; background: rgba(20,12,6,0.62);
+  box-shadow: 0 0 0 1px rgba(201,162,74,0.35); }
+/* target card: type, stance, threat, distance line at 14 px; the folded card wide enough for “Spanish frigate · 28 guns” */
+#hud .target { top: 15em; }
+#hud .target .ttype, #hud .target .stance, #hud .target .hdr .threat, #hud .target .meta { font-size: max(1em, 14px); }
+#hud .target .tname { font-size: max(1.08em, 15px); }
+#hud .target.compact { width: 15em; }
+#hud .target.compact .ttype { font-size: max(0.92em, 13px); }
+#hud .target .gauge .lbl, #hud .target .gauge .val { font-size: max(1em, 13.5px); }
+/* helm bar: labels and values 13 px, captions and keys 12 px */
+#hud .helm .cell.vitals { width: 13em; }
+#hud .helm .cell.sail { width: 9.2em; }
+#hud .helm .cell.guns { width: 10.8em; }
+#hud .helm .cell.acts { width: 6.8em; }
+#hud .helm .gauge { grid-template-columns: 1em 3.9em 1fr 2.8em; }
+#hud .helm .gauge .lbl { font-size: 0.9em; }
+#hud .helm .gauge .val { font-size: 0.95em; }
+#hud .helm .pos-banner { font-size: 0.88em; }
+#hud .helm .ammo-name { font-size: 0.95em; }
+#hud .helm .row.guns { font-size: 0.92em; }
+#hud .helm .rl .st { font-size: 1em; }
+#hud .helm .glyph .k { font-size: 0.88em; }
+#hud .helm .act { font-size: 0.92em; }
+#hud .kc.sm { font-size: max(0.8em, 12px); }
+#hud .helm .tacline { font-size: max(0.95em, 13px); }
+#hud .helm .cam-pill { font-size: max(0.92em, 13px); }
+/* key help (bottom right) */
+#hud .hint { font-size: max(0.88em, 12px); }
+#hud .hint .kc { font-size: max(0.92em, 12px); }
+/* mission reminder */
+#hud .mission-brief .mb-h { font-size: max(0.85em, 12px); }
+#hud .mission-brief .mb-h .kc, #hud .mission-brief .mb-o .kc { font-size: max(0.9em, 12px); }
+#hud .mission-brief .mb-w { font-size: max(0.9em, 12.5px); }
+#hud .mission-brief .mb-o { font-size: max(1em, 14px); }
+#hud .mission-brief .mb-more { font-size: max(0.88em, 12.5px); }
+/* Options: every segmented row fits the sheet (“Power saver” was cut at 1639×739, dpr 1.25), notes at 12 px, and the
+   in-game sheet (with “Game mode”) fits 739 px of height */
+.options-sheet { width: 38em; max-width: 96vw; padding-top: 1.5em; padding-bottom: 1.3em; }
+.options-sheet .lede { margin-bottom: 0.45em; }
+.options-sheet .rule { margin: 0.05em auto 0.25em; }
+.options-sheet .srow { grid-template-columns: 8.2em minmax(0, 1fr) auto; margin: 0.42em 0; }
+.options-sheet .seg button { padding: 0.22em 0.55em; }
+.options-sheet .lede.opt-note { font-family: var(--txt); font-size: max(0.85em, 12px); line-height: 1.32; margin: 0.1em 0 0.35em; }
+.options-sheet .actions { margin-top: 0.7em; }
+
+
 /* ---------- onboarding: hint card (bottom left), goal line (top centre), “First steps” screen
    (pause menu). Logic: src/ui/hints.js; texts: src/data/hints.js ---------- */
-.hint-card { position: absolute; left: 1.2em; bottom: 1.1em; width: min(23em, calc(50vw - 23em)); min-width: 17em;
+.hint-card { position: absolute; left: 1.2em; bottom: calc(1.1em + var(--mate-h, 0px)); width: min(23em, calc(50vw - 23em)); min-width: 17em;
   display: grid; grid-template-columns: 2.1em minmax(0, 1fr); column-gap: 0.65em; align-items: start;
   padding: 0.6em 1.8em 0.8em 0.75em; border-radius: 0.2em; color: var(--ink); cursor: pointer; font-size: max(1em, 13px);
   box-shadow: inset 0 0 1.2em rgba(110,66,18,0.5), 0 0 0 0.12em #6e4f1a, 0 0 0 0.26em rgba(246,224,154,0.5), 0 0.45em 1.3em rgba(0,0,0,0.5);
@@ -650,14 +700,41 @@
 .hints-reset-row { margin-top: -0.2em; }
 .hints-reset-row .btn.ghost { justify-self: start; grid-column: 2 / span 2; padding-left: 0; font-size: 0.95em; }
 .hints-reset-row .btn:disabled { opacity: 0.8; cursor: default; text-decoration: none; }
-/* prologue: offer card (Commencer / Passer), “skip” button of the goal line */
-.hint-card.offer { cursor: default; }
-.hint-card .hc-acts { display: flex; gap: 1em; align-items: center; margin-top: 0.55em; }
-.hint-card .hc-acts .btn { font-size: max(0.95em, 13px); padding: 0.3em 1.1em; }
-.hint-card .hc-acts .btn.ghost { padding: 0.3em 0.2em; }
-.goal-line .gl-skip { appearance: none; border: 0; background: none; cursor: pointer; font: inherit; font-family: var(--txt); font-style: italic;
-  font-size: max(0.85em, 11px); color: #e8c978; text-decoration: underline; text-underline-offset: 0.2em; padding: 0 0 0 0.3em; }
-.goal-line .gl-skip:hover { color: #fff0bf; }
+/* prologue: the first mate's panel (src/ui/mateGuide.js), bottom left, in place of the hint card and the goal line;
+   bigger for the offer (Begin / Skip), raised above the bottom bar; an urgent hint card stacks above it (--mate-h) */
+.mate-guide { position: absolute; left: 1.2em; bottom: 1.1em; width: min(26em, calc(50vw - 24.5em)); min-width: 21em;
+  display: grid; grid-template-columns: 6.4em minmax(0, 1fr); column-gap: 0.85em; align-items: start;
+  padding: 0.7em 1.1em 0.75em 0.8em; border-radius: 0.2em; color: var(--ink); font-size: max(1em, 13px);
+  box-shadow: inset 0 0 1.2em rgba(110,66,18,0.5), 0 0 0 0.12em #6e4f1a, 0 0 0 0.26em rgba(246,224,154,0.5), 0 0.45em 1.3em rgba(0,0,0,0.5);
+  transition: opacity 0.35s ease, transform 0.4s cubic-bezier(.2,.9,.3,1.15); }
+.mate-guide.off { opacity: 0; transform: translateY(0.8em); visibility: hidden; pointer-events: none;
+  transition: opacity 0.3s, transform 0.3s, visibility 0s linear 0.3s; }
+.mate-guide.held { opacity: 0; visibility: hidden; pointer-events: none; }
+.mate-guide.in { animation: hintIn 0.5s cubic-bezier(.2,.9,.3,1.15) both; }
+.mate-guide.offer { width: min(31em, calc(100vw - 4em)); bottom: 5.6em; grid-template-columns: 8.6em minmax(0, 1fr); padding: 0.9em 1.4em 1em 1em; }
+.mate-guide .mg-face { margin-top: -1.9em; position: relative; }
+.mate-guide .mg-face .portrait { width: 100%; height: auto; display: block; filter: drop-shadow(0 0.25em 0.45em rgba(0,0,0,0.55)); }
+.mate-guide .mg-head { display: flex; align-items: baseline; gap: 0.5em; flex-wrap: wrap; margin-bottom: 0.3em;
+  border-bottom: 1px solid rgba(110,66,18,0.35); padding-bottom: 0.2em; }
+.mate-guide .mg-name { font-family: var(--sc); font-size: 1.15em; letter-spacing: 0.04em; color: #5a3a08; line-height: 1.1; }
+.mate-guide .mg-role { font-family: var(--txt); font-style: italic; font-size: 0.95em; color: var(--ink-soft); }
+.mate-guide .mg-order { margin-left: auto; font-family: var(--sc); font-size: max(0.85em, 12px); letter-spacing: 0.08em; color: var(--blood); }
+.mate-guide .mg-txt { font-family: var(--txt); font-size: 1.04em; line-height: 1.42; color: var(--ink); }
+.mate-guide.offer .mg-txt { font-size: 1.14em; }
+.mate-guide .kc { font-size: max(0.8em, 11px); min-width: 1.55em; height: 1.5em; padding: 0 0.3em; margin: 0 0.1em; vertical-align: 0.06em; }
+.mate-guide .mg-todo { list-style: none; margin: 0.45em 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.2em; }
+.mate-guide .mg-todo li { display: grid; grid-template-columns: 1.1em minmax(0, 1fr); gap: 0.45em; align-items: center;
+  font-family: var(--txt); font-size: max(0.95em, 13px); line-height: 1.3; color: var(--ink); }
+.mate-guide .mg-todo i { width: 0.95em; height: 0.95em; border-radius: 50%; box-shadow: inset 0 0 0 1.5px #6e4f1a; }
+.mate-guide .mg-todo li.ok { color: var(--ink-soft); }
+.mate-guide .mg-todo li.ok span { text-decoration: line-through; text-decoration-color: rgba(110,66,18,0.55); }
+.mate-guide .mg-todo li.ok i { background: radial-gradient(circle at 40% 35%, #f0d27a, #b08a2a 70%); box-shadow: inset 0 0 0 1.5px #6e4f1a; }
+.mate-guide .mg-acts { display: flex; gap: 1em; align-items: center; margin-top: 0.7em; }
+.mate-guide .mg-acts .btn { font-size: max(1em, 13px); padding: 0.35em 1.4em; }
+.mate-guide .mg-acts .btn.ghost { padding: 0.35em 0.3em; }
+.mate-guide .mg-skip { appearance: none; border: 0; background: none; cursor: pointer; display: block; margin: 0.4em 0 0 auto; padding: 0;
+  font-family: var(--txt); font-style: italic; font-size: max(0.88em, 12px); color: var(--ink-soft); text-decoration: underline; text-underline-offset: 0.2em; }
+.mate-guide .mg-skip:hover { color: var(--blood); }
 
 /* reminder of the current missions (src/ui/missionBrief.js), bottom right above the key line: dark pill
    (text over the 3D), titles in capitals, objective in Spectral */

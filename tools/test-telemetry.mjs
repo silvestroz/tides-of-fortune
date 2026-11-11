@@ -80,7 +80,7 @@ async function browserPart() {
     g.state.assist = true; g.state.tutorials ||= {}; g.state.tutorials.goals = { step: 'offer' };
     g.events.emit('game:new', {});
     g.state.tutorials.goals = { step: 'offer' }; t._tick();
-    for (const s of ['p-sail', 'p-helm', 'p-fire', 'p-strike', 'visit', 'accept', 'mission', 'rank', 'done']) set(s);
+    for (const s of ['p-sail', 'p-cam', 'p-fire', 'p-strike', 'p-board', 'visit', 'accept', 'mission', 'rank', 'done']) set(s);
   });
   L = await log();
   const want = ['/jeu/parcours/1-nouvelle-partie', '/jeu/mode/assistance', '/jeu/parcours/2-prologue-commence', '/jeu/parcours/3-prologue-gagne',
@@ -135,6 +135,10 @@ async function browserPart() {
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/options-pause.png` });
   const fit = await ev(() => { const r = document.querySelector('.sheet-wrap .sheet').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), vh: innerHeight }; });
   check('Options en partie : la feuille tient dans l\'écran', fit.top >= 0 && fit.bottom <= fit.vh, JSON.stringify(fit));
+  // every segmented choice inside the sheet (« Power saver » was cut at 1639×739, dpr 1.25)
+  const cut = await ev(() => { const sh = document.querySelector('.sheet-wrap .sheet').getBoundingClientRect();
+    return [...document.querySelectorAll('.sheet-wrap .seg')].filter(s => { const r = s.getBoundingClientRect(); return r.right > sh.right - 2 || s.scrollWidth > s.clientWidth + 1; }).map(s => s.textContent.trim()); });
+  check('Options en partie : aucun choix coupé à droite', cut.length === 0, cut.join(' | '));
   await ev(() => localStorage.removeItem('tof.settings.v1'));
 
   check('aucune requête vers /_vercel en dev', sent.length === 0, sent.join(' '));

@@ -207,21 +207,21 @@ export class Menu {
   _settings() {
     const st = ensureSettings(this.game);
     const sl = (k, label, min = 0, max = 1, stp = 0.01) => `<div class="srow"><span class="sl">${label}</span><input type="range" data-k="${k}" min="${min}" max="${max}" step="${stp}" value="${st[k]}"/><span class="sv" data-v="${k}"></span></div>`;
-    return `<div class="sheet-wrap"><div class="sheet tof-parch" style="width:34em">
+    return `<div class="sheet-wrap"><div class="sheet tof-parch options-sheet">
       <h2>Options</h2><div class="lede">Trim the ship to your liking.</div>${RULE}
       ${sl('master', 'Master volume')}${sl('music', 'Music')}${sl('sfx', 'Effects')}
       ${sl('mouseSensitivity', 'Mouse', 0.2, 2, 0.05)}
       <div class="srow"><span class="sl">Graphics</span><span class="seg">${QUALITY_UI_ORDER.map(q => `<button data-q="${q}" class="${QUALITY_UI_GROUP[st.quality] === q ? 'sel' : ''}">${QUALITY_UI_LABELS[q]}</button>`).join('')}</span></div>
-      <div class="lede" style="font-family:var(--txt);font-size:.85em">Ultra needs a recent desktop graphics card. A change of level takes effect at the next load. Frame rate, above 60 Hz: Automatic shows every second image when the game cannot keep up, Power saver always does.</div>
+      <div class="lede opt-note">Ultra needs a recent desktop graphics card. A change of level takes effect at the next load. Frame rate, above 60 Hz: Automatic shows every second image when the game cannot keep up, Power saver always does.</div>
       <div class="srow"><span class="sl">Frame rate</span><span class="seg fps-seg">${[['auto', 'Automatic'], ['max', 'Screen rate'], ['60', 'Power saver']].map(([v, l]) => `<button data-fps="${v}" class="${(st.fps || 'auto') === v ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
       <div class="srow"><span class="sl">Combat camera</span><span class="seg cam-seg">${[['auto', 'Automatic'], ['manual', 'Manual']].map(([v, l]) => `<button data-cam="${v}" class="${(st.combatCam === 'manual') === (v === 'manual') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
-      <div class="lede" style="font-family:var(--txt);font-size:.85em">Automatic: the camera frames your ship and the enemy from the first cannon shot. <span class="kc">C</span> recentres it on your ship at any time.</div>
+      <div class="lede opt-note">Automatic: the camera frames your ship and the enemy from the first cannon shot. <span class="kc">C</span> recentres it on your ship at any time.</div>
       ${this._paused ? `<div class="srow"><span class="sl">Game mode</span><span class="seg assist-seg">${GAME_MODES.map(([v, l]) => `<button data-assist="${v}" class="${(!!this.game.state?.assist) === (v === 'assist') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
-      <div class="lede" style="font-family:var(--txt);font-size:.85em">Assisted: your gunners fire on their own at the enemy that attacks you or that you have hit (<span class="kc">G</span> makes them cease fire), and your boardings are carried without a duel. Other ships attack you as usual.</div>` : ''}
+      <div class="lede opt-note">Assisted: your gunners fire on their own at the enemy that attacks you or that you have hit (<span class="kc">G</span> makes them cease fire), and your boardings are carried without a duel. Other ships attack you as usual.</div>` : ''}
       <div class="srow"><span class="sl">Tips</span><span class="seg hints-seg">${[['1', 'On'], ['0', 'Off']].map(([v, l]) => `<button data-hints="${v}" class="${(st.hints !== false) === (v === '1') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
       <div class="srow hints-reset-row"><span class="sl"></span><button class="btn ghost" data-act="hints-reset"${this.game.state?.tutorials ? '' : ' disabled'}>Show the tips again</button></div>
       <div class="srow"><span class="sl">Statistics</span><span class="seg stats-seg">${[['1', 'On'], ['0', 'Off']].map(([v, l]) => `<button data-stats="${v}" class="${(st.stats !== false) === (v === '1') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
-      <div class="lede" style="font-family:var(--txt);font-size:.85em">Counted by Vercel, with no account and no cookie, to improve the game: visits, milestones reached, smoothness. When off, nothing is counted any more.</div>
+      <div class="lede opt-note">Counted by Vercel, with no account and no cookie, to improve the game: visits, milestones reached, smoothness. When off, nothing is counted any more.</div>
       <div class="actions"><button class="btn ghost" data-act="back">Back</button><button class="btn" data-act="back">Done</button></div>
     </div></div>`;
   }

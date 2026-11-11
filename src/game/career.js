@@ -169,7 +169,7 @@ export class Career {
   _age(years) {
     const g = this.game, s = g.state;
     s.ageF = (s.ageF || 0) + years;
-    while (s.ageF >= 1) { s.ageF -= 1; s.age++; g.events.emit('notify', { text: `The years at sea go by. Captain ${s.name} is now ${s.age} years old.`, kind: 'info' }); }
+    while (s.ageF >= 1) { s.ageF -= 1; s.age++; g.events.emit('notify', { text: `The years at sea go by. Captain ${s.name} is now ${s.age} years old.`, kind: 'info', logOnly: true }); }   // journal only
   }
 
   advanceDays(n = 1, atSea = false) {

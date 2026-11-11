@@ -1,58 +1,78 @@
-// Playable prologue, offered when a new game is created (the hints' “Prologue” card: Commencer / Passer) and
-// skippable at any time (“skip” button of the goal line).
-// Steps (state.tutorials.goals.step, shown by the goal line of src/ui/hints.js):
-//   'p-sail'   leave the roads: full sail (controller.sailStep 2)
-//   'p-helm'   put the helm over: turn a quarter turn (accumulated heading PROLOGUE.turn rad)
-//   'p-fire'   a crippled pirate sloop (PROLOGUE.target, at anchor, doesn't fire) lies offshore: a broadside that
-//              hits it ('cannon:hit' with the player as attacker)
-//   'p-strike' fire continues until she strikes her colours (hull < PROLOGUE.strikeAt → combat.strike):
-//              first prize; boarding (B) is up to the player; then the ordinary goals ('visit').
-// The target ship isn't saved: a game reloaded mid-prologue resumes with the ordinary goals.
-// API: new Prologue(game, hints) · start() · skip() · poll() (4 times a second, from hints) · target · active
+// Playable prologue, offered when a new game is created and told by the first mate (src/ui/mateGuide.js: Begin /
+// Skip), skippable at any time (“Skip the prologue” in the mate's panel). Four orders, each cleared by the player's
+// action (state.tutorials.goals.step; texts in MATE, src/data/hints.js):
+//   'p-sail'   order 1, sails and helm: full sail (controller.sailStep 2, o.sailed) and a quarter turn (accumulated
+//              heading o.turned ≥ PROLOGUE.turn rad), in any order; then the target is spawned
+//   'p-cam'    order 2, look around: C (a camera mode change asked by the player) or a right-drag orbit / zoom
+//              (accumulated o.lookAmt ≥ PROLOGUE.look)
+//   'p-fire'   order 3: a crippled pirate sloop (PROLOGUE.target, at anchor, doesn't fire) lies offshore: a broadside
+//              that hits it ('cannon:hit' with the player as attacker) → 'p-strike' (same order: fire continues until
+//              she strikes her colours, hull < PROLOGUE.strikeAt → combat.strike)
+//   'p-board'  order 4: she has struck → boarding with B (up to the player, never automatic); 'boarding:end' ends it.
+// Fallbacks: the target sinks ('ship:sinking') or vanishes (despawned far away, removed) → the prologue ends ('sunk' /
+// 'lost') instead of staying stuck; boarding lost → 'defeat'. Ending → goals 'visit' and a farewell from the mate
+// (this.bye, shown MATE.byeTime s by hints).
+// The target carries `_prologue`: the other ships ignore her (src/combat/factions.js isHostile), so nobody else takes
+// the player's first prize. It isn't saved: a game reloaded mid-prologue resumes with the ordinary goals.
+// API: new Prologue(game, hints) · start() · skip() · poll() (4 times a second, from hints) · target · active · bye
 import { PROLOGUE } from '../data/hints.js';
 
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 
 export class Prologue {
   constructor(game, hints) {
-    this.game = game; this.hints = hints; this.target = null; this._hPrev = null;
-    const ev = game.events;
-    ev.on('cannon:hit', d => { if (d?.target && d.target === this.target && d.attacker === game.player && this.step() === 'p-fire') this.hints._advance('p-strike'); });
-    ev.on('ship:struck', ({ ship } = {}) => { if (ship && ship === this.target && this.active) this._finish('struck'); });
-    ev.on('ship:sunk', ({ ship } = {}) => { if (ship && ship === this.target && this.active) this._finish('sunk'); });
-    // boarded before striking (the player took the initiative): also a prize
-    ev.on('boarding:end', ({ enemy, result } = {}) => { if (enemy && enemy === this.target && this.active && result !== 'defeat') this._finish('boarded'); });
+    this.game = game; this.hints = hints; this.target = null; this._hPrev = null; this._cam = null; this.bye = null;
+    const ev = game.events, mine = s => !!s && s === this.target && this.active;
+    ev.on('cannon:hit', d => { if (d?.target && d.target === this.target && d.attacker === game.player && /^p-(cam|fire)$/.test(this.step())) this.hints._advance('p-strike'); });
+    ev.on('ship:struck', ({ ship } = {}) => { if (mine(ship) && this.step() !== 'p-board') this.hints._advance('p-board'); });
+    ev.on('ship:sinking', ({ ship } = {}) => { if (mine(ship)) this._finish('sunk'); });
+    ev.on('ship:sunk', ({ ship } = {}) => { if (mine(ship)) this._finish('sunk'); });
+    // boarded (after striking, or before: the player took the initiative): a prize, unless beaten back
+    ev.on('boarding:end', ({ enemy, result } = {}) => { if (mine(enemy)) this._finish(result === 'defeat' ? 'defeat' : 'boarded'); });
+    // order 2: C pressed by the player (automatic combat framing doesn't count)
+    ev.on('camera:mode', ({ auto } = {}) => { const o = this.hints.goal(); if (!auto && o && this.step() === 'p-cam') o.looked = true; });
   }
   step() { return this.hints.goal()?.step || null; }
   get active() { return /^p-/.test(this.step() || ''); }
 
-  start() { this.hints._advance('p-sail'); this.hints.trigger('sail'); }
+  start() { this.bye = null; this._hPrev = null; this.hints._advance('p-sail', { sailed: false, turned: 0 }); }
   skip() {
     const t = this.target;
     if (t && t.alive && !t.struck && !t.sinking) this.game.removeShip(t);   // no motionless rover left behind offshore
-    this.target = null;
+    this.target = null; this.bye = null;
     this.hints._advance('visit', { prologue: 'skipped' });
   }
   _finish(how) {
-    const name = this.target?.name || PROLOGUE.target;
+    const t = this.target, name = t?.name || PROLOGUE.target;
+    this.bye = { how, name, t: 0 };
     this.hints._advance('visit', { prologue: how });
-    this.game.events.emit('notify', { text: (how === 'sunk' ? PROLOGUE.doneSunk : how === 'boarded' ? PROLOGUE.doneBoarded : PROLOGUE.done)(name), kind: 'good', topic: 'rank' });
-    this.target = how === 'struck' ? this.target : null;
+    if (how === 'lost' && t && this.game.ships.includes(t)) this.game.removeShip(t);
+    this.target = how === 'boarded' || how === 'sunk' || how === 'lost' ? null : t;
   }
 
   poll() {
     const g = this.game, p = g.player, st = this.step(); if (!p || !/^p-/.test(st || '')) return;
     if (g.mode !== 'sail') return;
+    const o = this.hints.goal();
     if (st === 'p-sail') {
-      if ((p.controller?.sailStep ?? 0) >= 2) { this.hints._advance('p-helm', { turned: 0 }); this._hPrev = p.heading; }
-    } else if (st === 'p-helm') {
-      const o = this.hints.goal();
+      if ((p.controller?.sailStep ?? 0) >= 2) o.sailed = true;
       if (this._hPrev == null) this._hPrev = p.heading;
-      o.turned = (o.turned || 0) + Math.abs(wrap(p.heading - this._hPrev)); this._hPrev = p.heading;
-      if (o.turned >= PROLOGUE.turn) { this._spawn(); this.hints._advance('p-fire', { target: this.target?.name || PROLOGUE.target }); this.hints.trigger('guns'); }
-    } else if (st === 'p-fire' || st === 'p-strike') {
+      o.turned = Math.min(PROLOGUE.turn, (o.turned || 0) + Math.abs(wrap(p.heading - this._hPrev))); this._hPrev = p.heading;
+      if (o.sailed && o.turned >= PROLOGUE.turn) { this._spawn(); this._cam = null; this.hints._advance('p-cam', { target: this.target?.name || PROLOGUE.target, looked: false, lookAmt: 0 }); }
+    } else if (st === 'p-cam') {
+      // right-drag orbit or wheel zoom: accumulated (the rig eases its offsets back to 0 by itself)
+      const r = g.cameraRig;
+      if (r) {
+        const c = this._cam;
+        if (c) o.lookAmt = (o.lookAmt || 0) + Math.abs(wrap(r.orbitYaw - c.y)) + Math.abs(r.orbitPitch - c.p) + Math.abs(r.zoom - c.z);
+        this._cam = { y: r.orbitYaw, p: r.orbitPitch, z: r.zoom };
+        if (o.lookAmt >= PROLOGUE.look) o.looked = true;
+      }
+      if (o.looked) this.hints._advance('p-fire');
+    } else {
       const t = this.target;
-      if (!t || !t.alive) { this._spawn(); return; }   // game reloaded, target lost: a new rover
+      // game reloaded, or the target despawned far away (game.removeShip leaves `alive` set) / removed: no dead end
+      if (!t || !t.alive || !g.ships.includes(t)) return t?.sunk ? this._finish('sunk') : this._finish('lost');
       if (st === 'p-strike' && !t.struck && t.hull / (t.hullMax || 1) < PROLOGUE.strikeAt) g.combat?.strike?.(t);
     }
   }
@@ -76,9 +96,8 @@ export class Prologue {
     // enough men not to be boardable before striking (combat._canBoard: fewer than half of ours)
     t.hull = t.hullMax * PROLOGUE.hull; t.crew = Math.max(Math.round(t.crewMax * PROLOGUE.crew), Math.ceil((p.crew || 0) * 0.5) + 2);
     t._captain = { name: PROLOGUE.captain, faction: 'pirate', difficulty: PROLOGUE.duel };   // boarding: easy duel
-    t._prologue = true;
+    t._prologue = true;   // the other ships leave her alone (factions.isHostile)
     this.target = t;
-    g.events.emit('notify', { text: PROLOGUE.sighted(t.name), kind: 'info', topic: 'combat' });
     return t;
   }
 }
