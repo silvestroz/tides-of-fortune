@@ -212,7 +212,7 @@ export class Menu {
       ${sl('master', 'Master volume')}${sl('music', 'Music')}${sl('sfx', 'Effects')}
       ${sl('mouseSensitivity', 'Mouse', 0.2, 2, 0.05)}
       <div class="srow"><span class="sl">Graphics</span><span class="seg">${QUALITY_UI_ORDER.map(q => `<button data-q="${q}" class="${QUALITY_UI_GROUP[st.quality] === q ? 'sel' : ''}">${QUALITY_UI_LABELS[q]}</button>`).join('')}</span></div>
-      <div class="lede opt-note">Ultra needs a recent desktop graphics card. A change of level takes effect at the next load. Frame rate, above 60 Hz: Automatic shows every second image when the game cannot keep up, Power saver always does.</div>
+      <div class="lede opt-note">Ultra needs a recent desktop graphics card. A change of level takes effect at the next load. Frame rate, above 60 Hz: when the game cannot keep up, Automatic first renders a little smaller, then shows every second image; Power saver always does.</div>
       <div class="srow"><span class="sl">Frame rate</span><span class="seg fps-seg">${[['auto', 'Automatic'], ['max', 'Screen rate'], ['60', 'Power saver']].map(([v, l]) => `<button data-fps="${v}" class="${(st.fps || 'auto') === v ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
       <div class="srow"><span class="sl">Combat camera</span><span class="seg cam-seg">${[['auto', 'Automatic'], ['manual', 'Manual']].map(([v, l]) => `<button data-cam="${v}" class="${(st.combatCam === 'manual') === (v === 'manual') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
       <div class="lede opt-note">Automatic: the camera frames your ship and the enemy from the first cannon shot. <span class="kc">C</span> recentres it on your ship at any time.</div>

@@ -110,7 +110,11 @@ export class Minimap {
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     }
     ctx.restore();
-    // legend: the ship's sea tier
+  }
+
+  // legend: the ship's sea tier
+  _zoneLegend(cx, cz) {
+    if (!this.game.seaZones?.data) return;
     const cur = this.game.seaZones.current || this.game.seaZones.at(cx, cz);
     const tag = cur.tier === 1 ? 'Guarded waters' : cur.tier === 3 ? 'Perilous seas' : 'Trade routes';
     if (this._zn !== tag) { this._zn = tag; this.znEl.textContent = tag; this.legendEl.dataset.tier = cur.tier; this.legendEl.title = cur.name; }
@@ -148,11 +152,85 @@ export class Minimap {
     const R = s / 2, k = R / this.range;
     const cx = p?.position?.x ?? 0, cz = p?.position?.z ?? 0;
     const W = (x, z) => [R + (x - cx) * k, R + (z - cz) * k];
+    // the chart itself (paper, graticule, sea tiers, islands, ports, villages) is kept in its own canvas and redrawn
+    // only when it has slid by most of a pixel (every second or so under sail) or after 10 s (a port changing hands); ships, wind and the
+    // rest are drawn over it every time
+    const now = performance.now(), key = s + '|' + this.range + '|' + (this.expanded ? 1 : 0);
+    const st = this._st ||= document.createElement('canvas');
+    if (this._stKey !== key || now - this._stAt > 10000 || Math.abs(cx - this._stX) * k > 0.75 || Math.abs(cz - this._stZ) * k > 0.75) {
+      if (st.width !== s) st.width = st.height = s;
+      this._stKey = key; this._stAt = now; this._stX = cx; this._stZ = cz;
+      const sx = st.getContext('2d');
+      sx.clearRect(0, 0, s, s); sx.drawImage(this._bg, 0, 0);
+      this._drawChart(sx, s, R, k, cx, cz);
+    }
     ctx.save();
     ctx.clearRect(0, 0, s, s);
     ctx.beginPath(); ctx.arc(R, R, R, 0, TAU); ctx.clip();
-    ctx.drawImage(this._bg, 0, 0);
+    ctx.drawImage(st, 0, 0);
+    this._zoneLegend(cx, cz);
 
+    // ships
+    for (const sh of g.ships || []) {
+      if (sh === p || sh.alive === false) continue;
+      const [sx, sz] = W(sh.position.x, sh.position.z);
+      if ((sx - R) ** 2 + (sz - R) ** 2 > (R * 0.96) ** 2) continue;
+      this._shipGlyph(ctx, sx, sz, sh.heading, s / (this.expanded ? 45 : 19), factionColor(sh.faction), sh.struck);
+    }
+
+    // locked/near target ring
+    const tg = g.hud?.target;
+    if (tg && tg.alive !== false) {
+      const [tx, tz] = W(tg.position.x, tg.position.z);
+      ctx.save(); ctx.strokeStyle = '#8e1b1b'; ctx.lineWidth = Math.max(1.5, s / 130); ctx.setLineDash([s / 50, s / 80]);
+      ctx.beginPath(); ctx.arc(tx, tz, s / 13, 0, TAU); ctx.stroke(); ctx.restore();
+    }
+    // player: course line + glyph
+    if (p) {
+      ctx.save(); ctx.setLineDash([s / 60, s / 90]); ctx.strokeStyle = 'rgba(142,27,27,0.75)'; ctx.lineWidth = Math.max(1, s / 260);
+      ctx.beginPath(); ctx.moveTo(R, R); ctx.lineTo(R + Math.sin(p.heading) * R * 0.8, R - Math.cos(p.heading) * R * 0.8); ctx.stroke(); ctx.restore();
+      this._shipGlyph(ctx, R, R, p.heading, s / (this.expanded ? 36 : 15), '#f6ecd2', false, true);
+    }
+
+    // wind arrow (upper-left quadrant, flows across the chart)
+    const wa = g.wind?.angle ?? 0, ws = g.wind?.speed ?? 0;
+    const ax = R - R * 0.5, ay = R - R * 0.48, L = s * 0.11;
+    ctx.save(); ctx.translate(ax, ay); ctx.rotate(wa);
+    ctx.strokeStyle = '#1f4a5a'; ctx.fillStyle = '#1f4a5a'; ctx.lineWidth = Math.max(1.4, s / 170); ctx.lineCap = 'round';
+    for (const off of [-s / 70, s / 70]) { ctx.beginPath(); ctx.moveTo(off, L * 0.6); ctx.bezierCurveTo(off + s / 80, L * 0.2, off - s / 80, -L * 0.1, off, -L * 0.45); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(0, -L * 0.85); ctx.lineTo(-s / 36, -L * 0.35); ctx.lineTo(s / 36, -L * 0.35); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.font = `italic ${Math.max(Math.round(12 * this._dpr), Math.round(s / 19))}px 'Spectral', Georgia, serif`; ctx.fillStyle = 'rgba(31,74,90,0.95)'; ctx.textAlign = 'center';
+    ctx.fillText(`${Math.round(ws * 1.944)} kn`, ax, ay + L * 0.95);
+
+    // small printed compass rose (lower-left)
+    {
+      const rx = R - R * 0.48, ry = R + R * 0.5, rr = s * 0.075;
+      ctx.save(); ctx.translate(rx, ry); ctx.globalAlpha = 0.75;
+      ctx.strokeStyle = '#3a2814'; ctx.lineWidth = Math.max(0.8, s / 380);
+      ctx.beginPath(); ctx.arc(0, 0, rr * 0.75, 0, TAU); ctx.stroke();
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4, L2 = i % 2 ? rr * 0.6 : rr, w = rr * (i % 2 ? 0.12 : 0.2);
+        ctx.save(); ctx.rotate(a);
+        ctx.beginPath(); ctx.moveTo(0, -L2); ctx.lineTo(w, 0); ctx.lineTo(0, 0); ctx.closePath(); ctx.fillStyle = i === 0 ? '#8e1b1b' : '#3a2814'; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(0, -L2); ctx.lineTo(-w, 0); ctx.lineTo(0, 0); ctx.closePath(); ctx.fillStyle = '#e9d8ae'; ctx.fill(); ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+    // edge burn
+    const vg = ctx.createRadialGradient(R, R, R * 0.7, R, R, R);
+    vg.addColorStop(0, 'rgba(90,50,10,0)'); vg.addColorStop(1, 'rgba(90,50,10,0.45)');
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, s, s);
+    ctx.restore();
+    const lbl = this.range >= 1000 ? `${(this.range * 2 / 1852).toFixed(1)} miles` : `${this.range * 2} m`;   // sea tiers: the sea tier comes first, short legend
+    if (this._lbl !== lbl) { this._lbl = lbl; this.rngEl.textContent = lbl; }
+  }
+
+  // static layer of draw(): everything that only moves with the ship's position
+  _drawChart(ctx, s, R, k, cx, cz) {
+    const g = this.game;
+    const W = (x, z) => [R + (x - cx) * k, R + (z - cz) * k];
     // chart grid (fixed world graticule every 500 m)
     ctx.strokeStyle = 'rgba(90,60,30,0.22)'; ctx.lineWidth = Math.max(1, s / 400);
     const step = 500, x0 = Math.floor((cx - this.range) / step) * step, z0 = Math.floor((cz - this.range) / step) * step;
@@ -239,62 +317,6 @@ export class Minimap {
       ctx.lineWidth = s / 90; ctx.strokeStyle = 'rgba(239,223,182,0.9)'; ctx.strokeText(v.name, sx, sz + u * 3.2);
       ctx.fillStyle = '#3a2a1a'; ctx.fillText(v.name, sx, sz + u * 3.2);
     }
-
-    // ships
-    for (const sh of g.ships || []) {
-      if (sh === p || sh.alive === false) continue;
-      const [sx, sz] = W(sh.position.x, sh.position.z);
-      if ((sx - R) ** 2 + (sz - R) ** 2 > (R * 0.96) ** 2) continue;
-      this._shipGlyph(ctx, sx, sz, sh.heading, s / (this.expanded ? 45 : 19), factionColor(sh.faction), sh.struck);
-    }
-
-    // locked/near target ring
-    const tg = g.hud?.target;
-    if (tg && tg.alive !== false) {
-      const [tx, tz] = W(tg.position.x, tg.position.z);
-      ctx.save(); ctx.strokeStyle = '#8e1b1b'; ctx.lineWidth = Math.max(1.5, s / 130); ctx.setLineDash([s / 50, s / 80]);
-      ctx.beginPath(); ctx.arc(tx, tz, s / 13, 0, TAU); ctx.stroke(); ctx.restore();
-    }
-    // player: course line + glyph
-    if (p) {
-      ctx.save(); ctx.setLineDash([s / 60, s / 90]); ctx.strokeStyle = 'rgba(142,27,27,0.75)'; ctx.lineWidth = Math.max(1, s / 260);
-      ctx.beginPath(); ctx.moveTo(R, R); ctx.lineTo(R + Math.sin(p.heading) * R * 0.8, R - Math.cos(p.heading) * R * 0.8); ctx.stroke(); ctx.restore();
-      this._shipGlyph(ctx, R, R, p.heading, s / (this.expanded ? 36 : 15), '#f6ecd2', false, true);
-    }
-
-    // wind arrow (upper-left quadrant, flows across the chart)
-    const wa = g.wind?.angle ?? 0, ws = g.wind?.speed ?? 0;
-    const ax = R - R * 0.5, ay = R - R * 0.48, L = s * 0.11;
-    ctx.save(); ctx.translate(ax, ay); ctx.rotate(wa);
-    ctx.strokeStyle = '#1f4a5a'; ctx.fillStyle = '#1f4a5a'; ctx.lineWidth = Math.max(1.4, s / 170); ctx.lineCap = 'round';
-    for (const off of [-s / 70, s / 70]) { ctx.beginPath(); ctx.moveTo(off, L * 0.6); ctx.bezierCurveTo(off + s / 80, L * 0.2, off - s / 80, -L * 0.1, off, -L * 0.45); ctx.stroke(); }
-    ctx.beginPath(); ctx.moveTo(0, -L * 0.85); ctx.lineTo(-s / 36, -L * 0.35); ctx.lineTo(s / 36, -L * 0.35); ctx.closePath(); ctx.fill();
-    ctx.restore();
-    ctx.font = `italic ${Math.max(Math.round(12 * this._dpr), Math.round(s / 19))}px 'Spectral', Georgia, serif`; ctx.fillStyle = 'rgba(31,74,90,0.95)'; ctx.textAlign = 'center';
-    ctx.fillText(`${Math.round(ws * 1.944)} kn`, ax, ay + L * 0.95);
-
-    // small printed compass rose (lower-left)
-    {
-      const rx = R - R * 0.48, ry = R + R * 0.5, rr = s * 0.075;
-      ctx.save(); ctx.translate(rx, ry); ctx.globalAlpha = 0.75;
-      ctx.strokeStyle = '#3a2814'; ctx.lineWidth = Math.max(0.8, s / 380);
-      ctx.beginPath(); ctx.arc(0, 0, rr * 0.75, 0, TAU); ctx.stroke();
-      for (let i = 0; i < 8; i++) {
-        const a = i * Math.PI / 4, L2 = i % 2 ? rr * 0.6 : rr, w = rr * (i % 2 ? 0.12 : 0.2);
-        ctx.save(); ctx.rotate(a);
-        ctx.beginPath(); ctx.moveTo(0, -L2); ctx.lineTo(w, 0); ctx.lineTo(0, 0); ctx.closePath(); ctx.fillStyle = i === 0 ? '#8e1b1b' : '#3a2814'; ctx.fill();
-        ctx.beginPath(); ctx.moveTo(0, -L2); ctx.lineTo(-w, 0); ctx.lineTo(0, 0); ctx.closePath(); ctx.fillStyle = '#e9d8ae'; ctx.fill(); ctx.stroke();
-        ctx.restore();
-      }
-      ctx.restore();
-    }
-    // edge burn
-    const vg = ctx.createRadialGradient(R, R, R * 0.7, R, R, R);
-    vg.addColorStop(0, 'rgba(90,50,10,0)'); vg.addColorStop(1, 'rgba(90,50,10,0.45)');
-    ctx.fillStyle = vg; ctx.fillRect(0, 0, s, s);
-    ctx.restore();
-    const lbl = this.range >= 1000 ? `${(this.range * 2 / 1852).toFixed(1)} miles` : `${this.range * 2} m`;   // sea tiers: the sea tier comes first, short legend
-    if (this._lbl !== lbl) { this._lbl = lbl; this.rngEl.textContent = lbl; }
   }
 
   _shipGlyph(ctx, x, y, h, size, color, struck, player) {

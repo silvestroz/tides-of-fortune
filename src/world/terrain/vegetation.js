@@ -35,6 +35,7 @@ function tierDistances() {
   SHADOW_R = QUALITY.vegShadowR || 150;
   NR_K = NEAR / 520;
 }
+const FILL_MS = 1.2;       // time a refill may take per frame (update)
 const KEEP_R = 90;         // always kept regardless of view direction (shadows/edges near camera)
 
 // Jagged leaf-cluster card: several sub-clumps of pointed leaves with a hard, notched alpha edge and
@@ -605,25 +606,38 @@ export class Vegetation {
     camO.getWorldDirection(_dir);
     const yaw = Math.atan2(_dir.x, _dir.z), pitch = _dir.y;
     let dy = Math.abs(yaw - (this._yawPrev ?? 1e9)); if (dy > Math.PI) dy = Math.PI * 2 - dy;
-    if (!force && cam.distanceToSquared(this._camPrev) < 60 * 60 && dy < 0.17 && Math.abs(pitch - (this._pitchPrev ?? 9)) < 0.15) return;
-    this._camPrev.copy(cam); this._yawPrev = yaw; this._pitchPrev = pitch;
+    const moved = force || cam.distanceToSquared(this._camPrev) >= 60 * 60 || dy >= 0.17 || Math.abs(pitch - (this._pitchPrev ?? 9)) >= 0.15;
+    // A refill walks every plant of every kind (3 to 20 ms in one go: a missed frame each time the view turned by
+    // 10 degrees). It is spread over the following frames instead, FILL_MS at a time, from the camera pose it
+    // started with; the instance buffers reach the GPU kind by kind, each only once it is complete. The wedge
+    // margin (0.3 rad) and the 60 m step cover the few frames a pass lasts. `force`: all at once.
+    if (!this._pass || force) {
+      if (!moved) return;
+      this._camPrev.copy(cam); this._yawPrev = yaw; this._pitchPrev = pitch;
+      // horizontal view wedge (half horizontal FOV + margin for the update hysteresis); disabled when looking steeply down
+      const hfov = Math.atan(Math.tan((camO.fov ?? 60) * Math.PI / 360) * (camO.aspect ?? 1.8));
+      const hl = Math.hypot(_dir.x, _dir.z) || 1;
+      this._pass = { cx: cam.x, cz: cam.z, fx: _dir.x / hl, fz: _dir.z / hl, wedge: pitch > -0.8,
+        cosW: Math.cos(Math.min(Math.PI, hfov + 0.3 + Math.max(0, -pitch) * 0.9)), m: 0, i: 0, nn: 0, nf: 0, nc: 0 };
+    }
+    const P = this._pass, t0 = performance.now();
     const far2 = FAR * FAR, mid2 = MID * MID, sh2 = SHADOW_R * SHADOW_R, keep2 = KEEP_R * KEEP_R;
-    // horizontal view wedge (half horizontal FOV + margin for the update hysteresis); disabled when looking steeply down
-    const hfov = Math.atan(Math.tan((camO.fov ?? 60) * Math.PI / 360) * (camO.aspect ?? 1.8));
-    const hl = Math.hypot(_dir.x, _dir.z) || 1, fx = _dir.x / hl, fz = _dir.z / hl;
-    const wedge = pitch > -0.8, cosW = Math.cos(Math.min(Math.PI, hfov + 0.3 + Math.max(0, -pitch) * 0.9));
-    for (const M of this.meshes) {
+    const { cx, cz, fx, fz, wedge, cosW } = P;
+    while (P.m < this.meshes.length) {
+      const M = this.meshes[P.m];
       const NR = M.kind === 'tree' ? 380 * NR_K : M.kind === 'palm' ? NEAR : (M.kind === 'pebble' || M.kind === 'tuft') ? 160 * NR_K : 300 * NR_K;
       const near2 = NR * NR, nearBand2 = (NR - 40) ** 2;
       const cap = M.kind === 'tree' ? 1500 : 3000;
       const farCap = M.kind === 'tree' ? 14000 : 5000;
       const a = this.sets[M.kind];
-      let nn = 0, nf = 0, nc = 0;
-      const n = a.length / 8;
-      for (let i = 0; i < n; i++) {
+      let { nn, nf, nc } = P;
+      const n = a.length / 8, variants = M.kind === 'palm' || M.kind === 'tree';
+      let i = P.i, out = false;
+      for (; i < n; i++) {
+        if (!force && (i & 1023) === 1023 && performance.now() - t0 > FILL_MS) { out = true; break; }
         const o = i * 8;
-        if ((M.kind === 'palm' || M.kind === 'tree') && a[o + 7] !== M.variant) continue;
-        const dx = a[o] - cam.x, dz = a[o + 2] - cam.z;
+        if (variants && a[o + 7] !== M.variant) continue;
+        const dx = a[o] - cx, dz = a[o + 2] - cz;
         const d2 = dx * dx + dz * dz;
         if (d2 > far2 && d2 > near2) continue;
         if (wedge && d2 > keep2 && (dx * fx + dz * fz) < cosW * Math.sqrt(d2)) continue;
@@ -645,9 +659,16 @@ export class Vegetation {
           nf++;
         }
       }
-      for (const [mm, cnt] of [[M.near, nn], [M.close, nc]]) if (mm) { mm.count = cnt; mm.instanceMatrix.needsUpdate = true; if (mm.instanceColor) mm.instanceColor.needsUpdate = true; }
-      if (M.far) { M.far.count = nf; M.far.instanceMatrix.needsUpdate = true; if (M.far.instanceColor) M.far.instanceColor.needsUpdate = true; }
+      P.i = i; P.nn = nn; P.nf = nf; P.nc = nc;
+      if (out) return;   // budget spent: this kind goes on next frame, its buffers untouched on the GPU meanwhile
+      for (const [mm, cnt] of [[M.near, nn], [M.close, nc], [M.far, nf]]) if (mm) {
+        mm.count = cnt;
+        // only the instances in use are sent, not the whole capacity of the buffer
+        if (cnt) for (const at of [mm.instanceMatrix, mm.instanceColor]) if (at) { at.clearUpdateRanges(); at.addUpdateRange(0, cnt * at.itemSize); at.needsUpdate = true; }
+      }
+      P.m++; P.i = 0; P.nn = P.nf = P.nc = 0;
     }
+    this._pass = null;
   }
 
   _tint(kind, t) {
