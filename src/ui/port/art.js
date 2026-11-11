@@ -1,101 +1,17 @@
 // Hand-drawn SVG art for the port screens: location vignettes, goods glyphs, ship silhouettes, ornaments.
 // API: VIGNETTE[loc] (svg), GOOD_ICON(good) (svg), SHIP_SIL(type) (svg), SEAL(text) (svg)
 import { SHIP_TYPES } from '../../data/shipTypes.js';
+import { GOOD_ART, VIGNETTE_ART } from '../paintedIcons.js';
 
 const INK = '#2a1c10';
 
-// --- location vignettes (engraved, ink + wash) 120x90 -------------------------------------------
-const V = (body) => `<svg viewBox="0 0 120 90" class="vig" aria-hidden="true"><g fill="none" stroke="${INK}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${body}</g></svg>`;
-const hatch = (x, y, w, h, step = 3) => { let s = ''; for (let i = 0; i < w + h; i += step) s += `M${x + Math.max(0, i - h)} ${y + Math.min(h, i)} L${x + Math.min(w, i)} ${y + Math.max(0, i - w)} `; return `<path d="${s}" stroke-width="0.5" opacity="0.55"/>`; };
-
-export const VIGNETTE = {
-  market: V(`
-    <path d="M6 84 H114" stroke-width="1.6"/>
-    <path d="M14 34 L60 18 L106 34" fill="#b8402e" fill-opacity="0.55"/>
-    <path d="M14 34 C20 40 26 40 30 34 C34 40 42 40 45 34 C49 40 56 40 60 34 C64 40 71 40 75 34 C78 40 86 40 90 34 C94 40 101 40 106 34" fill="#efe3c2" fill-opacity="0.7"/>
-    <path d="M30 34 L45 22 M60 34 V18 M90 34 L75 22" stroke-width="0.8"/>
-    <path d="M18 38 V84 M102 38 V84" stroke-width="2"/>
-    <path d="M22 60 H98 V66 H22 Z" fill="#8a5a2b" fill-opacity="0.55"/>
-    <ellipse cx="34" cy="56" rx="8" ry="4" fill="#c9a24a" fill-opacity="0.5"/><circle cx="31" cy="53" r="2.6" fill="#d8542e" fill-opacity="0.6"/><circle cx="36" cy="52.5" r="2.6" fill="#e0a040" fill-opacity="0.6"/>
-    <path d="M52 60 V50 C52 46 66 46 66 50 V60" fill="#a0784a" fill-opacity="0.5"/><path d="M52 52 H66 M52 56 H66" stroke-width="0.7"/>
-    <path d="M76 60 L78 48 H90 L92 60" fill="#e8d39a" fill-opacity="0.6"/><path d="M80 48 C82 44 86 44 88 48" />
-    <ellipse cx="30" cy="77" rx="8" ry="7" fill="#8a5a2b" fill-opacity="0.5"/><path d="M22 74 H38 M22 80 H38" stroke-width="0.7"/>
-    <ellipse cx="46" cy="79" rx="6" ry="5" fill="#8a5a2b" fill-opacity="0.4"/>
-    <path d="M70 84 V72 L84 70 L98 72 V84" fill="#d9c89c" fill-opacity="0.6"/><path d="M70 72 L84 74 L98 72 M84 74 V84" stroke-width="0.7"/>
-    ${hatch(22, 66, 76, 18, 4)}`),
-  tavern: V(`
-    <path d="M6 84 H114" stroke-width="1.6"/>
-    <path d="M18 84 V40 L60 16 L102 40 V84" fill="#efe4cf" fill-opacity="0.65"/>
-    <path d="M12 42 L60 12 L108 42" stroke-width="2.2" fill="none"/>
-    <path d="M18 40 L60 16 L102 40 Z" fill="#c0623a" fill-opacity="0.55"/>
-    <path d="M48 84 V62 C48 54 72 54 72 62 V84" fill="#5a3a1c" fill-opacity="0.65"/><path d="M60 56 V84" stroke-width="0.7"/><circle cx="66" cy="72" r="1" fill="${INK}"/>
-    <rect x="26" y="52" width="14" height="14" fill="#f3c46a" fill-opacity="0.75"/><path d="M33 52 V66 M26 59 H40" />
-    <rect x="80" y="52" width="14" height="14" fill="#f3c46a" fill-opacity="0.75"/><path d="M87 52 V66 M80 59 H94" />
-    <path d="M102 46 H116 M110 46 V50" stroke-width="1.8"/>
-    <path d="M104 50 H116 V66 H104 Z" fill="#8a5a2b" fill-opacity="0.6"/>
-    <path d="M107 54 H113 V63 H107 Z M113 56 C116 56 116 61 113 61" fill="#efe3c2" fill-opacity="0.8" stroke-width="0.9"/>
-    <path d="M78 22 V10 H86 V27" fill="#8a8178" fill-opacity="0.5"/><path d="M80 7 C78 3 84 2 82 -1 M85 6 C88 3 84 0 88 -3" stroke-width="0.8" opacity="0.6"/>
-    ${hatch(18, 66, 30, 18, 3.5)}${hatch(72, 66, 30, 18, 3.5)}`),
-  shipyard: V(`
-    <path d="M4 84 C30 82 50 86 116 84" stroke-width="1.6"/>
-    <path d="M6 76 L70 62" stroke-width="1"/><path d="M6 80 L74 66" stroke-width="1"/>
-    <path d="M18 64 C30 70 72 70 92 60 L96 50 H14 Z" fill="#8a5a2b" fill-opacity="0.6"/>
-    <path d="M22 52 C30 58 70 58 90 52 M24 57 C34 62 66 62 86 57" stroke-width="0.7"/>
-    <path d="M28 50 V66 M38 50 V68 M48 50 V69 M58 50 V69 M68 50 V67 M78 50 V64" stroke-width="0.9" opacity="0.75"/>
-    <path d="M54 50 V8" stroke-width="1.8"/><path d="M40 20 H68 M44 34 H64" stroke-width="1.2"/>
-    <path d="M54 8 L96 46 M54 12 L20 48" stroke-width="0.6" opacity="0.7"/>
-    <path d="M100 84 V30 M100 30 L116 30 M110 30 V44" stroke-width="1.6"/><path d="M108 44 H112 V48 H108 Z" fill="#8a8178" fill-opacity="0.6"/>
-    <path d="M8 72 L14 66 M14 74 L20 68 M84 72 L90 66" stroke-width="1.6"/>
-    ${hatch(18, 50, 78, 18, 4)}`),
-  governor: V(`
-    <path d="M4 84 H116" stroke-width="1.6"/>
-    <path d="M14 84 V44 H106 V84" fill="#efe4cf" fill-opacity="0.7"/>
-    <path d="M10 44 L60 22 L110 44 Z" fill="#c0623a" fill-opacity="0.5"/>
-    <path d="M60 22 V4" stroke-width="1.2"/><path d="M60 4 L76 7 L60 11 Z" fill="#b8242c" fill-opacity="0.75"/>
-    <path d="M10 44 H110 M14 48 H106" stroke-width="1.6"/>
-    <path d="M30 48 V80 M42 48 V80 M78 48 V80 M90 48 V80" stroke-width="2.2"/>
-    <path d="M27 80 H33 M39 80 H45 M75 80 H81 M87 80 H93" stroke-width="1.4"/>
-    <path d="M52 84 V62 C52 56 68 56 68 62 V84" fill="#5a3a1c" fill-opacity="0.65"/>
-    <path d="M20 54 H25 V66 H20 Z M95 54 H100 V66 H95 Z" fill="#3a5d7a" fill-opacity="0.45"/>
-    <circle cx="60" cy="36" r="5" fill="#c9a24a" fill-opacity="0.55"/><circle cx="60" cy="36" r="2.2"/>
-    <path d="M44 84 H76 L80 88 H40 Z" fill="#8a8178" fill-opacity="0.4"/>
-    ${hatch(14, 48, 92, 36, 5)}`),
-  bank: V(`
-    <path d="M4 84 H116" stroke-width="1.6"/>
-    <path d="M22 84 V40 H98 V84" fill="#efe4cf" fill-opacity="0.6"/><path d="M18 40 H102 L60 20 Z" fill="#8a8178" fill-opacity="0.45"/>
-    <path d="M34 44 V80 M50 44 V80 M70 44 V80 M86 44 V80" stroke-width="2"/>
-    <ellipse cx="60" cy="74" rx="11" ry="4" fill="#d9a930" fill-opacity="0.7"/><ellipse cx="60" cy="70" rx="11" ry="4" fill="#e9c050" fill-opacity="0.7"/><ellipse cx="60" cy="66" rx="11" ry="4" fill="#f1d488" fill-opacity="0.8"/>`),
-};
-
-// --- goods glyphs 32x32 ------------------------------------------------------------------------
-const G = (body) => `<svg viewBox="0 0 32 32" class="gico" aria-hidden="true"><ellipse cx="16" cy="28.6" rx="12" ry="2.4" fill="#2a1406" opacity="0.35"/><g stroke="${INK}" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round">${body}</g><ellipse cx="11.5" cy="10" rx="5" ry="2.6" fill="#fff8e0" opacity="0.32" transform="rotate(-28 11.5 10)"/><path d="M6 23 C11 27 21 27 26 23" stroke="#1a0c04" stroke-width="2.4" fill="none" opacity="0.18"/></svg>`;
-const barrel = (c) => `<path d="M9 5 H23 C26 10 26 22 23 27 H9 C6 22 6 10 9 5Z" fill="${c}"/><path d="M7.4 11 H24.6 M7.4 21 H24.6" stroke-width="1.6"/><path d="M12 5 C10.5 12 10.5 20 12 27 M20 5 C21.5 12 21.5 20 20 27" stroke-width="0.6" fill="none"/>`;
-const sack = (c, mark = '') => `<path d="M11 6 C13 8 19 8 21 6 L20 10 C26 13 27 22 24 26 C20 29 12 29 8 26 C5 22 6 13 12 10 Z" fill="${c}"/><path d="M12 10 C15 11 18 11 20 10" fill="none"/>${mark}`;
-const bale = (c) => `<path d="M5 9 L16 5 L27 9 V23 L16 27 L5 23 Z" fill="${c}"/><path d="M5 9 L16 13 L27 9 M16 13 V27" fill="none"/><path d="M9 11 V25 M23 11 V25" stroke-width="1.6" stroke="#5a3a1c" fill="none"/>`;
-const chest = (c, lid = '#8a5a2b') => `<path d="M5 13 H27 V26 H5 Z" fill="${lid}"/><path d="M5 13 C5 7 27 7 27 13" fill="${lid}"/><path d="M5 13 H27" /><path d="M10 9 V26 M22 9 V26" stroke-width="1.5" stroke="#c9a24a"/><rect x="14" y="13" width="4" height="5" fill="${c}"/>`;
-const crate = (c) => `<path d="M5 8 H27 V26 H5 Z" fill="${c}"/><path d="M5 8 L27 26 M5 14 H27 M5 20 H27" stroke-width="0.8" fill="none"/>`;
-
-export function GOOD_ICON(g) {
-  switch (g) {
-    case 'food': return G(barrel('#b88a52') + `<path d="M13 3 C14 1 18 1 19 3" fill="none"/>`);
-    case 'sugar': return G(barrel('#e8dcc0'));
-    case 'rum': return G(barrel('#8a4a1e') + `<path d="M16 15 v3" stroke="#f1d488" stroke-width="2.2"/>`);
-    case 'salt': return G(barrel('#d6d2c8'));
-    case 'powder': return G(barrel('#4a3a2c') + `<path d="M12 15 L20 17 M14 19 L18 13" stroke="#e05a2a" stroke-width="1.1"/>`);
-    case 'tobacco': return G(bale('#9a6a32'));
-    case 'cotton': return G(bale('#f1ead8') + `<circle cx="11" cy="17" r="1.4" fill="#fff"/><circle cx="21" cy="17" r="1.4" fill="#fff"/>`);
-    case 'hides': return G(`<path d="M7 7 C11 9 13 5 16 7 C19 5 21 9 25 7 C24 12 27 15 25 18 C27 22 23 25 22 27 C19 25 13 25 10 27 C9 25 5 22 7 18 C5 15 8 12 7 7Z" fill="#a8763e"/><path d="M12 14 C15 16 17 16 20 14" fill="none" stroke-width="0.7"/>`);
-    case 'cocoa': return G(sack('#c9a46a', `<ellipse cx="16" cy="19" rx="4" ry="2.6" fill="#6a3a1c" transform="rotate(-20 16 19)"/>`));
-    case 'coffee': return G(sack('#bfa078', `<ellipse cx="14" cy="19" rx="1.8" ry="2.4" fill="#3a2010"/><ellipse cx="18.5" cy="20" rx="1.8" ry="2.4" fill="#3a2010"/>`));
-    case 'spice': return G(chest('#c0462a', '#7a3a1c'));
-    case 'silver': return G(chest('#e8eef2', '#5a3a1c') + `<path d="M7 11 L10 8 L13 11 M18 10 L22 7 L25 10" stroke="#dfe7ec" stroke-width="1.6" fill="none"/>`);
-    case 'arms': return G(crate('#9a7448') + `<path d="M8 22 L24 10" stroke="#3a3a3a" stroke-width="2.2"/><path d="M22 9 L26 8 L25 12" fill="#3a3a3a"/>`);
-    case 'indigo': return G(crate('#9a7448') + `<rect x="10" y="12" width="12" height="10" rx="1" fill="#2c3f8a"/>`);
-    case 'cloth': return G(`<path d="M6 10 C6 7 26 7 26 10 V22 C26 25 6 25 6 22 Z" fill="#7a3a6a"/><ellipse cx="6" cy="16" rx="2.5" ry="6" fill="#9a5a8a"/><ellipse cx="6" cy="16" rx="0.9" ry="2.2" fill="#3a1a2a"/><path d="M26 14 L28 26 L22 24" fill="#7a3a6a"/>`);
-    case 'timber': return G(`<g><ellipse cx="9" cy="21" rx="4" ry="4" fill="#c9965a"/><ellipse cx="17" cy="21" rx="4" ry="4" fill="#c9965a"/><ellipse cx="25" cy="21" rx="4" ry="4" fill="#c9965a"/><ellipse cx="13" cy="14" rx="4" ry="4" fill="#c9965a"/><ellipse cx="21" cy="14" rx="4" ry="4" fill="#c9965a"/><ellipse cx="17" cy="7.5" rx="4" ry="4" fill="#c9965a"/><circle cx="9" cy="21" r="1.2" fill="none"/><circle cx="17" cy="21" r="1.2" fill="none"/><circle cx="25" cy="21" r="1.2" fill="none"/><circle cx="13" cy="14" r="1.2" fill="none"/><circle cx="21" cy="14" r="1.2" fill="none"/><circle cx="17" cy="7.5" r="1.2" fill="none"/></g>`);
-    default: return G(crate('#a88a5a'));
-  }
-}
+// --- location vignettes and goods glyphs: painted icons (paintedIcons.js), 32 x 32 -------------------
+const ART = (cls, body) => `<svg viewBox="0 0 32 32" class="${cls}" aria-hidden="true">${body}</svg>`;
+export const VIGNETTE = Object.fromEntries(Object.entries(VIGNETTE_ART).map(([k, v]) => [k, ART('vig', v)]));
+const GOODS_SVG = Object.fromEntries(Object.entries(GOOD_ART).map(([k, v]) => [k, ART('gico', v)]));
+// unknown good: a plain crate
+const CRATE = ART('gico', `<g stroke="${INK}" stroke-width="1.1" stroke-linejoin="round"><path d="M5 8 H27 V26 H5 Z" fill="#a88a5a"/><path d="M5 8 L27 26 M5 14 H27 M5 20 H27" stroke-width="0.8" fill="none"/></g>`);
+export function GOOD_ICON(g) { return GOODS_SVG[g] || CRATE; }
 
 // --- ship silhouettes (side elevation, 160x80) -------------------------------------------------
 const SH = {

@@ -17,33 +17,15 @@
 // Journal: the last 60 messages with ship's-bell time and date, opened with J at sea (Esc / J close).
 // API: new Toasts(game, hudEl) · push(text, kind, opts) · update(real) · journal.open()/close()/toggle()
 import { isKey } from '../core/keys.js';
+import { TOAST_ART } from './paintedIcons.js';
 import { inPrologue } from '../game/notifyRules.js';
 
 const MAX = 2, MAX_FROZEN = 2, LOG_N = 60, QUEUE_STALE = 6000, DEFER_AFTER = 4000;
 const LIFE = { info: 3200, good: 4600, bad: 5600, major: 4200 };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-// ---- painted icons (inline SVG, brass/ink/blood palette) ----
-const P = (body, vb = '0 0 32 32') => `<svg viewBox="${vb}" aria-hidden="true">${body}</svg>`;
-const STROKE = 'stroke="#2a1c10" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"';
-export const TOAST_ICONS = {
-  info: P(`<path d="M9 5h13l3 3v19H9z" fill="#efe0b8" ${STROKE}/><path d="M12 12h10M12 16h10M12 20h7" stroke="#5a4128" stroke-width="1.3"/>`),
-  good: P(`<path d="M16 26c-6-3-9-8-9-14 3 1 5 3 6 6 0-4 1-7 3-10 2 3 3 6 3 10 1-3 3-5 6-6 0 6-3 11-9 14z" fill="#9fb36a" ${STROKE}/><path d="M16 26V12" stroke="#2a1c10" stroke-width="1.1"/>`),
-  bad: P(`<path d="M16 4 29 27H3z" fill="#c9503a" ${STROKE}/><path d="M16 11v8" stroke="#f5e9c9" stroke-width="2.6" stroke-linecap="round"/><circle cx="16" cy="23" r="1.6" fill="#f5e9c9"/>`),
-  major: P(`<circle cx="16" cy="16" r="11" fill="#b5302a" ${STROKE}/><circle cx="16" cy="16" r="7.5" fill="none" stroke="#f0c2a0" stroke-width="1"/><path d="M16 9.5l1.9 4.1 4.4.4-3.3 3 1 4.4L16 19.1l-4 2.3 1-4.4-3.3-3 4.4-.4z" fill="#f6e09a" stroke="#6e1010" stroke-width=".8"/>`),
-  wind: P(`<path d="M4 12h15a4 4 0 1 0-4-4M4 18h20a4 4 0 1 1-4 4M4 24h9" fill="none" stroke="#2a1c10" stroke-width="2.2" stroke-linecap="round"/>`),
-  weather: P(`<path d="M9 19a5 5 0 0 1 1-10 7 7 0 0 1 13 2 4 4 0 0 1 0 8z" fill="#d9d3c4" ${STROKE}/><path d="M12 22l-2 5M17 22l-2 5M22 22l-2 5" stroke="#2f5a6e" stroke-width="1.8" stroke-linecap="round"/>`),
-  diplomacy: P(`<path d="M6 6h20v15H6z" fill="#efe0b8" ${STROKE}/><circle cx="20" cy="22" r="5" fill="#b5302a" ${STROKE}/><path d="M18 26l-1 4 3-2 3 2-1-4" fill="#b5302a" stroke="#2a1c10" stroke-width="1"/><path d="M9 10h12M9 14h9" stroke="#5a4128" stroke-width="1.2"/>`),
-  rumour: P(`<path d="M25 4C17 6 11 13 8 24l2 1c2-4 5-7 9-9-3 0-5 0-6-1 4-1 8-4 12-11z" fill="#efe0b8" ${STROKE}/><path d="M7 28l3-4" stroke="#2a1c10" stroke-width="1.6"/>`),
-  gold: P(`<ellipse cx="13" cy="21" rx="8" ry="3.4" fill="#c9a24a" ${STROKE}/><path d="M5 18v3M21 18v3" stroke="#2a1c10" stroke-width="1.5"/><ellipse cx="13" cy="18" rx="8" ry="3.4" fill="#e8c978" ${STROKE}/><circle cx="22" cy="11" r="6" fill="#f1d488" ${STROKE}/><path d="M22 8v6" stroke="#6e4f1a" stroke-width="1.4"/>`),
-  combat: P(`<circle cx="12" cy="20" r="7" fill="#3a2a1e" ${STROKE}/><circle cx="10" cy="18" r="2" fill="#7b6244"/><path d="M19 13l4-4M21 16l6-2M17 11l1-6" stroke="#d9772a" stroke-width="2.2" stroke-linecap="round"/>`),
-  crew: P(`<circle cx="16" cy="10" r="5" fill="#e0b88a" ${STROKE}/><path d="M6 28c0-7 4-11 10-11s10 4 10 11z" fill="#2f6f88" ${STROKE}/><path d="M11 7h10l-2-3h-6z" fill="#2a1c10"/>`),
-  shoal: P(`<path d="M3 22c4-3 7-3 11 0s7 3 11 0" fill="none" stroke="#2f6f88" stroke-width="2.2" stroke-linecap="round"/><path d="M6 27l5-7 4 3 5-8 6 12z" fill="#b99a6a" ${STROKE}/>`),
-  lord: P(`<path d="M7 13a9 9 0 0 1 18 0c0 4-2 6-4 7v4H11v-4c-2-1-4-3-4-7z" fill="#efe4cf" ${STROKE}/><circle cx="12.5" cy="13" r="2.4" fill="#2a1c10"/><circle cx="19.5" cy="13" r="2.4" fill="#2a1c10"/><path d="M14 24v3M18 24v3" stroke="#2a1c10" stroke-width="1.4"/>`),
-  rank: P(`<path d="M5 25l3-13 5 6 3-10 3 10 5-6 3 13z" fill="#e8c978" ${STROKE}/><circle cx="16" cy="6" r="1.8" fill="#b5302a"/><path d="M5 25h22" stroke="#2a1c10" stroke-width="2"/>`),
-  zone: P(`<path d="M4 27C7 16 15 9 27 6" fill="none" stroke="#2f5d2a" stroke-width="2.3" stroke-dasharray="3.2 2.6" stroke-linecap="round"/><path d="M17 26V9" stroke="#2a1c10" stroke-width="1.7"/><path d="M17 9h9l-2.6 3.4L26 16h-9z" fill="#b5302a" ${STROKE}/><circle cx="17" cy="26.5" r="2" fill="#8a6424" stroke="#2a1c10" stroke-width="1"/>`),
-  treasure: P(`<path d="M5 14h22v13H5z" fill="#8a5a2a" ${STROKE}/><path d="M5 14c0-5 4-8 11-8s11 3 11 8z" fill="#a8743a" ${STROKE}/><path d="M14 16h4v5h-4z" fill="#e8c978" stroke="#2a1c10" stroke-width="1"/>`),
-};
+// ---- painted icons (paintedIcons.js): one per message topic ----
+export const TOAST_ICONS = Object.fromEntries(Object.entries(TOAST_ART).map(([k, v]) => [k, `<svg viewBox="0 0 32 32" aria-hidden="true">${v}</svg>`]));
 const TOPIC_RX = [
   ['lord', /black sail|lair|top 10|ledger|pirate captain|is defeated\b/i],
   ['rank', /promoted|\brank\b|promotion|grant of/i],
