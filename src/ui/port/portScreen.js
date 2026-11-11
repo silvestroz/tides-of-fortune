@@ -10,6 +10,7 @@ import { GOODS } from '../../data/world.js';
 import { flagSVG } from '../flags.js';
 import { ICONS, RULE } from '../icons.js';
 import { REFIT_ICONS } from '../refitIcons.js';   // refit icons: line drawing / materials / gold at best
+import { AMMO_ART } from '../paintedIcons.js';     // chain shot and grapeshot rows
 import { formatDate } from '../hud.js';
 import { GOOD_ICON, SHIP_SIL, SEAL, GLYPH, VIGNETTE, PORTRAIT } from './art.js';
 import { portraitURL, portraitLazy, portraitKey } from './portrait3d.js';   // characters: medallions painted from the 3D figures
@@ -403,7 +404,7 @@ export class PortScreen {
       </div>
       ${s.ammoLocked('chain') || s.ammoLocked('grape') ? `<div class="card">
         <h3>${REFIT_ICONS.shot} Special shot</h3>
-        ${[['chain', 'Chain shot', 'Cuts sails and rigging, shorter range'], ['grape', 'Grapeshot', 'Sweeps the decks before boarding, short range']].filter(([k]) => s.ammoLocked(k)).map(([k, n, d]) => `<div class="up"><span class="uico">${ICONS[k] || ICONS.cannon}</span><span class="ut">${n}<em>${d}</em></span><span class="pips"></span><button class="btn sm" data-act="buyammo" data-k="${k}" ${st.gold < s.ammoPrice(k) ? 'disabled' : ''}>${coin}${fmt(s.ammoPrice(k))}</button></div>`).join('')}
+        ${[['chain', 'Chain shot', 'Cuts sails and rigging, shorter range'], ['grape', 'Grapeshot', 'Sweeps the decks before boarding, short range']].filter(([k]) => s.ammoLocked(k)).map(([k, n, d]) => `<div class="up"><span class="uico"><svg class="ri" viewBox="0 0 32 32" aria-hidden="true">${AMMO_ART[k]}</svg></span><span class="ut">${n}<em>${d}</em></span><span class="pips"></span><button class="btn sm" data-act="buyammo" data-k="${k}" ${st.gold < s.ammoPrice(k) ? 'disabled' : ''}>${coin}${fmt(s.ammoPrice(k))}</button></div>`).join('')}
       </div>` : ''}
       <div class="card">
         <h3>${GLYPH.anchor} Ships on the slipway</h3>
