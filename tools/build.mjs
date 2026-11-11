@@ -14,6 +14,8 @@ fs.renameSync(src, out);
   if (i >= 0 && j > i && k > j) { const tag = h.slice(i, j + 9); h = h.slice(0, i) + h.slice(j + 9, k) + tag + '\n' + h.slice(k); fs.writeFileSync(out, h); }
 }
 for (const f of fs.readdirSync('dist')) if (f !== 'tides-of-fortune.html') fs.rmSync('dist/' + f, { recursive: true, force: true });
+// link-preview picture (og:image in index.html): the one file published beside the game, never loaded by it
+fs.copyFileSync('docs/share/og-image.jpg', 'dist/og-image.jpg');
 const html = fs.readFileSync(out, 'utf8');
 const ext = [...html.matchAll(/(?:src|href)\s*=\s*["'](https?:)?\/\/[^"']+/g)].map(m => m[0]).filter(u => !/fonts\.(googleapis|gstatic)\.com/.test(u));
 const rel = [...html.matchAll(/<(?:script|link)[^>]+(?:src|href)=["'](?!https?:|data:)[^"']+/g)].map(m => m[0]);
