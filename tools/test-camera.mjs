@@ -88,6 +88,26 @@ check('9 s without input: the orbit has not drifted back', Math.abs(orb2.yaw - o
 await shot('02-orbit-kept');
 await ev(() => { const r = window.__game.cameraRig; r.orbitYaw = r.orbitPitch = 0; });
 
+// Options « Invert vertical axis »: Off by default, flips the vertical drag, saved
+const inv = await ev(() => {
+  const g = window.__game, r = g.cameraRig, m = g.input.mouse;
+  const drag = () => { r.orbitPitch = 0; m.buttons = 2; m.dx = 0; m.dy = 60; g.step(1 / 30); const v = r.orbitPitch; g.input.endFrame(); m.buttons = 0; m.dy = 0; return v; };
+  const def = !!g.settings.invertY, normal = drag();
+  g.hud.menu.open('settings');
+  const seg = document.querySelector('.menu-layer .inv-seg'), sel0 = seg?.querySelector('.sel')?.dataset.inv;
+  seg?.querySelector('[data-inv="1"]')?.click();
+  const saved = JSON.parse(localStorage.getItem('tof.settings.v1') || '{}').invertY, label = seg?.closest('.srow')?.querySelector('.sl')?.textContent;
+  g.hud.menu.close();
+  const flipped = drag();
+  g.hud.menu.open('settings'); document.querySelector('.menu-layer .inv-seg [data-inv="0"]')?.click(); g.hud.menu.close();
+  const back = drag(); r.orbitPitch = 0;
+  const s0 = g.settings.mouseSensitivity; g.settings.mouseSensitivity = 2; const fast = drag(); g.settings.mouseSensitivity = s0; r.orbitPitch = 0;
+  return { def, sel0, label, saved, now: g.settings.invertY, normal, flipped, back, fast };
+});
+check('Options: « Invert vertical axis », Off by default, saved', inv.label === 'Invert vertical axis' && inv.def === false && inv.sel0 === '0' && inv.saved === true, JSON.stringify(inv));
+check('default: mouse down lifts the camera; inverted: it lowers it; Off again: back', inv.normal > 0.1 && inv.flipped < -0.1 && Math.abs(inv.back - inv.normal) < 1e-9, `${inv.normal} / ${inv.flipped} / ${inv.back}`);
+check('Options « Mouse » ×2: the orbit turns twice as fast', Math.abs(inv.fast - inv.normal * 2) < 1e-9, `${inv.normal} → ${inv.fast}`);
+
 // C cycles the three views, in a fight too
 await hit(); await tap('KeyC'); await sim(1);
 c = await cam();

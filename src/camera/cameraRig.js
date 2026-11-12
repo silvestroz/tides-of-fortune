@@ -6,7 +6,7 @@
 //   mode                 'chase' | 'broadside' | 'tactical' | 'shot' | 'path'
 //   setMode(m), cycleMode()   cycles chase → broadside → tactical (C key via PlayerController)
 //   aimSide              'port' | 'starboard' (broadside mode; follows the last broadside fired, or mouse orbit side)
-//   orbitYaw, orbitPitch, zoom   user offsets (right-drag orbit, wheel zoom)
+//   orbitYaw, orbitPitch, zoom   user offsets (right-drag orbit, wheel zoom); settings.invertY flips the vertical drag
 //   shake(amount)        add a camera-shake impulse (0..1). Auto: ship.scrape, the followed ship's broadsides.
 //   setShotPath(keys, { duration, loop, relativeTo: ship, ease, onDone })
 //        keys: [{ position:[x,y,z], lookAt:[x,y,z], fov?, roll? }, ...] sampled with a centripetal Catmull-Rom spline
@@ -125,8 +125,10 @@ export class CameraRig {
     const m = inp?.mouse;
     if (m) {
       if ((m.buttons & 2) && (m.dx || m.dy)) {
-        this.orbitYaw = wrapAngle(this.orbitYaw - m.dx * 0.0055);
-        this.orbitPitch = Math.max(-0.35, Math.min(0.9, this.orbitPitch + m.dy * 0.0035));
+        const sens = g.settings?.mouseSensitivity ?? 1;   // Options « Mouse » (the slider had no effect on the orbit before)
+        this.orbitYaw = wrapAngle(this.orbitYaw - m.dx * 0.0055 * sens);
+        // vertical sense: mouse down = camera up (as three.js OrbitControls); Options « Invert vertical axis » flips it
+        this.orbitPitch = Math.max(-0.35, Math.min(0.9, this.orbitPitch + m.dy * 0.0035 * sens * (g.settings?.invertY ? -1 : 1)));
         this._holdOrbit = false;
         if (this.mode === 'broadside') {
           // dragging across the bow/stern flips the aimed side

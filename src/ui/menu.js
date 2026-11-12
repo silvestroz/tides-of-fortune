@@ -216,6 +216,7 @@ export class Menu {
       <div class="srow"><span class="sl">Frame rate</span><span class="seg fps-seg">${[['auto', 'Automatic'], ['max', 'Screen rate'], ['60', 'Power saver']].map(([v, l]) => `<button data-fps="${v}" class="${(st.fps || 'auto') === v ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
       ${this._paused ? `<div class="srow"><span class="sl">Game mode</span><span class="seg assist-seg">${GAME_MODES.map(([v, l]) => `<button data-assist="${v}" class="${(!!this.game.state?.assist) === (v === 'assist') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
       <div class="lede opt-note">Assisted: your gunners fire on their own at the enemy that attacks you or that you have hit (<span class="kc">G</span> makes them cease fire), and your boardings are carried without a duel. Other ships attack you as usual.</div>` : ''}
+      <div class="srow"><span class="sl">Invert vertical axis</span><span class="seg inv-seg">${[['0', 'Off'], ['1', 'On']].map(([v, l]) => `<button data-inv="${v}" class="${!!st.invertY === (v === '1') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
       <div class="srow"><span class="sl">Tips</span><span class="seg hints-seg">${[['1', 'On'], ['0', 'Off']].map(([v, l]) => `<button data-hints="${v}" class="${(st.hints !== false) === (v === '1') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
       <div class="srow hints-reset-row"><span class="sl"></span><button class="btn ghost" data-act="hints-reset"${this.game.state?.tutorials ? '' : ' disabled'}>Show the tips again</button></div>
       <div class="srow"><span class="sl">Statistics</span><span class="seg stats-seg">${[['1', 'On'], ['0', 'Off']].map(([v, l]) => `<button data-stats="${v}" class="${(st.stats !== false) === (v === '1') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
@@ -341,6 +342,7 @@ export class Menu {
       this.scr.querySelectorAll('.assist-seg button').forEach(x => x.classList.toggle('sel', x === b)); a?.play?.('ui:select'); return;
     }
     if (b.dataset.fps) { saveSettings(this.game, { fps: b.dataset.fps }); this.scr.querySelectorAll('.fps-seg button').forEach(x => x.classList.toggle('sel', x === b)); a?.play?.('ui:select'); return; }   // src/core/framePacer.js
+    if (b.dataset.inv) { saveSettings(this.game, { invertY: b.dataset.inv === '1' }); this.scr.querySelectorAll('.inv-seg button').forEach(x => x.classList.toggle('sel', x === b)); a?.play?.('ui:select'); return; }
     if (b.dataset.hints) { saveSettings(this.game, { hints: b.dataset.hints === '1' }); this.scr.querySelectorAll('.hints-seg button').forEach(x => x.classList.toggle('sel', x === b)); a?.play?.('ui:select'); return; }
     if (b.dataset.stats) { saveSettings(this.game, { stats: b.dataset.stats === '1' }); this.scr.querySelectorAll('.stats-seg button').forEach(x => x.classList.toggle('sel', x === b)); a?.play?.('ui:select'); return; }   // usage statistics (src/core/telemetry.js)
     if (b.dataset.q) { saveSettings(this.game, { quality: b.dataset.q }); this.scr.querySelectorAll('.seg button[data-q]').forEach(x => x.classList.toggle('sel', x === b)); a?.play?.('ui:select'); return; }

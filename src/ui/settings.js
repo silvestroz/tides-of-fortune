@@ -1,11 +1,13 @@
 // Shared player settings, stored on game.settings and persisted to localStorage.
+//   invertY (bool): right-drag orbit, vertical axis reversed (src/camera/cameraRig.js; default = the sense of
+//     three.js OrbitControls: mouse down, camera up)
 //   game.settings = { master, music, sfx (0..1), quality: 'low'|'medium'|'high'|'ultra', mouseSensitivity (0.2..2),
 //                     hints (bool, contextual hints and guided goals, src/ui/hints.js),
 //                     stats (bool, anonymous statistics, src/core/telemetry.js),
 //                     fps: 'auto'|'max'|'60' (presented cadence on fast screens, src/core/framePacer.js) }
 // API: ensureSettings(game) -> settings ; saveSettings(game, patch) (merges, persists, emits 'settings:change')
 const KEY = 'tof.settings.v1';
-export const DEFAULT_SETTINGS = { master: 0.8, music: 0.6, sfx: 0.8, quality: 'high', mouseSensitivity: 1, hints: true, stats: true, fps: 'auto' };
+export const DEFAULT_SETTINGS = { master: 0.8, music: 0.6, sfx: 0.8, quality: 'high', mouseSensitivity: 1, hints: true, invertY: false, stats: true, fps: 'auto' };
 
 export function ensureSettings(game) {
   if (game.settings) return game.settings;
