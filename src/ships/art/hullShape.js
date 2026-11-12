@@ -92,7 +92,11 @@ export class HullShape {
     const ds = b.sub(a), dy = d.sub(c);
     const n = new THREE.Vector3().crossVectors(ds, dy);
     if (n.lengthSq() < 1e-12) n.set(side, 0, 0); n.normalize();
-    if (n.x * side < 0) n.negate();
+    // outward test: athwartships along the sides, but forward at the bluff bow, where the planking turns in to the
+    // stem and n.x is close to zero (its sign alone flipped the first strakes inward: back-face culled, a gap each
+    // side of the stem)
+    const fwd = s < 0.12 ? 3 * (1 - s / 0.12) : 0;
+    if (n.x * side - n.z * fwd < 0) n.negate();
     return { n, ds: ds.normalize(), dy: dy.normalize() };
   }
   // find s for a given z at height y (bisection)
