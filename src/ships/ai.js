@@ -16,6 +16,8 @@
 //   PERSONA[role]                        role personality (courage, strike/flee thresholds, preferred range, tactics)
 //   controller.morale                    0..~1.2 current fighting will (hull, crew ratio vs foe, sails, courage)
 //   controller.fearless                  bool: never flees/strikes (test bots)
+//   Flight and surrender: a pirate flees only when holed (hull < fleeHull) or cut down (crew < fleeCrew), never on
+//     the odds alone; a fleeing warship or pirate kept caught for CAUGHT_S seconds strikes (_maybeStrike).
 //   controller.guardOf                   Ship this AI escorts (convoys, combat.spawnConvoy): keeps station on its
 //                                        quarter and engages whoever attacks it; the charge lists them in ship.guards.
 //                                        A guarded merchant fights alongside its escort instead of fleeing (until hurt).
@@ -38,13 +40,16 @@ const NO_GO = 0.85;            // rad off the wind (~49°) — closest sensible 
 const SCAN_RANGE = { merchant: 650, patrol: 1000, pirate: 1100, hunter: 1500 };
 // a fleeing merchant only calms down beyond SCAN_RANGE × MERCHANT_CLEAR, then avoids its pursuer for MERCHANT_WARY_S s
 const MERCHANT_CLEAR = 2.2, MERCHANT_WARY_S = 60;
+// a fleeing warship or pirate that her pursuer keeps caught (see _maybeStrike) for this long strikes her colours
+const CAUGHT_S = 40;
 const PROBES = [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1, 1.5, -1.5, 2.0, -2.0, 2.6, -2.6, Math.PI];
 
 export const PERSONA = {
   merchant: { courage: 0.15, strikeAt: 0.8, fleeHull: 1, fleeCrew: 1, fleeOdds: 99, rangeK: 0.3 },
   patrol:   { courage: 0.75, strikeAt: 0.5, fleeHull: 0.25, fleeCrew: 0.25, fleeOdds: 0.3, rangeK: 0.3, windward: true },
   hunter:   { courage: 0.85, strikeAt: 0.45, fleeHull: 0.2, fleeCrew: 0.2, fleeOdds: 0.25, rangeK: 0.33, windward: true },
-  pirate:   { courage: 1.0, strikeAt: 0.45, fleeHull: 0.3, fleeCrew: 0.2, fleeOdds: 0.3, minStrikeHull: 0.3, rangeK: 0.25, closer: true },
+  // pirates never run from the odds alone (fleeOdds 0, 2026-11-12): they fight until badly holed or cut down
+  pirate:   { courage: 1.0, strikeAt: 0.45, fleeHull: 0.3, fleeCrew: 0.2, fleeOdds: 0, minStrikeHull: 0.3, rangeK: 0.25, closer: true },
 };
 
 const strength = fightStrength;   // src/data/seaZones.js (same formula as the HUD's threat pill)
@@ -232,15 +237,21 @@ export class AIController {
     const s = this.ship, t = this.target, combat = this.game.combat;
     if (!t || s.isPlayer) return;
     const d = Math.hypot(t.position.x - s.position.x, t.position.z - s.position.z);
-    if (d > 380) return;                                     // nobody close enough to strike to
-    const caught = d < 140 || (d < 300 && t.speed >= s.speed * 0.9);
+    const fleeing = this.state === 'flee', warship = this.role !== 'merchant';
+    // a fleeing warship gives up to a pursuer a little farther off than a merchant does (stern chases used to never end)
+    const reach = fleeing && warship ? 1.4 : 1;
+    if (d > 380 * reach) { this._caughtT = Math.max(0, (this._caughtT || 0) - dt); return; }   // nobody close enough to strike to
+    const caught = d < 140 * reach || (d < 300 * reach && t.speed >= s.speed * 0.9);
     const will = this.morale, P = this.persona;
-    if (P.minStrikeHull && s.hull / s.hullMax > P.minStrikeHull) return;   // pirates fight on until badly holed
+    // pirates fight on until badly holed; once they run, the fight is already given up
+    if (P.minStrikeHull && !fleeing && s.hull / s.hullMax > P.minStrikeHull) return;
     // a long chase wears the crew down: merchants lose heart quickest
-    if (this.state === 'flee' && d < 350) this._chaseT = (this._chaseT || 0) + dt * (this.role === 'merchant' ? 1 : 0.4);
+    if (fleeing && d < 350 * reach) this._chaseT = (this._chaseT || 0) + dt * (warship ? 0.8 : 1);
     const tired = Math.min(0.25, (this._chaseT || 0) / 300);
+    // caught and held: no escape left, whatever the state of the hull
+    if (fleeing && warship) this._caughtT = Math.max(0, (this._caughtT || 0) + (caught ? dt : -dt));
     // fleeing and caught: strike below the role's threshold; still fighting: only when the will is broken
-    if ((this.state === 'flee' && caught && will < P.strikeAt + tired) || will < P.strikeAt * 0.7) combat.strike(s);
+    if ((fleeing && caught && will < P.strikeAt + tired) || will < P.strikeAt * 0.7 || (this._caughtT || 0) > CAUGHT_S) combat.strike(s);
   }
 
   // ------------------------------------------------------------- behaviours
