@@ -16,7 +16,8 @@
 //   &pos=x,y,z&look=x,y,z overrides the camera (ship-local metres: x starboard, y up, z aft).
 //   &cam=profile: orthographic starboard elevation, whole hull, on white with no sea (reference picture for drawings);
 //   &yards=85 swings the square yards into the plane of the picture, as on a sail plan.
-//   window.__labReady turns true once the image is stable; window.__labInfo = { tris, farTris, sailTris, verts }.
+//   window.__labReady turns true once the image is stable; window.__labInfo = { tris, farTris, sailTris, verts };
+//   window.__lab = { model, scene, camera, renderer } for debugging from the console.
 //   Captures: node tools/shiplab-shot.mjs <folder> <type> [cam…]
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -68,8 +69,10 @@ if (profile) {
   const b = model.group.children[0].geometry.boundingBox, mz = L * 0.1, my = L * 0.08;
   const w = b.max.z - b.min.z + 2 * mz, h = b.max.y - b.min.y + 2 * my, k = Math.max(w / innerWidth, h / innerHeight);
   const cy = (b.max.y + b.min.y) / 2, cz = (b.max.z + b.min.z) / 2;
-  camera = new THREE.OrthographicCamera(-k * innerWidth / 2, k * innerWidth / 2, k * innerHeight / 2, -k * innerHeight / 2, 1, L * 20);
-  camera.position.set(L * 5, cy, cz); camera.lookAt(0, cy, cz);
+  camera = new THREE.OrthographicCamera(-k * innerWidth / 2, k * innerWidth / 2, k * innerHeight / 2, -k * innerHeight / 2, 1, Math.max(400, L * 20));
+  // 200 m off: past the hull shader's rigging LOD (ratlines 55 m, running rigging 120 m), so every type shows
+  // the same standing rigging only
+  camera.position.set(200, cy, cz); camera.lookAt(0, cy, cz);
   for (const o of model.group.children) if (o.isPoints || o.material?.transparent && o.renderOrder === 2) o.visible = false;   // lantern glows, foam skirt
 }
 
@@ -91,7 +94,7 @@ const info = {
   verts: model.group.children[0].geometry.attributes.position.count,
 };
 document.getElementById('lbl').textContent = q.get('label') === '0' ? '' : `${type} — ${info.tris} tris (far ${info.farTris}), sails ${info.sailTris}, ${info.verts} verts`;
-window.__labInfo = info;
+window.__labInfo = info; window.__lab = { model, scene, camera, renderer };
 let n = 0;
 renderer.setAnimationLoop(() => { renderer.render(scene, camera); if (++n === 4) { window.__labReady = true; renderer.setAnimationLoop(null); } });
 </script>
