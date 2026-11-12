@@ -73,7 +73,6 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
   const nM = d.masts.length;
   // mast shot away at heavy sail damage: one seeded mast loses its upper masts
   const fallIdx = Math.floor(rnd() * nM);
-  const fine = !!d.fine;   // fine-detail pass: round tops, deadeyes and chain plates, parrels, blocks, crowsfeet, sprit topmast
 
   const sail = (c) => { const k = 0.94 + rnd() * 0.08; return C(sailColor).multiplyScalar(k); };
 
@@ -95,7 +94,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
   // jack staff at bowsprit end
   const jackBase = (hasJibboom ? bsTip : bsTip).clone();
   info.jackHoist = jackBase.clone().add(V3(0, 2.0 + L * 0.03, 0));
-  if (fine && d.spritsail) {
+  if (d.spritsail) {
     // sprit topmast stepped on a knee at the bowsprit end, with its little round top; the jack flies from its head
     const hS = L * 0.11, rS = rB * 0.5, top = bsTip.clone().add(V3(0, hS * 0.36, 0)), head = bsTip.clone().add(V3(0, hS, 0));
     gb.add(G.box, trs(bsTip.x, bsTip.y + 0.25, bsTip.z + 0.3, 0.6, 0, 0, rB * 1.1, 0.9, 0.28), { color: sparDark, surf: SURF.wood });
@@ -109,11 +108,13 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
     for (const sx of [-1, 1]) gb.line(yc.clone().add(V3(sx * wS * 0.48, 0, 0)), head, 0.018, hemp, SURF.run, 3);
     info.jackHoist = head.clone().add(V3(0, 0.15, 0));
   } else gb.line(jackBase, info.jackHoist, 0.05, sparDark, SURF.wood, 4);
-  if (fine && info.headTip) {
+  if (info.headTip) {
     // gammoning: the lashings that hold the bowsprit down on the knee of the head
-    for (const t of [0.2, 0.25]) {
+    // (kept abaft the tip of the knee; on a low head the lashing is only the turns round the spar)
+    const tMax = Math.min(0.3, (bsStart.z - info.headTip.z - 0.5) / (Math.cos(bs.angle) * bsLen));
+    for (const t of [tMax * 0.78, tMax]) {
       const a = bsStart.clone().addScaledVector(bsDir, bsLen * t), b = V3(0, Math.min(a.y - 0.8, info.headTip.y - 0.7), a.z + 0.15);
-      for (const sx of [-1, 1]) gb.line(a.clone().add(V3(sx * rB * 0.9, 0, 0)), b.clone().add(V3(sx * 0.17, 0, 0)), 0.07, tarRope, SURF.rope, 4);
+      if (a.y - b.y < 2.2) for (const sx of [-1, 1]) gb.line(a.clone().add(V3(sx * rB * 0.9, 0, 0)), b.clone().add(V3(sx * 0.17, 0, 0)), 0.07, tarRope, SURF.rope, 4);
       gb.add(G.cylC, basisMatrix(a, V3(1, 0, 0), bsDir, V3().crossVectors(V3(1, 0, 0), bsDir), rB * 1.02, 0.28, rB * 1.02), { color: tarRope, surf: SURF.rope, lod: 1 });
     }
   }
@@ -145,15 +146,12 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
       // top (platform)
       const tp = at(yLT - 0.9);
       const tw = Math.max(1.6, B * 0.38), tl = tw * 0.75;
-      if (fine) {
-        // round top on trestle trees and crosstrees, with a raised rim
-        gb.add(G.disc, trs(tp.x, tp.y, tp.z + tl * 0.1, m.rake, 0, 0, tw * 0.52, 0.12, tl * 0.66), { color: spar, surf: SURF.wood, worldUV: 'auto', ao: (p, n) => n.y < 0 ? 0.55 : 1, lod: 0 });
-        gb.add(G.tor, trs(tp.x, tp.y + 0.08, tp.z + tl * 0.1, Math.PI / 2 + m.rake, 0, 0, tw * 0.5, tl * 0.64, 1.3), { color: sparDark, surf: SURF.wood, lod: 1 });
-        for (const sx of [-1, 1]) gb.add(G.box, trs(sx * r * 1.15, tp.y - 0.16, tp.z + tl * 0.1, m.rake, 0, 0, 0.14, 0.22, tl * 1.2), { color: sparDark, surf: SURF.wood, lod: 1 });
-        for (const k of [-1, 1]) gb.add(G.box, trs(0, tp.y - 0.1, tp.z + tl * 0.1 + k * tl * 0.3, m.rake, 0, 0, tw * 0.94, 0.12, 0.14), { color: sparDark, surf: SURF.wood, lod: 1 });
-        M.rim = (a) => V3(Math.sin(a) * tw * 0.5, tp.y + 0.1, tp.z + tl * 0.1 - Math.cos(a) * tl * 0.64);
-      } else
-      gb.add(G.box, trs(tp.x, tp.y, tp.z + tl * 0.1, m.rake, 0, 0, tw, 0.14, tl), { color: spar, surf: SURF.wood, worldUV: 'auto', ao: (p, n) => n.y < 0 ? 0.55 : 1 });
+      // round top on trestle trees and crosstrees, with a raised rim
+      gb.add(G.disc, trs(tp.x, tp.y, tp.z + tl * 0.1, m.rake, 0, 0, tw * 0.52, 0.12, tl * 0.66), { color: spar, surf: SURF.wood, worldUV: 'auto', ao: (p, n) => n.y < 0 ? 0.55 : 1, lod: 0 });
+      gb.add(G.tor, trs(tp.x, tp.y + 0.08, tp.z + tl * 0.1, Math.PI / 2 + m.rake, 0, 0, tw * 0.5, tl * 0.64, 1.3), { color: sparDark, surf: SURF.wood, lod: 1 });
+      for (const sx of [-1, 1]) gb.add(G.box, trs(sx * r * 1.15, tp.y - 0.16, tp.z + tl * 0.1, m.rake, 0, 0, 0.14, 0.22, tl * 1.2), { color: sparDark, surf: SURF.wood, lod: 1 });
+      for (const k of [-1, 1]) gb.add(G.box, trs(0, tp.y - 0.1, tp.z + tl * 0.1 + k * tl * 0.3, m.rake, 0, 0, tw * 0.94, 0.12, 0.14), { color: sparDark, surf: SURF.wood, lod: 1 });
+      M.rim = (a) => V3(Math.sin(a) * tw * 0.5, tp.y + 0.1, tp.z + tl * 0.1 - Math.cos(a) * tl * 0.64);
       // top rail (galleon style round top wall for galleon, light rail otherwise)
       if (d.head === 'beak') gb.add(G.cyl, trs(tp.x, tp.y + 0.45, tp.z, m.rake, 0, 0, tw * 0.5, 0.8, tl * 0.6), { color: C('#5a2a1a'), surf: SURF.paint });
       else {
@@ -196,14 +194,12 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
           const pts = []; for (let k = 0; k <= 4; k++) { const t = k / 4; pts.push(c.clone().add(V3(sx * yd.w * 0.48 * t, -0.65 - Math.sin(t * Math.PI) * 0.15, 0.25))); }
           for (let k = 0; k < 4; k++) gb.line(pts[k], pts[k + 1], 0.025, tarRope, SURF.run, 3, 1, yd.brk);
         }
-        if (fine) {
-          // blocks at the yardarms and the quarters (they swing with the yard)
-          for (const sx of [-1, 1]) for (const t of [0.485, 0.12]) gb.add(G.box, trs(c.x + sx * yd.w * t, c.y - rr - 0.1, c.z, 0, 0, 0, 0.1, 0.2, 0.13), { color: sparDark, surf: SURF.wood, brk: yd.brk, lod: 1 });
-        }
+        // blocks at the yardarms and the quarters (they swing with the yard)
+        for (const sx of [-1, 1]) for (const t of [0.485, 0.12]) gb.add(G.box, trs(c.x + sx * yd.w * t, c.y - rr - 0.1, c.z, 0, 0, 0, 0.1, 0.2, 0.13), { color: sparDark, surf: SURF.wood, brk: yd.brk, lod: 1 });
         gb.curPiv = [-1, 0];
         // lifts: yardarm -> mast head above
         const liftTo = yd.group === 0 && yd.y < yLT ? M.headL : yd.y < yTT ? M.headT : M.headG;
-        if (fine) {
+        {
           // parrel (beads round the mast) and the tye the yard hangs from
           const mr = yd.group === 0 && yd.y < yLT ? r * 0.9 : yd.y < yTT ? r * 0.6 : r * 0.36;
           gb.add(G.tor, trs(c.x, c.y, c.z + rr + mr * 0.9, Math.PI / 2 + m.rake, 0, 0, mr * 1.5, mr * 1.5, 2.4), { color: black, surf: SURF.rope, brk: yd.brk, lod: 1 });
@@ -318,7 +314,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
     gb.line(a.headT, b.headL.clone().add(V3(0, 0.3, 0)), 0.045, tarRope, SURF.rope, 3, 1, 10.95);
     if (a.headG !== a.headT && b.headG !== b.headT) gb.line(a.headG, b.headT, 0.03, tarRope, SURF.rope, 3, 1, 10.9);
   }
-  if (fine) {
+  {
     // crowsfeet: fans of thin lines from the fore rim of each top to a euphroe block on the stay below it
     masts.forEach((a, i) => {
       if (!a.rim) return;
@@ -376,7 +372,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
       for (let k = 0; k < n; k++) {
         const t = n === 1 ? 0.5 : k / (n - 1);
         const p = ch.mid.clone().addScaledVector(ch.dir, (t - 0.55) * ch.len * 0.9);
-        if (fine) {
+        {
           // pair of deadeyes laced by a three-part lanyard; chain plate from the channel down to the wale
           const X = V3(side, 0, 0), dz = V3().crossVectors(V3(0, 1, 0), X);
           for (const dy of [0.14, 0.62]) gb.add(G.cyl6, basisMatrix(p.clone().add(V3(0, dy, 0)), V3(0, 1, 0), X, dz, 0.11, 0.07, 0.11), { color: C('#2a1c12'), surf: SURF.wood, lod: 1 });
@@ -384,11 +380,6 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
           const sh = H.sAtZ(p.z, ch.y - 0.95), q = H.point(sh, ch.y - 0.95, side); q.z += (p.z - head.z) * 0.06;
           gb.line(p.clone().add(V3(0, 0.05, 0)), q, 0.024, iron, SURF.iron, 3);
           bot.push(p.clone().add(V3(0, 0.72, 0)));
-        } else {
-        // deadeyes
-        gb.add(G.sph, trs(p.x, p.y + 0.35, p.z, 0, 0, 0, 0.06, 0.13, 0.12), { color: C('#2a1c12'), surf: SURF.wood });
-        gb.line(p.clone(), p.clone().add(V3(0, 0.35, 0)), 0.03, black, SURF.rope, 3);
-        bot.push(p.clone().add(V3(0, 0.5, 0)));
         }
         topP.push(head.clone().add(V3(side * (tw ? Math.min(0.5, tw * 0.12) : 0.15), 0, (t - 0.5) * 0.6)));
       }
@@ -422,7 +413,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
         }
         const bstay = ch.mid.clone().addScaledVector(ch.dir, ch.len * 0.48).add(V3(0, 0.5, 0));
         gb.line(M.headT, bstay, 0.04, tarRope, SURF.rope, 3, 1, 10.95);
-        if (fine) gb.line(M.headT.clone().add(V3(0, -0.3, 0)), bstay.clone().addScaledVector(ch.dir, -0.45), 0.035, tarRope, SURF.rope, 3, 1, 10.95);
+        gb.line(M.headT.clone().add(V3(0, -0.3, 0)), bstay.clone().addScaledVector(ch.dir, -0.45), 0.035, tarRope, SURF.rope, 3, 1, 10.95);
         if (M.headG !== M.headT) gb.line(M.headG, bstay.clone().addScaledVector(ch.dir, 0.3), 0.03, tarRope, SURF.rope, 3, 1, 10.9);
       }
     }

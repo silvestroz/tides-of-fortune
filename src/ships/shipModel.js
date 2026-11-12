@@ -75,10 +75,6 @@ for (const [id, t] of Object.entries(SHIP_TYPES)) {
   SHIP_SPECS[id].navDraft = t.draft; SHIP_SPECS[id].base = t.base;
 }
 
-// types built with the fine-detail pass (art/hullFine.js and the `fine` branches of art/rig.js)
-const FINE_TYPES = new Set(['frigate']);
-for (const id of Object.keys(SHIP_DESIGNS)) SHIP_DESIGNS[id].fine = FINE_TYPES.has(id);
-
 // hull geometry LOD switch distances (metres, scaled by the camera's zoom): far beyond LOD_FAR_M, back to the
 // full model under LOD_NEAR_M. The shader already flattens the hull's fine detail from 120 to 250 m (farF).
 // Ultra spends its spare GPU budget here: full-detail hulls (guns, rails, beads, ratlines) stay up

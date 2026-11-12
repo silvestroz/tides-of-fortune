@@ -1,4 +1,4 @@
-// Fine hull detail for designs flagged `fine` (called from hull.js): pieces a 1660–1680 ship really carried, each
+// Fine hull detail (called from hull.js): pieces a 1660–1680 ship really carried, each
 // shaped by what it does. Everything small is tagged for the near LOD only; the silhouette pieces (rudder, quarter
 // galleries, anchors, boat) stay in both.
 //   fineRudder(F, zT)             one-piece blade with a hance, sternpost, pintle straps
@@ -181,14 +181,15 @@ export function fineSide(F, { ports, arcTot, wales, so }) {
       }
       // hawse holes with their bolsters, each side of the stem
       for (const k of [0, 1]) {
-        const s = 0.022 + k * 0.016, y = H.deckY(s) - 0.35 - H.fb * 0.06, p = H.point(s, y, side), f = H.frame(s, y, side);
-        gb.add(G.cyl, basisMatrix(p.clone().addScaledVector(f.n, 0.02), f.ds, f.n, V3().crossVectors(f.ds, f.n), 0.2, 0.08, 0.2), { color: c.oakDark, surf: SURF.wood });
-        gb.add(G.cyl, basisMatrix(p.clone().addScaledVector(f.n, 0.045), f.ds, f.n, V3().crossVectors(f.ds, f.n), 0.12, 0.06, 0.12), { color: C('#0a0705'), surf: SURF.tar });
+        const s = 0.022 + k * (0.01 + 0.25 / L), y = H.deckY(s) - 0.35 - H.fb * 0.06, p = H.point(s, y, side), f = H.frame(s, y, side);
+        const hr = 0.09 + L * 0.0026;
+        gb.add(G.cyl, basisMatrix(p.clone().addScaledVector(f.n, 0.02), f.ds, f.n, V3().crossVectors(f.ds, f.n), hr, 0.08, hr), { color: c.oakDark, surf: SURF.wood });
+        gb.add(G.cyl, basisMatrix(p.clone().addScaledVector(f.n, 0.045), f.ds, f.n, V3().crossVectors(f.ds, f.n), hr * 0.6, 0.06, hr * 0.6), { color: C('#0a0705'), surf: SURF.tar });
       }
       // swivel guns on the rails of the upper works
       const sw = [];
       if (d.castles.fc) sw.push(d.castles.fc.s * 0.45);
-      if (d.castles.poop) sw.push(d.castles.poop.s + 0.03, 0.965); else if (d.castles.qd) sw.push(d.castles.qd.s + 0.1);
+      if (d.castles.poop) sw.push(d.castles.poop.s + 0.03, 0.965); else if (d.castles.qd) sw.push(d.castles.qd.s + 0.1); else sw.push(0.9);
       for (const s of sw) {
         const y = H.yTop(s), p = hull(s, y, side, -0.07), f = H.frame(s, y - 0.1, side);
         const dir = f.n.clone().setY(0.12).normalize(), bx = V3().crossVectors(UP, dir).normalize();
@@ -198,7 +199,6 @@ export function fineSide(F, { ports, arcTot, wales, so }) {
       }
     }
   });
-  void L;
 }
 
 // strap hinges + lanyard of an open gunport lid
@@ -290,7 +290,7 @@ export function fineAnchors(F) {
       gb.line(p.clone().add(V3(0, -0.85, 0)), p.clone().addScaledVector(dir, reach * 0.62).add(V3(0, -0.12, 0)), 0.09, c.oakDark, SURF.wood, 4);   // supporting knee
     });
     // anchor hanging from the cathead: shank down, arms athwartships, wooden stock fore and aft
-    const as = 0.55 + L * 0.03, top = end.clone().add(V3(0, -0.45, 0)), crown = top.clone().add(V3(0, -as * 1.35, 0));
+    const as = Math.min(0.55 + L * 0.03, (end.y - 1.4) / 1.35), top = end.clone().add(V3(0, -0.45, 0)), crown = top.clone().add(V3(0, -as * 1.35, 0));
     gb.line(end.clone().add(V3(0, -0.1, 0)), top.clone().add(V3(0, 0.12, 0)), 0.035, tarRope, SURF.rope, 3);
     gb.add(RING, trs(top.x, top.y + 0.02, top.z, 0, 0, 0, 0.13 * as, 0.13 * as, 0.16 * as), { color: c.iron, surf: SURF.iron });
     gb.line(top.clone().add(V3(0, -0.1, 0)), crown, 0.055 * as, c.iron, SURF.iron, 4, 1.25);
