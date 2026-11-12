@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { SURF, trs, basisMatrix } from './builder.js';
 import { mulberry32, clamp01, smooth } from './noise.js';
+import { BALUSTER, fineRudder, fineQuarterGalleries, fineSternWindow, fineSide, finePortLid, fineGunTackle, fineHead, fineLion, fineAnchors, fineDeck, fineBoat } from './hullFine.js';
 
 const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const C = (h) => new THREE.Color(h);
@@ -52,6 +53,8 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
   const deckC = C('#a27a4a');
   const glass = C('#ffcf7a');
   const iron = C('#2a2a2c');
+  // fine-detail pass (hullFine.js) for designs flagged `fine`
+  const F = d.fine ? { gb, H, d, info, rnd, G, BARREL, c: { oak, oakDark, tar, bottom, gold, trim, paint, iron, glass, ochre } } : null;
 
   // ---------------- s sampling (dense near castle breaks & ends)
   const breaks = [];
@@ -327,6 +330,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
           const lc = bandColorAt(s, yc);
           gb.add(G.box, basisMatrix(c.clone().addScaledVector(lidN, 0.025), tt, lidUp, lidN, sz * 0.98, sz * 0.92, 0.05), { color: lc, surf: lc === oak ? SURF.wood : SURF.paint, brk: 0.5 + rnd() * 0.5, worldUV: 'auto' });
           gb.add(G.box, basisMatrix(c.clone().addScaledVector(lidN, -0.025), tt, lidUp, lidN, sz * 0.92, sz * 0.86, 0.04), { color: C('#7a2216'), surf: SURF.paint, brk: 0.5 + rnd() * 0.5, ao: () => 0.8 });
+          if (F) finePortLid(F, c, tt, lidUp, lidN, sz, hinge, up, n);
         }
         // cannon barrel
         const len = 1.1 + sz * 1.3, r = 0.09 + sz * 0.1;
@@ -342,6 +346,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
             const wc = car.clone().addScaledVector(bx, wx * r * 1.75).addScaledVector(out, wz * len * 0.18).add(V3(0, -r * 0.9, 0));
             gb.add(G.cyl, basisMatrix(wc, UP, bx, out, r * 0.7, 0.08, r * 0.7), { color: C('#4a2c14'), surf: SURF.wood, lod: 1 });
           }
+          if (F) fineGunTackle(F, car, out, bx, r, len, p, tt, sz);
         }
         info.ports[side < 0 ? 'port' : 'starboard'].push({ pos: muzzle.clone().addScaledVector(out, 0.08), dir: out.clone() });
       }
@@ -366,13 +371,16 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
         const x = -hwT + 2 * hwT * (i + 0.5) / n;
         gb.add(G.box, trs(x, yc, zc, -0.1, 0, 0, wW, wH, 0.04), { color: glass, surf: SURF.glass });
         // mullions
-        gb.add(G.box, trs(x, yc, zc + 0.03, -0.1, 0, 0, 0.04, wH, 0.03), { color: oakDark, surf: SURF.wood });
-        gb.add(G.box, trs(x, yc, zc + 0.03, -0.1, 0, 0, wW, 0.04, 0.03), { color: oakDark, surf: SURF.wood });
+        if (F) fineSternWindow(F, x, yc, zc, wW, wH);
+        else {
+          gb.add(G.box, trs(x, yc, zc + 0.03, -0.1, 0, 0, 0.04, wH, 0.03), { color: oakDark, surf: SURF.wood });
+          gb.add(G.box, trs(x, yc, zc + 0.03, -0.1, 0, 0, wW, 0.04, 0.03), { color: oakDark, surf: SURF.wood });
+        }
         // gilded frame
         gb.add(G.box, trs(x, yc + wH / 2 + 0.05, zc + 0.04, -0.1, 0, 0, wW + 0.16, 0.08, 0.06), { color: gold, surf: SURF.gold });
         gb.add(G.box, trs(x, yc - wH / 2 - 0.05, zc + 0.04, -0.1, 0, 0, wW + 0.16, 0.08, 0.06), { color: gold, surf: SURF.gold });
         // arched pediment over upper windows
-        if (r === rowsN - 1) gb.add(G.tor, trs(x, yc + wH / 2 + 0.05, zc + 0.05, -0.1, 0, 0, wW * 0.55, wW * 0.4, 0.4), { color: gold, surf: SURF.gold });
+        if (r === rowsN - 1 || F) gb.add(G.tor, trs(x, yc + wH / 2 + 0.05, zc + 0.05, -0.1, 0, 0, wW * 0.55, wW * 0.4, 0.4), { color: gold, surf: SURF.gold });
       }
       // pilasters between windows (gold)
       for (let i = 0; i <= n; i++) {
@@ -386,7 +394,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
         const gz = zc + 0.9, gy = yc - rowH / 2 - 0.05, gw = hwT * 2.0;
         gb.add(G.box, trs(0, gy, gz - 0.42, 0, 0, 0, gw, 0.16, 1.1), { color: oakDark, surf: SURF.wood, worldUV: 'auto', ao: (p, nn) => nn.y < 0 ? 0.55 : 1 });
         const nb = Math.round(gw / 0.25);
-        for (let k = 0; k <= nb; k++) gb.add(G.cyl6, trs(-gw / 2 + gw * k / nb, gy + 0.3, gz + 0.08, 0, 0, 0, 0.035, 0.5, 0.035), { color: gold, surf: SURF.gold, brk: 0.4 + rnd() * 0.6 });
+        for (let k = 0; k <= nb; k++) gb.add(F ? BALUSTER : G.cyl6, F ? trs(-gw / 2 + gw * k / nb, gy + 0.06, gz + 0.08, 0, 0, 0, 0.1, 0.48, 0.1) : trs(-gw / 2 + gw * k / nb, gy + 0.3, gz + 0.08, 0, 0, 0, 0.035, 0.5, 0.035), { color: gold, surf: SURF.gold, brk: 0.4 + rnd() * 0.6, lod: 1 });
         gb.add(G.box, trs(0, gy + 0.56, gz + 0.08, 0, 0, 0, gw, 0.07, 0.1), { color: gold, surf: SURF.gold });
         gb.add(G.box, trs(0, gy + rowH * 0.95, gz - 0.42, 0, 0, 0, gw * 1.02, 0.1, 1.15), { color: gold, surf: SURF.gold });
         for (const sx of [-1, 1]) gb.add(G.box, trs(sx * gw / 2, gy + rowH * 0.47, gz - 0.42, 0, 0, 0, 0.12, rowH * 0.95, 1.1), { color: trim, surf: SURF.paint, worldUV: 'auto' });
@@ -451,7 +459,10 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
   }
 
   // ---------------- quarter galleries (projecting box with window row, gilded drop & domed cap)
-  if (st.quarterGalleries) {
+  if (st.quarterGalleries && F) {
+    const yBase = Math.max(d.transomY + 0.25, H.deckY(1) - 0.2), rowsN = st.windowRows.length;
+    fineQuarterGalleries(F, { y0: yBase - 0.05, h: Math.min(2.7, rowsN * Math.min(1.25, (H.yTop(1) - 0.5 - yBase) / rowsN) + 0.05), zT });
+  } else if (st.quarterGalleries) {
     for (const side of [-1, 1]) {
       const s = 0.935, y0 = Math.max(d.transomY + 0.2, H.deckLevel(s) - 0.9), y1 = Math.min(H.yTop(s) - 0.15, y0 + 2.3);
       const h = y1 - y0, ym = (y0 + y1) / 2; const p = H.point(s, ym, side);
@@ -504,7 +515,8 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
   // ---------------- rudder & stern post
   {
     const yb = H.yBot(1), yt = Math.max(H.deckY(1) - 0.3, d.transomY);
-    const n = 6;
+    const n = F ? 0 : 6;
+    if (F) fineRudder(F, zT);
     for (let k = 0; k < n; k++) {
       const y0 = yb + (yt - yb) * k / n, y1 = yb + (yt - yb) * (k + 1) / n, ym = (y0 + y1) / 2;
       const w = k === 0 ? 1.3 : 1.05 - k * 0.08;
@@ -538,7 +550,8 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     gb.add(g, m, { color: oakDark, surf: SURF.wood, worldUV: 'auto' });
     g.dispose();
     // head rails (curved gold/wood rails from bow to knee tip)
-    for (const side of [-1, 1]) {
+    if (F) fineHead(F, { dly, tipY, tipZ, headLen });
+    else for (const side of [-1, 1]) {
       for (let r = 0; r < 2; r++) {
         const p = [];
         for (let i = 0; i <= 8; i++) {
@@ -560,6 +573,8 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     if (d.head === 'scroll') {
       gb.add(G.tor, trs(0, fp.y, fp.z + 0.1, 0, Math.PI / 2, 0, fs * 0.35, fs * 0.35, fs * 0.9), { color: gold, surf: SURF.gold });
       gb.add(G.sphLo, trs(0, fp.y + fs * 0.1, fp.z, 0, 0, 0, fs * 0.16, fs * 0.16, fs * 0.16), { color: gold, surf: SURF.gold });
+    } else if (F && d.head === 'lion') {
+      fineLion(F, fp, fs, gold);
     } else if (d.head === 'lion' || d.head === 'beak') {
       const gcol = d.head === 'lion' ? gold : C('#c9a24a');
       // crouching lion: body, chest, head with mane, forepaws
@@ -585,7 +600,8 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
   }
 
   // ---------------- catheads + anchors
-  {
+  if (F) fineAnchors(F);
+  else {
     const s = 0.08, y = H.deckLevel(s) + 0.2;
     for (const side of [-1, 1]) {
       const p = H.point(s, y, side);
@@ -663,13 +679,14 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
   if (d.boat) {
     const s = d.castles.fc ? d.castles.fc.s + 0.13 : 0.35; const y = dl(s) + 0.45, z = zs(s);
     const bl = Math.min(L * 0.16, 6.5), bw = bl * 0.3;
+    if (F) fineBoat(F, y, z, bl, bw);
     const pts = [];
     for (let i = 0; i <= 8; i++) { const t = i / 8; pts.push(new THREE.Vector2(Math.sin(t * Math.PI * 0.5) * 1.0, -Math.cos(t * Math.PI * 0.5) * 1.0 + 1)); }
     const lg = new THREE.LatheGeometry(pts, 14);
-    gb.add(lg, trs(0, y + bw * 0.42, z, Math.PI, 0, 0, bw * 0.5, bw * 0.42, bl * 0.5), { color: C('#e2d3b0'), surf: SURF.paint, worldUV: 'auto', ao: (p, n) => n.y < 0 ? 0.6 : 1 });
-    gb.add(G.box, trs(0, y + bw * 0.42 + 0.02, z, 0, 0, 0, bw * 0.98, 0.06, bl * 0.97), { color: trim, surf: SURF.paint });
+    if (!F) gb.add(lg, trs(0, y + bw * 0.42, z, Math.PI, 0, 0, bw * 0.5, bw * 0.42, bl * 0.5), { color: C('#e2d3b0'), surf: SURF.paint, worldUV: 'auto', ao: (p, n) => n.y < 0 ? 0.6 : 1 });
+    if (!F) gb.add(G.box, trs(0, y + bw * 0.42 + 0.02, z, 0, 0, 0, bw * 0.98, 0.06, bl * 0.97), { color: trim, surf: SURF.paint });
     lg.dispose();
-    for (const sz of [-1, 1]) gb.add(G.box, trs(0, y - 0.2, z + sz * bl * 0.3, 0, 0, 0, bw * 0.9, 0.4, 0.2), { color: oakDark, surf: SURF.wood });
+    if (!F) for (const sz of [-1, 1]) gb.add(G.box, trs(0, y - 0.2, z + sz * bl * 0.3, 0, 0, 0, bw * 0.9, 0.4, 0.2), { color: oakDark, surf: SURF.wood });
   }
   gb.defBrk = null;
   // belfry near forecastle break
@@ -701,6 +718,10 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
       gb.add(G.box, basisMatrix(p.clone().addScaledVector(f.n, out / 2), f.ds, UP, V3().crossVectors(f.ds, UP).normalize(), len, 0.1, out), { color: oakDark, surf: SURF.wood, worldUV: 'auto', ao: (pp, n) => n.y < 0 ? 0.6 : 1 });
       info.channels.push({ s, side, y, mid: p.clone().addScaledVector(f.n, out), len, dir: f.ds.clone() });
     }
+  }
+  if (F) {
+    fineDeck(F, { dl, zs, deckHalf, breaks: [d.castles.fc && [d.castles.fc.s, 1], d.castles.qd && [d.castles.qd.s, -1], d.castles.poop && [d.castles.poop.s, -1]].filter(Boolean) });
+    fineSide(F, { ports: portMarks, arcTot, wales, so });
   }
   // painted on first use (makeHullMaterial) — the towns' moored hulls never use it; getTypeGeo() shares it
   // between the nations of one type (it doesn't depend on the colours)
