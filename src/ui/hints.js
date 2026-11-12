@@ -59,7 +59,7 @@ export class Hints {
     // event triggers
     ev.on('player:sail', ({ step } = {}) => { if (step > 0) this.trigger('sail'); });
     ev.on('cannon:fire', ({ ship } = {}) => { if (ship && ship === game.player) this.trigger('guns'); });
-    ev.on('camera:mode', ({ mode, auto } = {}) => { if (auto && mode === 'tactical') this.trigger('camera'); });   // automatic combat view: C to recentre
+    ev.on('cannon:hit', ({ target, attacker } = {}) => { if (target === game.player || attacker === game.player) this.trigger('camera'); });   // first exchange of fire: the view is yours
     ev.on('boarding:end', ({ result } = {}) => { if (result === 'captured') this.trigger('fleet'); });
     for (const e of ['fortune:hire', 'fortune:item', 'treasure:piece', 'career:promote', 'lord:defeated']) ev.on(e, () => this.trigger('registry'));
     ev.on('ship:grounded', ({ ship } = {}) => { if (ship && ship === game.player) this.trigger('shoal'); });

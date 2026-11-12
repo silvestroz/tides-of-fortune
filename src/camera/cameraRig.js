@@ -1,4 +1,5 @@
-// Camera rig: chase, broadside and tactical views, automatic combat framing, showcase shots and paths.
+// Camera rig: chase, broadside and tactical views, showcase shots and paths. The player owns the view: nothing changes
+// the mode or recentres the orbit by itself (2026-11-12); only the staged shots (boarding, sinking…) take it over.
 // API: follow(ship), target (Vector3 the camera looks at — sky uses it to centre shadows),
 //      setShot({ position:[x,y,z], lookAt:[x,y,z], fov? }) for showcase scenes, update(dt).
 // Extended API:
@@ -13,11 +14,10 @@
 //        (x = starboard, y = up, z = astern; i.e. -z is toward the bow) so the move tracks a sailing ship.
 //   chaseShot({ yaw, pitch, dist, lookAhead })  convenience for showcase compositions: chase mode with fixed orbit
 //   lateUpdate(dt)       called by Game.step after ships move (keeps the camera locked to the rendered ship pose)
-//   frameShips(list|null) tactical view fits these ships' bounding sphere (smooth zoom); autoTactical (bool, default true)
+//   frameShips(list|null) tactical view fits these ships' bounding sphere (smooth zoom)
 //   engaged              bool — the player exchanges fire / is attacked (8 s hold); read by HUD, audio, autosave
-//   Combat: the tactical view switches on by itself in combat unless `settings.combatCam === 'manual'`
-//     (Options “Combat camera”); C leaves it for the chase view (recentred on the ship) until the engagement
-//     ends, C brings it back. 'camera:mode' { mode, auto } (auto = automatic switch).
+//   C cycles the views at any time, in combat too. 'camera:mode' { mode, auto } (auto: always false now, kept for
+//     the listeners).
 //   cinematic            bool — when true the chase cam uses slower, wider "documentary" smoothing
 // Camera never dips below ocean.getHeight + clearance. Uses real (unscaled) time for smoothing so time compression doesn't jerk it.
 import * as THREE from 'three';
@@ -25,7 +25,7 @@ import { wrapAngle } from '../core/constants.js';
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3();
 const MODES = ['chase', 'broadside', 'tactical'];
-const ENGAGE_HOLD = 8;      // s without a shot before the tactical view eases back to chase
+const ENGAGE_HOLD = 8;      // s without a shot before `engaged` drops
 const TACT_MAX_DIST = 3.4;  // tactical recoil cap, in units of (player length × 10) — see _late()
 
 // critically damped spring step (Game Programming Gems 4 "SmoothDamp"), scalar
@@ -61,7 +61,6 @@ export class CameraRig {
     this.orbitYaw = 0; this.orbitPitch = 0; this.zoom = 1;
     this._zoomS = 1; this._orbitYawS = 0; this._orbitPitchS = 0;
     this.cinematic = false;
-    this.autoTactical = true;   // switch chase→tactical on engagement (shots fired/taken, active attacker)
     this.frameList = null;
     this.baseFov = 52;
     // smoothed state
@@ -72,7 +71,6 @@ export class CameraRig {
     this.camYaw = 0;
     this._shake = 0; this._shakeT = 0;
     this._snap = true;
-    this._idleOrbitT = 0;
     this.path = null;
     // legacy compat: dist/height/yaw used by earlier code
     this.dist = 70; this.height = 26;
@@ -114,16 +112,6 @@ export class CameraRig {
     this.game.events?.emit('camera:mode', { mode: m, auto });
   }
   cycleMode() {
-    // in combat, C toggles combat view (tactical) ↔ view recentred behind the ship (chase), as the HUD's C pill says;
-    // leaving the combat view suspends it until the engagement ends (no automatic switch back).
-    // Out of combat: chase → broadside → overview.
-    if (this._engaged) {
-      this._autoSwitched = false;
-      if (this.mode === 'tactical') { this._userCancel = true; this.setMode('chase'); }
-      else { this._userCancel = false; this.setMode('tactical'); }
-      return;
-    }
-    this._autoSwitched = false;
     const i = MODES.indexOf(this.mode);
     this.setMode(MODES[(i + 1) % MODES.length]);
   }
@@ -139,20 +127,16 @@ export class CameraRig {
       if ((m.buttons & 2) && (m.dx || m.dy)) {
         this.orbitYaw = wrapAngle(this.orbitYaw - m.dx * 0.0055);
         this.orbitPitch = Math.max(-0.35, Math.min(0.9, this.orbitPitch + m.dy * 0.0035));
-        this._idleOrbitT = 0; this._holdOrbit = false;
+        this._holdOrbit = false;
         if (this.mode === 'broadside') {
           // dragging across the bow/stern flips the aimed side
           if (Math.abs(this.orbitYaw) > 0.9) { this.aimSide = this.aimSide === 'port' ? 'starboard' : 'port'; this.orbitYaw = 0; this._userSide = true; }
         }
       }
-      if (m.wheel) this.zoom = Math.max(0.35, Math.min(3.2, this.zoom * Math.pow(1.12, m.wheel)));
+      if (m.wheel) this.zoom = Math.max(0.55, Math.min(4.2, this.zoom * Math.pow(1.12, m.wheel)));
     }
-    // orbit drifts back behind the ship after a few seconds of no input (chase only)
-    if (!(m && (m.buttons & 2))) this._idleOrbitT += realDt;
-    if (this.mode === 'chase' && !this._holdOrbit && this._idleOrbitT > 4 && realDt > 0) {
-      const k = Math.min(1, realDt * 0.35);
-      this.orbitYaw += (0 - this.orbitYaw) * k; this.orbitPitch += (0 - this.orbitPitch) * k;
-    }
+    // the orbit stays where the player left it (no drift back behind the ship)
+    this._dragging = !!(m && (m.buttons & 2));
     this._autoMode(realDt);
     if (!this._lateHooked) this._late(dt);   // fallback if Game.step has no lateUpdate hook
   }
@@ -169,8 +153,9 @@ export class CameraRig {
     const s = this.ship, cam = g.camera, st = this._s, oc = g.ocean;
 
     this._zoomS += (this.zoom - this._zoomS) * Math.min(1, dts * 6);
-    this._orbitYawS = dampAngle(this._orbitYawS, this.orbitYaw, st, 'oyV', 0.12, dts);
-    this._orbitPitchS += (this.orbitPitch - this._orbitPitchS) * Math.min(1, dts * 10);
+    // while the right button is held the orbit follows the mouse directly (no trailing), then eases as before
+    if (this._dragging) { this._orbitYawS = this.orbitYaw; this._orbitPitchS = this.orbitPitch; st.oyV = 0; }
+    else { this._orbitYawS = dampAngle(this._orbitYawS, this.orbitYaw, st, 'oyV', 0.12, dts); this._orbitPitchS += (this.orbitPitch - this._orbitPitchS) * Math.min(1, dts * 10); }
     st.blend = Math.min(1, st.blend + dts * 1.2);
 
     const L = s.length || 30;
@@ -265,20 +250,22 @@ export class CameraRig {
       st.yaw = dampAngle(st.yaw, yawT, st, 'yawV', 0.9 * cin, dts);
       const yaw = st.yaw + this._orbitYawS;
       const z = this._zoomS;
-      const dist = (L * 2.8 + 28 + spdN * L * 0.35) * z;
-      const pitch = 0.24 + this._orbitPitchS + (z - 1) * 0.06;
+      // close behind the ship (2026-11-12: about half the former distance), a little higher so the sails don't
+      // hide the sea ahead; the wheel still pulls back to the old wide view and beyond
+      const dist = (L * 1.25 + 11 + spdN * L * 0.2) * z;
+      const pitch = 0.35 + this._orbitPitchS + (z - 1) * 0.06;
       const bx = Math.sin(yaw), bz = -Math.cos(yaw);
       // look-ahead in direction of motion (velocity, includes leeway)
-      const leadT = this._noLookAhead ? 0 : Math.min(L * 0.9, spd * 3.5);
+      const leadT = this._noLookAhead ? 0 : Math.min(L * 0.3, spd * 1.2);   // short lead: at this distance a long one pushes the hull under the helm bar
       st.lead = damp(st.lead, leadT, st, 'leadV', 1.2, dts);
       const vl = Math.hypot(s.velocity.x, s.velocity.z);
       const vx = vl > 0.3 ? s.velocity.x / vl : Math.sin(s.heading), vz = vl > 0.3 ? s.velocity.z / vl : -Math.cos(s.heading);
-      desiredLook.set(s.position.x + vx * st.lead, st.heave + L * 0.42, s.position.z + vz * st.lead);
+      desiredLook.set(s.position.x + vx * st.lead, st.heave + L * 0.24, s.position.z + vz * st.lead);   // aimed low on the masts: the hull clears the helm bar
       desiredPos.set(desiredLook.x - bx * Math.cos(pitch) * dist, st.heave + L * 0.12 + Math.sin(pitch) * dist, desiredLook.z - bz * Math.cos(pitch) * dist);
       // speed FOV breathing + gentle roll from turning and a share of the ship's roll
       fov = this.baseFov + spdN * 6 * (this.cinematic ? 0.5 : 1);
       rollTarget = -(s.yawRate || 0) * 0.22 + (s.roll || 0) * 0.12 * Math.cos(this._orbitYawS);
-      posSmooth = 0.32 * cin; lookSmooth = 0.16 * cin;
+      posSmooth = (this._dragging ? 0.06 : 0.32) * cin; lookSmooth = 0.16 * cin;
     }
 
     // blend between modes: soften smoothing while blending in
@@ -383,15 +370,8 @@ export class CameraRig {
     this.engaged = engaged;
     if (engaged !== this._engaged) {
       this._engaged = engaged;
-      if (!engaged) this._userCancel = false;
     }
-    // player setting “Combat camera: manual”: never switch by itself (C stays free); an automatic tactical
-    // view in progress hands control back as soon as the setting changes
-    const manual = this.game.settings?.combatCam === 'manual';
-    if (manual && this._autoSwitched && this.mode === 'tactical' && !this.frameList) { this._autoSwitched = false; this.setMode('chase'); }
-    if (!this.autoTactical || manual) return;
-    if (engaged && !this._userCancel && this.mode === 'chase') { this.setMode('tactical', { auto: true }); this._autoSwitched = true; }
-    else if (!engaged && this._autoSwitched && this.mode === 'tactical' && !this.frameList) { this.setMode('chase'); this._autoSwitched = false; }
+    // `engaged` is still read by the HUD, the audio and the autosave; the view itself never changes on its own
   }
   _isAttacker(o) {
     const me = this.ship;
