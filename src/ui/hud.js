@@ -342,14 +342,13 @@ export class HUD {
       this._set('aRepT', this.$.aRep, rep === 'wait' ? 'The ship must be stopped (under one knot): sails clewed up, she is losing way' : rep === 'on' ? 'Emergency repairs under way (R to suspend them; making sail or a broadside interrupts them)' : damaged ? 'Emergency repairs (R): heave to, work while stopped, reduced rate of fire' : 'Nothing to repair at sea', 'title');
       const bh0 = g.combat?.boardHint;
       this._set('aBo', this.$.aBoard, 'act a-board ' + (bh0 ? (bh0.inReach ? 'on' : 'ready') : 'off'), 'className');
-      // C: in combat, the combat (tactical) view is left for the view recentred behind the ship, and back again;
-      // pill above the actions cell, only in combat or outside the chase view
+      // C cycles the views (the camera never changes by itself); the pill shows outside the chase view only
       const rig = g.cameraRig, cm = rig?.mode, eng = !!rig?.engaged;
-      const cam = !rig || rig.fixed || rig.path ? '' : cm === 'tactical' ? 'Recentre' : cm === 'broadside' ? (eng ? 'Combat view' : 'Overview') : eng ? 'Combat view' : '';
+      const cam = !rig || rig.fixed || rig.path ? '' : cm === 'tactical' ? 'Behind the ship' : cm === 'broadside' ? 'Overview' : '';
       this._set('aCamH', this.$.aCam, !cam, 'hidden');
       this._set('aCamC', this.$.aCam, 'cam-pill' + (cm === 'tactical' && eng ? ' fight' : ''), 'className');
       if (cam) this._set('aCamL', this.$.aCamL, cam);
-      this._set('aCamT', this.$.aCam, cam === 'Recentre' ? 'C: recentre the camera behind your ship' : cam === 'Combat view' ? 'C: return to the combat view (your ship and the enemy)' : 'C: change view', 'title');
+      this._set('aCamT', this.$.aCam, cam === 'Behind the ship' ? 'C: back to the view behind your ship' : 'C: change view', 'title');
     }
     const lock = g.state?.ammoUnlocked;
     const lockKey = lock ? `${lock.chain ? 1 : 0}${lock.grape ? 1 : 0}` : '11';

@@ -1,6 +1,8 @@
-// Floating ship nameplates (parchment + brass), shown over ships in the tactical view and in combat framings.
+// Floating ship nameplates (parchment + brass). At sea, one plate at a time: the ship under the mouse cursor
+// (2026-11-12, no more automatic plates). Staged framings (boarding, showcase shots) still label every ship.
 // API: new Nameplates(game); update(dt); show(bool) (master switch); forced (bool) show regardless of camera mode.
-// Visible when: forced, or cameraRig.mode === 'tactical', or a fixed/shot camera with ≥2 ships near its target.
+// Every plate at once when: forced, or a fixed/shot camera with ≥2 ships near its target. Otherwise the hovered ship
+// only (hovered: read by tests; never the player's own ship, whose state is in the helm bar).
 // Per ship: faction flag swatch, name, type, guns · crew, hull and sails bars; hostile ships get a red rim.
 // One DOM element per ship (pooled), positioned by projecting a point above the masthead; culled off-screen/far.
 // Sea tiers: class pill (I–V) coloured by threat (prey, even match, tough, out of your class).
@@ -56,6 +58,11 @@ export class Nameplates {
     this.pool = new Map();
     this.obst = []; this._dirty = true; this._again = 0; this._measure = true;
     addEventListener('resize', () => { this._dirty = true; this._measure = true; });
+    // cursor: the last position over the 3D view (null over a panel, a menu, or outside the window)
+    this.cursor = null; this.hovered = null;
+    addEventListener('pointermove', e => { this.cursor = e.target instanceof HTMLCanvasElement ? { x: e.clientX, y: e.clientY } : null; }, true);
+    document.addEventListener('pointerleave', () => { this.cursor = null; });
+    addEventListener('blur', () => { this.cursor = null; });
   }
   show(on) { this.enabled = on; this.root.style.display = on ? '' : 'none'; }
 
@@ -64,13 +71,34 @@ export class Nameplates {
     if (this.forced) return true;
     if (g.mode !== 'sail' && g.mode !== 'map') return false;   // no plates over menus, port, duel, capture sheet
     if (!rig) return false;
-    if (rig.mode === 'tactical') return true;
     if (rig.mode === 'shot' || rig.mode === 'path') {
       let n = 0;
       for (const s of g.ships) if (s.alive !== false && s.position.distanceToSquared(rig.target) < 450 * 450) n++;
       return n >= 2;
     }
     return false;
+  }
+
+  // the ship under the cursor: nearest projected hull within its apparent size (never smaller than a comfortable
+  // target, so a distant sail stays catchable); the current one is kept until the cursor is clearly off it
+  _hover(R) {
+    const g = this.game, c = this.cursor, cam = g.camera;
+    if (!c || g.mode !== 'sail' || !g.cameraRig || g.cameraRig.mode === 'shot' || g.cameraRig.mode === 'path') return null;
+    const W = innerWidth, H = innerHeight, f = H / (2 * Math.tan((cam.fov || 52) * Math.PI / 360));
+    let best = null, bd = Infinity;
+    for (const s of g.ships) {
+      if (s === g.player || s.alive === false || s.sunk) continue;
+      const dist = s.position.distanceTo(cam.position);
+      if (dist > R) continue;
+      const L = s.length || 30;
+      _p.copy(s.position); _p.y += L * 0.4; _p.project(cam);
+      if (_p.z > 1) continue;
+      const x = (_p.x * 0.5 + 0.5) * W, y = (-_p.y * 0.5 + 0.5) * H;
+      const r = Math.max(34, Math.min(220, 0.62 * L * f / Math.max(1, dist))) * (s === this.hovered ? 1.35 : 1);
+      const d = Math.hypot(x - c.x, y - c.y);
+      if (d < r && d / r < bd) { bd = d / r; best = s; }
+    }
+    return best;
   }
 
   _el(s) {
@@ -127,13 +155,14 @@ export class Nameplates {
     const g = this.game, cam = g.camera;
     if (!this.enabled) return;
     const on = this._active();
-    this.active = on;   // read by the HUD: target card folds while plates already label the ships
+    this.active = on;   // read by the HUD: target card folds while plates already label the ships (staged framings only)
     // the canvas covers the window (game.resize) — reading clientWidth here forced a layout every frame
     const W = innerWidth, H = innerHeight;
     const seen = new Set();
     // longue-vue (lot 4, game.fortune.fx.viewMul ×1,25 / ×1,5): ships are identified farther away too
     const R = 1400 * (g.fortune?.fx?.viewMul ?? 1), fade0 = R - 300;
-    if (on) {
+    const hov = this.hovered = on ? null : this._hover(R);
+    if (on || hov) {
       cam.updateMatrixWorld();
       const now = performance.now() / 1000;
       if (this._dirty) this._readObstacles(now, true);
@@ -142,6 +171,7 @@ export class Nameplates {
       const ctrl = g.player?.controller, tgt = g.hud?.target;
       for (const s of g.ships) {
         if (s.alive === false || s.sunk) continue;
+        if (!on && s !== hov) continue;
         const dist = s.position.distanceTo(cam.position);
         if (dist > R) continue;
         _p.copy(s.position); _p.y += (s.length || 30) * 1.05;

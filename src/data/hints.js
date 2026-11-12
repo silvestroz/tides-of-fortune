@@ -25,8 +25,8 @@ export const HINTS = {
     body: () => `${kc('KeyQ')} fires to port, ${kc('KeyE')} to starboard, ${K('Space')} on the side facing the enemy. The bars by the compass show each broadside reloading.`,
   },
   camera: {
-    title: 'Combat view', topic: 'combat', prio: 2,
-    body: () => `At the first cannon shot, the camera frames your ship and the enemy. ${K('C')} puts it back behind your ship, ${K('C')} again returns it to the fight. Options: “Combat camera” keeps it behind you.`,
+    title: 'Your view', topic: 'combat', prio: 2,
+    body: () => `The camera stays where you put it. Hold the right mouse button to look around, turn the wheel to draw back, ${K('C')} for the gunner’s view and the overview. Point at a ship to read her name and her strength.`,
   },
   board: {
     title: 'Board her!', topic: 'combat', prio: 5,
@@ -168,5 +168,5 @@ export const FIRST_KEYS = [
   [['KeyW', 'KeyS'], 'Sail'], [['KeyA', 'KeyD'], 'Helm'], [['KeyQ', 'KeyE'], 'Port / starboard broadside'],
   [['Space'], 'Broadside towards the enemy'], [['B'], 'Board'], [['F'], 'Enter port'], [['R'], 'Repair (stopped)'],
   [['T'], 'Hurry time'], [['M'], 'Map'], [['J'], 'Journal'], [['L'], 'Ledger'], [['I'], 'Hold'],
-  [['C'], 'View · recentre in combat'], [['Esc'], 'Pause and options'],
+  [['C'], 'Change view'], [['Esc'], 'Pause and options'],
 ];

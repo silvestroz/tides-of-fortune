@@ -214,10 +214,9 @@ export class Menu {
       <div class="srow"><span class="sl">Graphics</span><span class="seg">${QUALITY_UI_ORDER.map(q => `<button data-q="${q}" class="${QUALITY_UI_GROUP[st.quality] === q ? 'sel' : ''}">${QUALITY_UI_LABELS[q]}</button>`).join('')}</span></div>
       <div class="lede opt-note">Ultra needs a recent desktop graphics card. A change of level takes effect at the next load. Frame rate, above 60 Hz: when the game cannot keep up, Automatic first renders a little smaller, then shows every second image; Power saver always does.</div>
       <div class="srow"><span class="sl">Frame rate</span><span class="seg fps-seg">${[['auto', 'Automatic'], ['max', 'Screen rate'], ['60', 'Power saver']].map(([v, l]) => `<button data-fps="${v}" class="${(st.fps || 'auto') === v ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
-      <div class="srow"><span class="sl">Combat camera</span><span class="seg cam-seg">${[['auto', 'Automatic'], ['manual', 'Manual']].map(([v, l]) => `<button data-cam="${v}" class="${(st.combatCam === 'manual') === (v === 'manual') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
-      <div class="lede opt-note">Automatic: the camera frames your ship and the enemy from the first cannon shot. <span class="kc">C</span> recentres it on your ship at any time.</div>
       ${this._paused ? `<div class="srow"><span class="sl">Game mode</span><span class="seg assist-seg">${GAME_MODES.map(([v, l]) => `<button data-assist="${v}" class="${(!!this.game.state?.assist) === (v === 'assist') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
       <div class="lede opt-note">Assisted: your gunners fire on their own at the enemy that attacks you or that you have hit (<span class="kc">G</span> makes them cease fire), and your boardings are carried without a duel. Other ships attack you as usual.</div>` : ''}
+      <div class="srow"><span class="sl">Invert vertical axis</span><span class="seg inv-seg">${[['0', 'Off'], ['1', 'On']].map(([v, l]) => `<button data-inv="${v}" class="${!!st.invertY === (v === '1') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
       <div class="srow"><span class="sl">Tips</span><span class="seg hints-seg">${[['1', 'On'], ['0', 'Off']].map(([v, l]) => `<button data-hints="${v}" class="${(st.hints !== false) === (v === '1') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
       <div class="srow hints-reset-row"><span class="sl"></span><button class="btn ghost" data-act="hints-reset"${this.game.state?.tutorials ? '' : ' disabled'}>Show the tips again</button></div>
       <div class="srow"><span class="sl">Statistics</span><span class="seg stats-seg">${[['1', 'On'], ['0', 'Off']].map(([v, l]) => `<button data-stats="${v}" class="${(st.stats !== false) === (v === '1') ? 'sel' : ''}">${l}</button>`).join('')}</span></div>
@@ -236,7 +235,7 @@ export class Menu {
         ${row(['KeyQ', 'KeyE'], 'Port / starboard broadside')}${row(['Space'], 'Fire at the nearest enemy')}
         ${row(['Digit1', 'Digit2', 'Digit3'], 'Round shot, chain shot or grapeshot')}
         ${row(['R'], 'Emergency repairs: heave to, work while stopped (sail or a broadside interrupts them)')}${row(['I'], 'Hold: throw goods overboard')}${row(['X', 'X'], 'Strike the colours (twice)')}
-        ${row(['C'], 'Change view · in combat: recentre on the ship')}${row(['T'], 'Speed up time')}
+        ${row(['C'], 'Change view')}${row(['T'], 'Speed up time')}
         ${row(['G'], 'Assisted mode: fire at will or cease fire')}
       </div><div class="keys">
         ${row(['B'], 'Board a weakened enemy alongside')}${row(['F'], 'Enter port · dig at the treasure mark')}${row(['M'], 'Unroll the map')}${row(['L'], 'Ledger: Top 10, officers, items')}${row(['J'], 'Journal: latest messages')}${row(['V'], 'Attack the town · organise an attack')}${row(['KeyW', 'KeyA', 'KeyS', 'KeyD'], 'Infiltration: move (Shift run, Space pick a lock, R ×2 surrender)')}
@@ -337,13 +336,13 @@ export class Menu {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
     const a = this.game.audio;
     if (b.classList.contains('choice')) { this.sheet[b.dataset.g] = b.dataset.v; this._syncChoices(); a?.play?.('ui:select'); return; }
-    if (b.dataset.cam) { saveSettings(this.game, { combatCam: b.dataset.cam }); this.scr.querySelectorAll('.cam-seg button').forEach(x => x.classList.toggle('sel', x === b)); a?.play?.('ui:select'); return; }
     if (b.dataset.assist) {   // game mode: game in progress and captain sheet
       if (this.game.state) this.game.state.assist = b.dataset.assist === 'assist';
       this.sheet.mode = b.dataset.assist;
       this.scr.querySelectorAll('.assist-seg button').forEach(x => x.classList.toggle('sel', x === b)); a?.play?.('ui:select'); return;
     }
     if (b.dataset.fps) { saveSettings(this.game, { fps: b.dataset.fps }); this.scr.querySelectorAll('.fps-seg button').forEach(x => x.classList.toggle('sel', x === b)); a?.play?.('ui:select'); return; }   // src/core/framePacer.js
+    if (b.dataset.inv) { saveSettings(this.game, { invertY: b.dataset.inv === '1' }); this.scr.querySelectorAll('.inv-seg button').forEach(x => x.classList.toggle('sel', x === b)); a?.play?.('ui:select'); return; }
     if (b.dataset.hints) { saveSettings(this.game, { hints: b.dataset.hints === '1' }); this.scr.querySelectorAll('.hints-seg button').forEach(x => x.classList.toggle('sel', x === b)); a?.play?.('ui:select'); return; }
     if (b.dataset.stats) { saveSettings(this.game, { stats: b.dataset.stats === '1' }); this.scr.querySelectorAll('.stats-seg button').forEach(x => x.classList.toggle('sel', x === b)); a?.play?.('ui:select'); return; }   // usage statistics (src/core/telemetry.js)
     if (b.dataset.q) { saveSettings(this.game, { quality: b.dataset.q }); this.scr.querySelectorAll('.seg button[data-q]').forEach(x => x.classList.toggle('sel', x === b)); a?.play?.('ui:select'); return; }
