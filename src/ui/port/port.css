@@ -203,7 +203,7 @@
 .stype.sel { background: rgba(42,28,16,0.85); color: var(--parch-hi); }
 .stype.own::after { content: ' \2693'; }
 .shiprow { display: grid; grid-template-columns: 1.3fr 1fr; gap: 0.6em; align-items: center; margin-top: 0.3em; }
-.shipview { height: 6.5em; } .shipsil { width: 100%; height: 100%; display: block; }
+.shipview { height: 11em; } .shipsil { width: 100%; height: 100%; display: block; }
 .specs div { display: flex; justify-content: space-between; padding: 0.08em 0; border-bottom: 1px dotted rgba(70,42,14,0.3); }
 .specs span { font-style: italic; color: var(--ink-soft); } .specs b { font-family: var(--sc); font-weight: normal; }
 .own-note { margin-top: 0.4em; font-style: italic; color: var(--ink-soft); text-align: center; }

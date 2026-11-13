@@ -1,6 +1,6 @@
-// Hand-drawn SVG art for the port screens: location vignettes, goods glyphs, ship silhouettes, ornaments.
+// Hand-drawn SVG art for the port screens: location vignettes, goods glyphs, ship draughts, ornaments.
 // API: VIGNETTE[loc] (svg), GOOD_ICON(good) (svg), SHIP_SIL(type) (svg), SEAL(text) (svg)
-import { SHIP_TYPES } from '../../data/shipTypes.js';
+import { SHIP_PLANS } from './shipPlans.js';
 import { GOOD_ART, VIGNETTE_ART } from '../paintedIcons.js';
 
 const INK = '#2a1c10';
@@ -13,46 +13,10 @@ const GOODS_SVG = Object.fromEntries(Object.entries(GOOD_ART).map(([k, v]) => [k
 const CRATE = ART('gico', `<g stroke="${INK}" stroke-width="1.1" stroke-linejoin="round"><path d="M5 8 H27 V26 H5 Z" fill="#a88a5a"/><path d="M5 8 L27 26 M5 14 H27 M5 20 H27" stroke-width="0.8" fill="none"/></g>`);
 export function GOOD_ICON(g) { return GOODS_SVG[g] || CRATE; }
 
-// --- ship silhouettes (side elevation, 160x80) -------------------------------------------------
-const SH = {
-  sloop: { L: 70, masts: [[0.5, 46]], bow: 22, gun: 4 },
-  schooner: { L: 84, masts: [[0.36, 48], [0.62, 52]], bow: 24, gun: 5 },
-  brig: { L: 98, masts: [[0.34, 52], [0.64, 56]], bow: 22, gun: 7, square: true },
-  merchantman: { L: 104, masts: [[0.3, 50], [0.55, 56], [0.78, 44]], bow: 16, gun: 4, square: true, fat: 1.25 },
-  frigate: { L: 124, masts: [[0.26, 56], [0.52, 62], [0.78, 50]], bow: 20, gun: 12, square: true },
-  galleon: { L: 132, masts: [[0.24, 56], [0.5, 64], [0.74, 52], [0.9, 38]], bow: 18, gun: 14, square: true, castle: true, fat: 1.3 },
-};
-// derived types reuse their base silhouette, scaled, with their own gun count / mast count
-for (const [id, t] of Object.entries(SHIP_TYPES)) {
-  if (SH[id]) continue;
-  const b = SH[t.base], k = Math.min(1.2, Math.max(0.7, t.scale));
-  SH[id] = { ...b, L: Math.round(b.L * k), masts: b.masts.slice(0, t.art?.masts || b.masts.length).map(([f, h]) => [f, Math.round(h * Math.sqrt(k))]),
-    gun: Math.max(1, Math.round(t.guns / 3)), square: t.rig !== 'fore-aft' && b.square !== false ? (b.square ?? t.rig !== 'fore-aft') : false };
-}
+// --- ship draughts (shipyard card): the type's side elevation, drawn from its 3D model (shipPlans.js) ----------
 export function SHIP_SIL(type) {
-  const s = SH[type] || SH.brig;
-  const x0 = 80 - s.L / 2, x1 = 80 + s.L / 2, wl = 62, h = 10 * (s.fat || 1);
-  let d = `<path d="M${x0} ${wl - h} L${x1 - s.bow} ${wl - h} L${x1 + 4} ${wl - h - 6} C${x1 - 4} ${wl + 2} ${x1 - 20} ${wl + 6} ${x0 + 14} ${wl + 5} C${x0 + 4} ${wl + 2} ${x0 - 2} ${wl - 4} ${x0} ${wl - h} Z" fill="#8a5a2b" fill-opacity="0.75"/>`;
-  if (s.castle) d += `<path d="M${x0 - 2} ${wl - h} V${wl - h - 9} H${x0 + 26} V${wl - h}" fill="#8a5a2b" fill-opacity="0.75"/>`;
-  else d += `<path d="M${x0 - 1} ${wl - h} V${wl - h - 4} H${x0 + 18} V${wl - h}" fill="#8a5a2b" fill-opacity="0.75"/>`;
-  d += `<path d="M${x0 + 4} ${wl - h + 4} C${x0 + 30} ${wl - h + 6} ${x1 - 30} ${wl - h + 6} ${x1 - 6} ${wl - h + 3}" stroke="#c9a24a" stroke-width="1.6" fill="none"/>`;
-  for (let i = 0; i < s.gun; i++) { const gx = x0 + 14 + i * ((s.L - 34) / Math.max(1, s.gun - 1)); d += `<rect x="${gx - 1.4}" y="${wl - h + 5.5}" width="2.8" height="2.4" fill="${INK}" stroke="none"/>`; }
-  d += `<path d="M${x1 - s.bow + 6} ${wl - h - 2} L${x1 + 22} ${wl - h - 14}" stroke-width="1.3"/>`;
-  for (const [f, mh] of s.masts) {
-    const mx = x0 + s.L * f, top = wl - h - mh;
-    d += `<path d="M${mx} ${wl - h} V${top}" stroke-width="1.6"/>`;
-    if (s.square) {
-      const w1 = mh * 0.42, w2 = mh * 0.32;
-      d += `<path d="M${mx - w1} ${top + mh * 0.5} C${mx - w1 + 2} ${top + mh * 0.82} ${mx + w1 - 2} ${top + mh * 0.82} ${mx + w1} ${top + mh * 0.5} L${mx + w1 - 3} ${top + mh * 0.85} H${mx - w1 + 3} Z" fill="#efe3c2" fill-opacity="0.9"/>`;
-      d += `<path d="M${mx - w2} ${top + mh * 0.14} C${mx - w2 + 2} ${top + mh * 0.42} ${mx + w2 - 2} ${top + mh * 0.42} ${mx + w2} ${top + mh * 0.14} L${mx + w2 - 2} ${top + mh * 0.45} H${mx - w2 + 2} Z" fill="#efe3c2" fill-opacity="0.9"/>`;
-    } else {
-      d += `<path d="M${mx + 1} ${top + 3} C${mx + mh * 0.5} ${top + mh * 0.35} ${mx + mh * 0.62} ${top + mh * 0.7} ${mx + mh * 0.6} ${wl - h - 4} L${mx + 1} ${wl - h - 4} Z" fill="#efe3c2" fill-opacity="0.9"/>`;
-    }
-    d += `<path d="M${mx} ${top} l7 2 l-7 2.5" fill="#b8242c" fill-opacity="0.85" stroke-width="0.6"/>`;
-  }
-  d += `<path d="M6 ${wl + 3} C30 ${wl} 50 ${wl + 6} 80 ${wl + 3} C110 ${wl} 130 ${wl + 6} 154 ${wl + 3}" stroke-width="0.8" opacity="0.6" fill="none"/>`;
-  d += `<path d="M20 ${wl + 9} C40 ${wl + 6} 60 ${wl + 11} 90 ${wl + 8} C110 ${wl + 6} 126 ${wl + 10} 140 ${wl + 9}" stroke-width="0.6" opacity="0.4" fill="none"/>`;
-  return `<svg viewBox="0 0 160 80" class="shipsil" aria-hidden="true"><g stroke="${INK}" stroke-width="1" stroke-linejoin="round" stroke-linecap="round">${d}</g></svg>`;
+  const [w, h, d] = SHIP_PLANS[type] || SHIP_PLANS.brig;
+  return `<svg viewBox="0 0 ${w} ${h}" class="shipsil" aria-hidden="true"><path fill="${INK}" fill-rule="evenodd" d="${d}"/></svg>`;
 }
 
 // --- ornaments --------------------------------------------------------------------------------
