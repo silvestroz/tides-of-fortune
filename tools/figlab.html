@@ -78,7 +78,19 @@ const E = { ...LOOKS.spanish, outline, headScale: 1.22, seed: 9, lefty: true, bl
 const sailor = (i, extra = {}) => ({ sailor: true, sword: false, coat: ['#e9e1cc', '#7a2a22', '#3a4d6e', '#c8b48a'][i % 4], stripes: i % 3 === 1, shirt: '#e8dfc8', breeches: ['#c8b48a', '#6b5a44', '#3a3a44'][i % 3], hat: ['bandana', 'none', 'tricorn'][i % 3], bandana: '#8e1b1b', hatColor: '#2a221c', skin: ['#c98d62', '#a86e48', '#e0ab84', '#7a4a2c'][i % 4], beard: i % 2 === 0, moustache: true, seed: 100 + i, fists: true, vest: i % 3 === 2 ? '#5a3a24' : null, ...extra });
 
 let cam;
-if (view === 'duel') {
+// second-generation captain (o.v2), beside the current one: v2 (standing), v2face (close), v2duel (fencing)
+const D2 = { ...D, v2: true, headScale: 1.12, stubble: true };
+if (view === 'v2') {
+  place({ ...D, sword: false }, -1.05, 0, 0.3, 'rest'); place({ ...D2, sword: false }, 0.1, 0, 0.3, 'rest'); place({ ...D2, sword: false }, 1.2, 0, 2.6, 'rest');
+  cam = [[0, 1.25, 4.3], [0.05, 0.98, 0]];
+} else if (view === 'v2face') {
+  place({ ...D, sword: false }, -0.36, 0, 0.12, 'rest'); place({ ...D2, sword: false }, 0.36, 0, 0.12, 'rest');
+  cam = [[0, 1.66, 2.0], [0, 1.58, 0]];
+} else if (view === 'v2duel') {
+  place(D2, 0, 1.3, Math.PI, 'sHigh', { fence: true, lunge: 0.9, expr: 'attack' });
+  place(E, 0, -1.3, 0, 'pHigh', { fence: true, crouch: 0.3, expr: 'strain' });
+  cam = [[4.6, 1.7, 0.4], [0, 1.15, 0]];
+} else if (view === 'duel') {
   place(D, 0, 1.3, Math.PI, 'sHigh', { fence: true, lunge: 0.9, expr: 'attack' });
   place(E, 0, -1.3, 0, 'pHigh', { fence: true, crouch: 0.3, expr: 'strain' });
   cam = [[4.6, 1.7, 0.4], [0, 1.15, 0]];
@@ -124,7 +136,7 @@ if (view === 'portraits') {
   roles.forEach(([r, n], i) => { const d = document.createElement('div'); d.style.cssText = 'width:220px;height:220px'; d.innerHTML = PORTRAIT(r, 1000 + i * 77, { img: portraitURL({ renderer }, r, 1000 + i * 77, n) }); d.firstElementChild.style.cssText = 'width:100%;height:100%'; wrap.appendChild(d); });
   document.body.appendChild(wrap);
 }
-const camera = new THREE.PerspectiveCamera(view === 'fists' ? 30 : view === 'faces' || view === 'profile' || view === 'hands' || view === 'expr' ? 24 : 40, W / H, 0.05, 200);
+const camera = new THREE.PerspectiveCamera(view === 'fists' ? 30 : view === 'faces' || view === 'profile' || view === 'hands' || view === 'expr' || view === 'v2face' ? 24 : 40, W / H, 0.05, 200);
 camera.position.set(...cam[0]); camera.lookAt(...cam[1]);
 let tris = 0; scene.traverse(o => { if (o.isMesh && o.geometry) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
 document.getElementById('lbl').textContent = `${view} · ${tod} · ${figs.length} figures · ${Math.round(tris / 1000)} k triangles (avec contours)`;

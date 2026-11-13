@@ -2,7 +2,8 @@
 //   const f = new CaptainFigure({ coat:'#7a1e1e', trim:'#d8b05a', hat:'tricorn'|'bicorne'|'bandana'|'cap'|'wig'|'bonnet'|'morion'|'wide'|'none',
 //                                 beard, skin, seed, scale, sailor, expr:'fierce'|'smile'|'stern'|'calm', eyes,
 //                                 dress, bodice, apron, breastplate, sleeves:'rolled', tool:'halberd'|'hammer'|'quill'|'mug'|'musket', sword,
-//                                 sheathed (sword in a scabbard at the left hip, both hands free), lite (see below) })
+//                                 sheathed (sword in a scabbard at the left hip, both hands free), lite (see below),
+//                                 v2 (second-generation captain: see figureV2.js; coated men only) })
 //   f.group (feet at y=0, faces +Z, right hand = -X)       f.sword (blade mesh group) ; f.tip / f.hilt Object3Ds
 //   f.apply(pose)  pose: { joint: [x,y,z] } radians, plus rootPos, hipsY     f.capture()     f.flash(k)   f.dispose()
 //   f.j.prop: a bone in the left hand carrying the tool (only with o.tool / o.mug), so an animator can turn the tool
@@ -17,6 +18,7 @@ import * as THREE from 'three';
 import { mulberry32 } from '../../core/rng.js';
 import { clothTex, coatTex, leatherTex, skinTex, steelTex, stripeTex } from './textures.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { coatV2, sashV2, cuffV2, bootTopV2, hairV2, moustacheV2, plumeV2 } from './figureV2.js';
 
 const V2 = THREE.Vector2;
 
@@ -183,6 +185,7 @@ export class CaptainFigure {
     const bulk = o.bulk ?? (0.97 + rnd() * 0.14);
     const coated = !o.sailor || o.jacket;
     const dress = !!o.dress;
+    const v2 = !!o.v2 && coated && !dress && !o.lite;
     // ---- skeleton (metres; a 1.78 m captain). Joint lengths are what the fencing IK expects: keep them. ----
     const root = J('root', g, [0, 0, 0]);
     const hips = J('hips', root, [0, 0.98, 0]);
@@ -214,6 +217,9 @@ export class CaptainFigure {
       v.z *= 1 + 0.05 * bump(y, 0.36, 0.1) * Math.max(0, -front);                                                      // blades
       v.z *= 1 - 0.06 * bump(y, 0.1, 0.08);                                                                             // waist
     };
+    const K = v2 ? { mesh, M, o, bulk, torsoShape, lathe, sculpt, sphere, torus, smooth, bump, folds, j: this.j, mats: {
+      shirt, coatPlain, belt, boot, brass, iron, hair, lapel: M(o.lapel || o.trim || '#d8b05a'), waistcoat: M(o.waistcoat || o.lapel || '#c8a868'),
+      wood: M('#5a3a1c', { kind: 'leather' }), sash: M(o.sash || '#b08a3c'), plume: M(o.plume || '#efe6d2') } } : null;
     // ---- pelvis / breeches seat ----
     // (round 11: rounder and shorter below — the old seat hung between the thighs in a flat triangle, a nappy; a lady's
     // stays inside her bodice and skirt, or it showed as a band at the waist)
@@ -279,17 +285,20 @@ export class CaptainFigure {
         coatPlain, spine, [0, -0.01, 0], { lo: 0.72 });
       const skirt = J('skirt', hips, [0, 0.06, 0]);
       // longer, flared tails, each on its own bone so they swing and flutter (animator coat spring)
-      const skP = [[-0.64, 0.262], [-0.5, 0.236], [-0.33, 0.205], [-0.16, 0.18], [0.0, 0.17]];
+      const skP = v2 ? [[-0.72, 0.3], [-0.55, 0.262], [-0.36, 0.222], [-0.16, 0.19], [0.0, 0.176]] : [[-0.64, 0.262], [-0.5, 0.236], [-0.33, 0.205], [-0.16, 0.18], [0.0, 0.17]];
       for (const [phi0, tn] of [[Math.PI * 0.33, 'tailL'], [Math.PI * 1.04, 'tailR']]) {
         const tail = J(tn, skirt, [0, 0, 0]);
-        const f = folds(7, 0.09, 0.04, 0.6, phi0 * 3);
+        const f = folds(7, v2 ? 0.13 : 0.09, 0.04, 0.6, phi0 * 3);
         mesh(sculpt(lathe(skP, 14, { sx: bulk * 1.08, sz: 0.84, phi0, phiLen: Math.PI * 0.63 }), f.shape), coat, tail, null, { lo: 0.7, fn: f.ao });
         // turned-back facing along the hem (trim colour), reads as a heavy cloth edge
-        mesh(lathe([[-0.645, 0.266], [-0.6, 0.258]], 14, { sx: bulk * 1.09, sz: 0.85, phi0, phiLen: Math.PI * 0.63 }), M(o.lapel || o.trim || '#d8b05a'), tail, null, { lo: 0.8 });
+        mesh(lathe(v2 ? [[-0.725, 0.305], [-0.675, 0.294]] : [[-0.645, 0.266], [-0.6, 0.258]], 14, { sx: bulk * 1.09, sz: 0.85, phi0, phiLen: Math.PI * 0.63 }), M(o.lapel || o.trim || '#d8b05a'), tail, null, { lo: 0.8 });
       }
+      if (v2) coatV2(K);
+      else {
       const lap = new THREE.BoxGeometry(0.065, 0.36, 0.022);
       for (const s of [-1, 1]) { const l = mesh(lap, M(o.lapel || o.trim || '#d8b05a'), spine, [s * 0.078, 0.32, 0.137]); l.rotation.set(-0.12, 0, s * 0.18); }
       mesh(new THREE.BoxGeometry(0.15, 0.36, 0.02), M(o.waistcoat || o.lapel || '#c8a868'), spine, [0, 0.2, 0.128], { lo: 0.8 }).rotation.x = -0.08;
+      }
       // pocket flaps sewn on the skirts (they used to float in front of the breeches, off the open coat)
       for (const [s, tn] of [[1, 'tailL'], [-1, 'tailR']]) {
         const phi = s > 0 ? Math.PI * 0.42 : Math.PI * 1.58, r = 0.19;
@@ -298,9 +307,9 @@ export class CaptainFigure {
         pf.rotation.set(0.08, phi, 0);
       }
       const bt = sphere(0.013, 6, 4);
-      for (let i = 0; i < 5; i++) for (const s of [-1, 1]) mesh(bt, brass, spine, [s * 0.112, 0.1 + i * 0.07, 0.142]);
+      if (!v2) for (let i = 0; i < 5; i++) for (const s of [-1, 1]) mesh(bt, brass, spine, [s * 0.112, 0.1 + i * 0.07, 0.142]);
       // collar standing at the back of the neck
-      mesh(lathe([[0.0, 0.11], [0.06, 0.1]], 14, { sz: 0.85, phi0: Math.PI * 0.6, phiLen: Math.PI * 0.8 }), coatPlain, chest, [0, 0.24, -0.01]);
+      if (!v2) mesh(lathe([[0.0, 0.11], [0.06, 0.1]], 14, { sz: 0.85, phi0: Math.PI * 0.6, phiLen: Math.PI * 0.8 }), coatPlain, chest, [0, 0.24, -0.01]);
     } else {
       mesh(sculpt(lathe([[0.0, 0.16], [0.2, 0.182], [0.42, 0.194], [0.52, 0.12]], 28, { sx: bulk * 1.02, sz: 0.76 }), torsoShape(0.9)), coat, spine, [0, -0.01, 0], { lo: 0.74 });
       // open shirt neck: a skin vee
@@ -315,11 +324,12 @@ export class CaptainFigure {
       mesh(new THREE.BoxGeometry(0.22, 0.26, 0.015), ap, spine, [0, 0.16, 0.15], { lo: 0.85 }).rotation.x = -0.12;
     }
     // belt + buckle, baldric for swordsmen, sash for sailors
-    if (!dress) {
+    if (v2) sashV2(K);
+    else if (!dress) {
       mesh(torus(0.165, 0.026, 6, 22).scale(bulk, 1, 0.78).rotateX(Math.PI / 2), belt, hips, [0, 0.12, 0]);
       mesh(new THREE.BoxGeometry(0.075, 0.065, 0.03), brass, hips, [0, 0.12, 0.137]);
     }
-    if (!o.sailor && !dress && o.sword !== false) {
+    if (v2) { /* baldric: coatV2 */ } else if (!o.sailor && !dress && o.sword !== false) {
       const bald = mesh(torus(0.245, 0.024, 5, 24, Math.PI).scale(1, 1.25, 0.64), belt, chest, [0.01, -0.06, 0.0]);
       bald.rotation.set(0, 0, -0.55);
     } else if (o.sash) {
@@ -331,7 +341,7 @@ export class CaptainFigure {
     for (const [sh, s] of [[rSh, -1], [lSh, 1]]) {
       // a shoulder cap that slopes into the chest (half-skinned to it) rather than a ball; dresses keep a puff
       if (dress) mesh(sculpt(sphere(0.072, 18, 12).scale(1.08, 0.92, 1.04), v => { const a = Math.atan2(v.x, v.z), k = 1 + 0.03 * Math.sin(a * 8); v.x *= k; v.z *= k; }), sleeve, sh, [s * 0.01, -0.035, 0], { lo: 0.85, sk: { up: 0.06 } });
-      else mesh(sculpt(sphere(0.082, 18, 12).scale(1.08, 0.82, 1.02), v => { if (v.y > 0) v.x -= s * v.y * 0.35; }), sleeve, sh, [s * 0.006, -0.03, 0], { lo: 0.85, sk: { up: 0.07 } });
+      else mesh(sculpt(sphere(v2 ? 0.09 : 0.082, 18, 12).scale(1.08, 0.82, 1.02), v => { if (v.y > 0) v.x -= s * v.y * 0.35; }), sleeve, sh, [s * 0.006, -0.03, 0], { lo: 0.85, sk: { up: 0.07 } });
       if (o.epaulette) {
         const e = mesh(new THREE.CylinderGeometry(0.065, 0.075, 0.024, 12), brass, sh, [s * 0.02, 0.05, 0]); e.rotation.z = s * 0.4;
         mesh(new THREE.CylinderGeometry(0.08, 0.085, 0.05, 12, 1, true), brass, sh, [s * 0.03, 0.02, 0], { lo: 0.6 }).rotation.z = s * 0.4;
@@ -358,8 +368,11 @@ export class CaptainFigure {
         else mesh(lathe([[-0.03, 0.062], [0.0, 0.069], [0.02, 0.07], [0.05, 0.06]], 14), sleeve, el, null, { lo: 0.7, sk: { up: 0.075 } });
       } else {
         mesh(limb(0.26, [[0, 0.056], [0.2, 0.06], [0.65, 0.052], [1, 0.05]], 14), sleeve, el, null, { lo: 0.82, fn: v => 1 - 0.14 * bump(v.y, -0.02, 0.05), sk: { up: 0.075 } });
+        if (v2) cuffV2(K, el, s);
+        else {
         if (coated && !dress) mesh(lathe([[-0.245, 0.06], [-0.16, 0.066], [-0.13, 0.052]], 14), M(o.lapel || o.trim || '#d8b05a'), el, null, { lo: 0.75 });
         mesh(lathe([[-0.275, 0.032], [-0.255, 0.054], [-0.235, 0.036]], 10), shirt, el);
+        }
       }
       // hands rebuilt. The sword hand is a fist closed round the grip (the grip runs along the wrist's +Z,
       // 8.5 cm below it): four finger rings stacked along the grip, the back of the hand on top, the thumb over the
@@ -388,7 +401,8 @@ export class CaptainFigure {
       } else {
         // jackboot: shin with a calf, folded-down cuff, heel
         mesh(sculpt(lathe([[-0.47, 0.054], [-0.38, 0.058], [-0.3, 0.065], [-0.2, 0.07], [-0.12, 0.068], [0.0, 0.075], [0.06, 0.09], [0.11, 0.092]], 16), v => { if (v.z < 0) v.z *= 1 + 0.12 * bump(v.y, -0.22, 0.09); }), boot, kn, null, { lo: 0.62, sk: { up: 0.085 } });
-        mesh(lathe([[0.04, 0.097], [0.08, 0.102], [0.12, 0.101]], 16), boot, kn, null, { lo: 0.6, sk: { up: 0.085 } });
+        if (v2) bootTopV2(K, kn);
+        else mesh(lathe([[0.04, 0.097], [0.08, 0.102], [0.12, 0.101]], 16), boot, kn, null, { lo: 0.6, sk: { up: 0.085 } });
       }
       // a shaped shoe — instep rising to the ankle, a squared toe, a sole only a few millimetres proud of the
       // upper and a stacked heel (the old flat plank of a sole read as flippers); buckle and tongue on a shoe
@@ -413,13 +427,13 @@ export class CaptainFigure {
     const neckR = dress ? 0.048 : 0.058;
     mesh(lathe([[-0.02, neckR], [0.05, neckR * 0.92], [dress ? 0.105 : 0.12, neckR * 0.88]], 12, { sz: 0.92 }), skin, neck, null, { lo: 0.6 });
     if (!dress && !(o.sailor && !o.jacket)) mesh(lathe([[-0.03, 0.078], [0.02, 0.068], [0.075, 0.062]], 12, { sz: 0.9 }), shirt, neck, null, { lo: 0.8 });
-    if (!o.sailor && !dress) { const jb = mesh(new THREE.ConeGeometry(0.055, 0.14, 8, 1, true).scale(1, 1, 0.45).translate(0, -0.065, 0), shirt, neck, [0, 0.0, 0.074], { lo: 0.8 }); jb.rotation.x = 0.28; }
-    const hd = new THREE.Object3D(); hd.scale.setScalar(o.headScale || (dress ? 1.1 : 1.16)); hd.position.y = -0.01; head.add(hd);
+    if (!o.sailor && !dress && !v2) { const jb = mesh(new THREE.ConeGeometry(0.055, 0.14, 8, 1, true).scale(1, 1, 0.45).translate(0, -0.065, 0), shirt, neck, [0, 0.0, 0.074], { lo: 0.8 }); jb.rotation.x = 0.28; }
+    const hd = new THREE.Object3D(); hd.scale.setScalar(o.headScale || (dress ? 1.1 : v2 ? 1.12 : 1.16)); hd.position.y = -0.01; head.add(hd);
     const eyeY = 0.135, eyeX = 0.04, eyeZ = 0.09;
     // one sculpted head instead of a sphere studded with balls (cheeks, chin, nose, brow bar): cheekbones,
     // chin, brow and jaw are pushed out of a denser sphere, and the colour is painted per vertex (blush, lips, nose
     // tip, under-eye shade, stubble, women's lids) so the face reads as modelled flesh, not a potato head.
-    const hg = sphere(0.11, 40, 30);
+    const hg = sphere(0.11, v2 ? 64 : 40, v2 ? 48 : 30);
     // every face its own — nose size, hook or snub, brow ridge, chin, cheekbones, jaw length and, with age,
     // jowls, hollow temples and deeper folds; drawn from a generator of their own so the other picks don't shift.
     // Ladies: a shorter lower face, a small pointed chin, fuller cheeks and lips.
@@ -450,6 +464,11 @@ export class CaptainFigure {
       mixc(g3(v, 0, 0.058, 0.1, 0.016) * (dress ? 0.7 : 0.45), dress ? [0.92, 0.5, 0.5] : [0.9, 0.62, 0.58]);                             // lips
       if (dress) mixc(Math.max(g3(v, -eyeX, eyeY + 0.014, 0.096, 0.015), g3(v, eyeX, eyeY + 0.014, 0.096, 0.015)) * 0.3, [0.86, 0.76, 0.84]);   // lids
       if (dress) mixc(g3(v, 0, 0.026, 0.1, 0.024) * 0.3, [1.07, 1.0, 0.96]);                                                              // a light on the chin
+      if (v2) {   // weathered: sun on the nose and cheekbones, deeper sockets, a paler brow under the hat
+        mixc(Math.max(g3(v, -0.056, 0.1, 0.08, 0.03), g3(v, 0.056, 0.1, 0.08, 0.03)) * 0.22 + g3(v, 0, 0.11, 0.11, 0.03) * 0.25, [1.08, 0.74, 0.68]);
+        mixc(Math.max(g3(v, -eyeX, eyeY + 0.004, 0.09, 0.02), g3(v, eyeX, eyeY + 0.004, 0.09, 0.02)) * 0.3, [0.8, 0.7, 0.72]);
+        mixc(g3(v, 0, 0.185, 0.09, 0.04) * 0.2, [1.06, 1.02, 0.98]);
+      }
       if (stubble && v.z > -0.02) mixc(smooth(0.08, 0.035, v.y) * 0.34 * (1 - g3(v, 0, 0.058, 0.1, 0.016)), [0.74, 0.74, 0.78]);          // a day's beard
       if (o.beard && v.z > 0) mixc(smooth(0.052, 0.04, v.y) * 0.85, beardTint);                                                            // under a beard: its colour, never a patch of skin
       return [r, gg, b];
@@ -474,6 +493,13 @@ export class CaptainFigure {
       const temple = Math.exp(-(((ax - 0.085) / 0.02) ** 2 + ((v.y - 0.04) / 0.03) ** 2)) * smooth(-0.02, 0.04, v.z);
       v.x -= Math.sign(v.x) * temple * (0.004 + 0.004 * F.age);
       if (dress) v.z += 0.0028 * Math.exp(-((v.x / 0.02) ** 2 + ((v.y + 0.05) / 0.009) ** 2)) * front;                       // fuller lips
+      if (v2) {
+        // set eyes, a brow that overhangs them, a muzzle under the nose and a hollow under the cheekbone
+        v.z -= 0.0065 * Math.exp(-(((ax - 0.041) / 0.019) ** 2 + ((v.y - 0.026) / 0.013) ** 2)) * front;
+        v.z += 0.004 * F.brow * Math.exp(-(((v.y - 0.05) / 0.011) ** 2)) * front * smooth(0.085, 0.03, ax);
+        v.z += 0.005 * Math.exp(-((v.x / 0.034) ** 2 + ((v.y + 0.05) / 0.024) ** 2)) * front;
+        v.x -= Math.sign(v.x) * 0.0045 * Math.exp(-(((ax - 0.058) / 0.018) ** 2 + ((v.y + 0.052) / 0.022) ** 2)) * front;
+      }
     });
     // painterly face normals: the lower face (narrowed jaw, chin) turned down and caught almost no light from a high key,
     // a grey-brown muzzle that read as a beard on the ladies. Front normals are pulled toward the radial direction from a
@@ -497,6 +523,7 @@ export class CaptainFigure {
       if (t > 0.72) x *= 1 + 1.1 * (t - 0.72) * (v.z < 0.3 ? 1 : 0.6);   // wings
       if (t > 0.9 && v.z > 0.2) z -= (t - 0.9) * 0.05;                    // under the tip
       v.set(x, y, z);
+      if (v2) { v.x *= 1.22; v.y *= 1.1; v.z *= 1.2; }   // a nose with some character
     });
     mesh(ng, skin, hd, [0, 0.108, 0.1], { lo: 0.86, col: v => { const k = smooth(-0.005, -0.03, v.y) * 0.35; return [1 + 0.04 * k, 1 - 0.2 * k, 1 - 0.24 * k]; } });
     for (const s of [-1, 1]) mesh(sculpt(sphere(0.027, 10, 8).scale(0.42, 1, 0.66), v => { if (v.x * s < 0) v.x *= 0.5; }), skin, hd, [s * 0.1, 0.112, -0.004], { lo: 0.72, col: () => [1.03, 0.86, 0.82] });     // ears
@@ -518,18 +545,22 @@ export class CaptainFigure {
     // eyes: white, coloured iris, pupil, catch-light, dark upper lid line
     const eyeW = M('#f2ebdf', { kind: 'skin' }), iris = M(o.eyes || ['#3a2614', '#2e4a5e', '#4a3a1a', '#2a3a2a'][Math.floor(rnd() * 4)], { kind: 'skin' });
     const pupil = M('#0c0806', { kind: 'skin' }), glint = M('#ffffff', { kind: 'skin' }), lash = M(new THREE.Color(o.hair || '#2b1d14').multiplyScalar(0.5), { kind: 'skin' });
+    const limbal = M(new THREE.Color(iris.color).multiplyScalar(0.35), { kind: 'skin' });
     const browAng = expr === 'fierce' ? 0.42 : expr === 'stern' ? 0.25 : expr === 'smile' ? -0.12 : 0.05;
     const browM = M(new THREE.Color(o.hair || '#2b1d14').multiplyScalar(0.55));
+    const browV2 = M(new THREE.Color(o.hair || '#2b1d14').multiplyScalar(0.8));
     for (const s of [-1, 1]) {
-      const ek = dress ? 1.08 : 1;   // the ladies' eyes a little larger
+      const ek = dress ? 1.08 : v2 ? 1.14 : 1;   // the ladies' eyes a little larger
       if (o.lite) mesh(sphere(0.014, 6, 4).scale(1.1, 0.9, 0.6), pupil, hd, [s * eyeX, eyeY, eyeZ + 0.006]);   // a dark eye, seen from afar
       else {
       mesh(sphere(0.0175 * ek, 10, 8).scale(1.15, 0.9, 0.7), eyeW, hd, [s * eyeX, eyeY, eyeZ]);
+      if (v2) mesh(sphere(0.0136 * ek, 12, 8).scale(1, 1, 0.5), limbal, hd, [s * (eyeX - 0.002), eyeY - 0.001, eyeZ + 0.0096 * ek]);   // dark rim of the iris
       mesh(sphere(0.0118 * ek, 12, 8).scale(1, 1, 0.5), iris, hd, [s * (eyeX - 0.002), eyeY - 0.001, eyeZ + 0.0112 * ek]);
       mesh(sphere(0.0062 * ek, 8, 6).scale(1, 1, 0.5), pupil, hd, [s * (eyeX - 0.002), eyeY - 0.001, eyeZ + 0.0155 * ek]);
       mesh(sphere(0.0028, 4, 3), glint, hd, [s * (eyeX - 0.002) + 0.004, eyeY + 0.004, eyeZ + 0.017 * ek]);
       mesh(sphere(0.0195 * ek, 10, 4, 0, Math.PI * 2, 0, Math.PI * 0.42).scale(1.18, 0.75, 0.8), skin, hd, [s * eyeX, eyeY + 0.004, eyeZ + 0.001]);   // upper lid
       mesh(torus(0.019 * ek, o.headScale || DET < 0.8 || dress ? 0.0042 : 0.0032, 3, 10, Math.PI).scale(1.15, 0.6, 1), lash, hd, [s * eyeX, eyeY + 0.002, eyeZ + 0.007 * ek]);   // lid line
+      if (v2) mesh(torus(0.0195 * ek, 0.0036, 4, 10, Math.PI).rotateZ(Math.PI).scale(1.12, 0.52, 1), rosy, hd, [s * eyeX, eyeY - 0.0015, eyeZ + 0.0045 * ek]);   // lower lid
       }
       const brow = J(s < 0 ? 'browR' : 'browL', hd, [s * 0.042, 0.166 - (expr === 'fierce' ? 0.004 : 0), 0.103]);
       // brows: duellists (headScale) get heavier, darker brows so the expression reads at camera distance
@@ -539,7 +570,7 @@ export class CaptainFigure {
       mesh(sculpt(new THREE.CapsuleGeometry(br, bl, 3, 8).rotateZ(Math.PI / 2).scale(1, 1, 0.65), v => {
         const t = Math.min(1, Math.max(0, (v.x * s + bl / 2 + br) / (bl + 2 * br)));   // 0 at the inner end, 1 at the outer end
         v.y *= 1 - 0.5 * t; v.y += 0.0045 * (1 - (2 * t - 1) ** 2) - 0.003 * t; v.z -= 0.004 * t;
-      }), (o.headScale || far) && !dress ? browM : hair, brow, null);
+      }), v2 ? browV2 : (o.headScale || far) && !dress ? browM : hair, brow, null);
       brow.rotation.z = s * browAng;   // sign fixed — a positive angle knits the inner ends down (fierce), a negative one lifts them
     }
     olOff = false;
@@ -556,6 +587,8 @@ export class CaptainFigure {
       }), hair, hd, [0, 0.118, -0.012], { lo: 0.8, fn: v => (1 - 0.18 * Math.exp(-((v.x / 0.012) ** 2))) * (1 - 0.1 * (0.5 + 0.5 * Math.sin(Math.atan2(v.x, v.z) * 9 + v.y * 30)) * smooth(0.03, 0.08, Math.hypot(v.x, v.z))) });
       mesh(sculpt(sphere(0.056, 16, 12).scale(1.05, 0.9, 0.85), v => { const a = Math.atan2(v.x, v.y); const k = 1 + 0.06 * Math.sin(a * 7); v.x *= k; v.y *= k; }), hair, hd, [0, 0.175, -0.105], { lo: 0.72 });   // bun
       for (const s of [-1, 1]) for (let i = 0; i < 3; i++) mesh(sculpt(sphere(0.023 - i * 0.002, 12, 10).scale(1, 1.3, 1), v => { v.x += 0.004 * Math.sin(v.y * 160); }), hair, hd, [s * (0.106 + i * 0.004), 0.118 - i * 0.034, 0.016 - i * 0.012], { lo: 0.7 });   // ringlets
+    } else if (v2 && o.hat !== 'wig') {
+      hairV2(K, hd);
     } else if (o.hat !== 'wig') {
       const cutM = hairline(0.117, 0.066, -0.006, -0.03, Math.PI * 0.6);
       // (round 11: the ripples now fade at the crown and the cap sits 3 mm higher — the scalp poked through in a pale
@@ -569,11 +602,12 @@ export class CaptainFigure {
       // (round 11: pushed forward with the chin of this face — a strong chin poked through in a patch of skin)
       mesh(sculpt(sphere(0.074, 12, 8, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.55).scale(1.08, 1.2, 0.92 + 0.07 * Math.max(0, F.chin - 0.8)), v => { v.z += 0.012 * Math.sin(v.x * 140) * (v.y < 0 ? 1 : 0); }), hair, hd, [0, 0.07, 0.036], { lo: 0.7 });
     }
-    if (o.moustache !== false && !dress) for (const s of [-1, 1]) { const m = mesh(new THREE.CapsuleGeometry(0.009, 0.045, 2, 5), hair, hd, [s * 0.022, 0.072, 0.109]); m.rotation.z = s * 1.15; }
+    if (v2 && o.moustache !== false) moustacheV2(K, hd);
+    else if (o.moustache !== false && !dress) for (const s of [-1, 1]) { const m = mesh(new THREE.CapsuleGeometry(0.009, 0.045, 2, 5), hair, hd, [s * 0.022, 0.072, 0.109]); m.rotation.z = s * 1.15; }
     // hat
     const hatJ = J('hat', hd, [0, 0.2, -0.005]);
     const hat = o.hat === undefined ? 'tricorn' : o.hat;
-    if (hat === 'tricorn' || hat === 'bicorne') buildCockedHat(hatJ, hatM, brass, hat === 'bicorne', o.plume, mesh, M);
+    if (hat === 'tricorn' || hat === 'bicorne') { buildCockedHat(hatJ, hatM, brass, hat === 'bicorne', v2 ? null : o.plume, mesh, M); if (v2) plumeV2(K, hatJ); }
     else if (hat === 'wide') {
       mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.14, 16).translate(0, 0.04, 0), hatM, hatJ, null, { lo: 0.75 });
       mesh(sculpt(new THREE.CylinderGeometry(0.27, 0.27, 0.012, 28), v => { const r = Math.hypot(v.x, v.z); v.y += 0.03 * Math.max(0, r - 0.15) * 10 * (0.5 + 0.5 * Math.cos(Math.atan2(v.x, v.z) * 2)) * 0.3; }), hatM, hatJ, [0, -0.025, 0]);
