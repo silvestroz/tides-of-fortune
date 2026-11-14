@@ -607,7 +607,10 @@ export class Career {
       }
       return;
     }
-    if (m.ready || Math.hypot(z.x - p.x, z.z - p.z) > Q.spawnRange || !g.combat?.spawnAI) return;
+    if (m.ready || !g.combat?.spawnAI) return;
+    const type = SHIP_TYPES[m.type] ? m.type : 'schooner', dist = Math.hypot(z.x - p.x, z.z - p.z);
+    if (dist < Q.spawnRange * 1.3) g.combat.shipReady?.(type, 'pirate');   // on the approach: her model is built in the background
+    if (dist > Q.spawnRange) return;
     let x, zz, ok = false;
     for (let i = 0; i < 24 && !ok; i++) {
       const a = Math.random() * Math.PI * 2, rr = 150 + Math.random() * z.r * 0.8;
@@ -617,7 +620,7 @@ export class Career {
     }
     if (!ok) return;
     const spec = SHIP_TYPES[m.type] ? { crew: SHIP_TYPES[m.type].crew } : { crew: 90 };
-    const sh2 = g.combat.spawnAI({ type: SHIP_TYPES[m.type] ? m.type : 'schooner', faction: 'pirate', role: m.sub === 'smuggler' ? 'merchant' : 'pirate', x, z: zz,
+    const sh2 = g.combat.spawnAI({ type, faction: 'pirate', role: m.sub === 'smuggler' ? 'merchant' : 'pirate', x, z: zz,
       heading: Math.random() * Math.PI * 2, sailSetting: 0.6, name: m.ship, crew: Math.round(spec.crew * Q.crewF[m.sub === 'smuggler' ? 'smuggler' : 'pirate']) });
     if (!sh2) return;
     sh2.missionId = m.id;
