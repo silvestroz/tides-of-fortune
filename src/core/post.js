@@ -1,29 +1,36 @@
-// Post-processing pipeline. API: new PostFX(game); render(dt); resize(w,h).
-// Chain (EffectComposer, HalfFloat HDR buffers):
-//   RenderPass (linear HDR) → GTAOPass (Ultra only, at half resolution) → GodRaysPass (sun shafts, 1/4 res (1/2.5 in ultra), only when the sun is in view)
-//   → UnrealBloomPass (thresholded: only sun, glitter, lanterns, muzzle flashes, lightning glow)
-//   → OutputPass (ACES + exposure + sRGB) → GradePass (lift/gamma/gain, sat, split tone, canvas, vignette, grain)
-//   → FXAA → FsrPass (FSR 1 upscale to the canvas size + sharpening, to screen; only while the dynamic resolution renders
-//   below the canvas size, see setRenderSize).
+// Post-processing pipeline. API: new PostFX(game); render(dt); resize(); warm().
+// Chain (explicit, no EffectComposer; every full-screen draw at the render size is listed):
+//   scene -> HDR target (linear, half float, MSAA, the only target with a depth buffer)
+//   Ultra only: GTAOPass at half resolution, scene x AO -> second HDR target (half float)
+//   GodRaysPass: sun-shaft texture at 1/4 size (1/2.5 in ultra), only when the sun is in view
+//   BloomPass: thresholded bloom texture at half size (only sun, glitter, lanterns, muzzle flashes, lightning glow)
+//   GradePass: scene + shafts + bloom, ACES + exposure + sRGB, grade (lift/gamma/gain, sat, split tone, canvas,
+//     vignette, grain) in ONE draw -> display target (the picture is display-referred from here on)
+//   FXAA (SMAA in ultra) -> screen
+//   while the dynamic resolution renders below the canvas size (see setRenderSize): FXAA/SMAA -> a second display
+//     target, then FsrPass (FSR 1 upscale to the canvas size + sharpening) -> screen.
+// Only the scene target is multisampled and has a depth buffer: a full-screen draw into an MSAA target pays the
+// samples and a resolve for nothing. The display targets stay half float: anti-aliasing and FSR take edge decisions
+// on thresholds, and rounding their input to 8 bits moves some of them (?ldr=8 makes these targets 8-bit, to
+// measure what the format costs).
 // Extended API:
-//   post.enabled (bool; false = plain renderer.render)   post.bloom (UnrealBloomPass)   post.grade (ShaderPass; .uniforms)
-//   post.godRays (GodRaysPass)   post.setQuality('low'|'medium'|'high')   ?post=0 disables, ?quality=low forces low.
+//   post.enabled (bool; false = plain renderer.render)   post.grade (GradePass; .uniforms)
+//   post.bloom (BloomPass), post.godRays (GodRaysPass), post.aa (FXAAPass | SMAAPass): each has .enabled
+//   post.setQuality('low'|'medium'|'high')   ?post=0 disables, ?quality=low forces low.
 //   post.setRenderSize(w, h | null)  size of the scene and every pass (DynRes); null = the canvas drawing buffer.
 //     Smaller than the canvas -> the FSR pass upsamples to the canvas (post.fsr.enabled). ?fsr=0 keeps the old path.
+//   post.warm()  compiles every program of the chain, each for the kind of target it draws to (game.warmup).
 // Follows game.settings.quality when present ('settings:change' event).
 // The sea scene's layered aerial perspective (ATMOS.params.w, see world/sky/atmosphere.js) is switched on only around
 // this chain's render: port, duel and land scenes (game.renderOverride) keep plain fog.
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { FXAAPass } from 'three/addons/postprocessing/FXAAPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { QUALITY } from './constants.js';
 import { GodRaysPass } from '../post/godRaysPass.js';
-import { createGradePass } from '../post/gradePass.js';
+import { BloomPass } from '../post/bloomPass.js';
+import { GradePass } from '../post/gradePass.js';
 import { FsrPass } from '../post/fsrPass.js';
 import { ATMOS } from '../world/sky/atmosphere.js';
 
@@ -38,38 +45,35 @@ export class PostFX {
     const size = r.getDrawingBufferSize(new THREE.Vector2());
     // 4x MSAA on the HDR scene buffer: thin rigging / ratlines resolve to soft lines instead of dotted noise
     // (FXAA alone cannot reconstruct sub-pixel geometry). ?quality=low drops to 0 samples.
+    // Its depth is used while the scene is drawn and never read afterwards: neither resolved nor stored.
     const lowQ = (game.quality || game.params.get('quality') || game.settings?.quality) === 'low';
-    const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: lowQ ? 0 : this._msaa(game.quality) });
-    this.composer = new EffectComposer(r, rt);
-    this.renderPass = new RenderPass(game.scene, game.camera);
+    this.sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: lowQ ? 0 : this._msaa(game.quality),
+      resolveDepthBuffer: false, storeMultisampledDepthBuffer: false });
+    // display-referred targets: the graded image, and the anti-aliased one handed to FSR (sized only while FSR is on)
+    const ldr = { type: game.params.get('ldr') === '8' ? THREE.UnsignedByteType : THREE.HalfFloatType, depthBuffer: false };
+    this.ldrRT = new THREE.WebGLRenderTarget(size.x, size.y, ldr);
+    this.aaRT = new THREE.WebGLRenderTarget(1, 1, ldr);
     // ultra: sharper sun shafts (smaller divisor = more texels in the 1/div-res mask/blur target)
     this.godRays = new GodRaysPass({ div: QUALITY.godRayDiv || 4 });
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.4, 0.32, 1.4);
-    // a single NaN/Inf pixel in the HDR scene (degenerate normal, 0/0 in a particle or wave term) was blurred by the
-    // bloom mip chain over the whole frame and composited back as NaN: an all-black 3D view (seen intermittently in the
-    // combat showcases). Sanitise and clamp what enters the bloom.
-    { const hp = this.bloom.materialHighPassFilter;
-      hp.fragmentShader = hp.fragmentShader.replace('vec4 texel = texture2D( tDiffuse, vUv );',
-        'vec4 texel = texture2D( tDiffuse, vUv );\n\t\t\tif ( any( isnan( texel ) ) || any( isinf( texel ) ) ) texel = vec4( 0.0 );\n\t\t\ttexel = min( texel, vec4( 64.0 ) );');
-      hp.needsUpdate = true; }
-    this.output = new OutputPass();
-    this.grade = createGradePass();
-    this.fxaa = new FXAAPass();
+    this.bloom = new BloomPass(new THREE.Vector2(size.x, size.y), 0.4, 0.32, 1.4);
+    this.grade = new GradePass();
     // ultra: ground-truth AO right after the scene pass (ships, quays, trunks, rocks anchored), SMAA
     // instead of FXAA. Built only in ultra; switching tier in Options applies after reload like the other systems.
-    this.ao = null; this.smaa = null;
-    if (QUALITY.ao) this.ao = this._makeAO(game, size);
-    if (QUALITY.smaa) this.smaa = new SMAAPass();
+    this.ao = null; this.aoRT = null;
+    if (QUALITY.ao) {
+      this.ao = this._makeAO(game, size);
+      this.aoRT = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, depthBuffer: false });
+    }
+    this.aa = QUALITY.smaa ? new SMAAPass() : new FXAAPass();
+    this._aaMaterials = QUALITY.smaa ? [this.aa._materialEdges, this.aa._materialWeights, this.aa._materialBlend] : [this.aa.material];
     this.fsr = new FsrPass(); this.fsr.enabled = false;
     this._renderSize = null;
-    const passes = [this.renderPass, this.ao, this.godRays, this.bloom, this.output, this.grade, this.smaa || this.fxaa, this.fsr].filter(Boolean);
-    for (const p of passes) this.composer.addPass(p);
     this.time = 0;
     this.quality = 'high';
     const q = game.quality || game.params.get('quality') || game.settings?.quality;
     if (q) this.setQuality(q);
     game.events?.on?.('settings:change', ({ settings }) => settings?.quality && this.setQuality(settings.quality));
-    this.resize(innerWidth, innerHeight);
+    this.resize();
   }
 
   // scene MSAA samples per tier: 0 low, 8 ultra (if the GPU allows it), 4 otherwise
@@ -113,10 +117,8 @@ export class PostFX {
   setQuality(q) {
     this.quality = q;
     const ns = this._msaa(q);
-    for (const t of [this.composer.renderTarget1, this.composer.renderTarget2]) if (t.samples !== ns) { t.samples = ns; t.dispose(); }
+    if (this.sceneRT.samples !== ns) { this.sceneRT.samples = ns; this.sceneRT.dispose(); }
     this.godRays.enabled = q !== 'low';
-    this.bloom.enabled = true;
-    this.fxaa.enabled = true;
   }
 
   _updateParams(dt) {
@@ -165,18 +167,51 @@ export class PostFX {
   }
 
   render(dt) {
-    const g = this.game;
-    if (!this.enabled) { g.renderer.render(g.scene, g.camera); return; }
+    const g = this.game, r = g.renderer;
+    if (!this.enabled) { r.render(g.scene, g.camera); return; }
     this._updateParams(dt);
+    const rt0 = r.getRenderTarget();
+    ATMOS.params.w = this._layerHaze || 0;
+    r.setRenderTarget(this.sceneRT);
+    r.render(g.scene, g.camera);
+    let hdr = this.sceneRT;
     if (this.ao) {
       const c = g.camera.position;
       this._aoBox.min.set(c.x - 450, -1.5, c.z - 450); this._aoBox.max.set(c.x + 450, 160, c.z + 450);
       this.ao.setSceneClipBox(this._aoBox);
       // menus/duel/mini-games keep AO too (port and duel scenes gain the most); off when the post chain is disabled
+      this.ao.render(r, this.aoRT, this.sceneRT);
+      hdr = this.aoRT;
     }
-    ATMOS.params.w = this._layerHaze || 0;
-    this.composer.render(dt);
     ATMOS.params.w = 0;
+    const rays = this.godRays, bloom = this.bloom, aa = this.aa, up = this.fsr.enabled;
+    rays.render(r, hdr.texture);
+    if (bloom.enabled) bloom.render(r, hdr.texture, rays.texture, rays.gain);
+    // the last stage that is switched on draws to the screen
+    this.grade.render(r, aa.enabled ? this.ldrRT : up ? this.aaRT : null, hdr.texture, rays.texture, rays.gain, bloom.enabled ? bloom.texture : null);
+    if (aa.enabled) { aa.renderToScreen = !up; aa.render(r, this.aaRT, this.ldrRT); }
+    if (up) this.fsr.render(r, this.aaRT.texture);
+    r.setRenderTarget(rt0);
+  }
+
+  // Compiles every program of the chain without drawing. A program is keyed on the output it is built for: the
+  // ones that end on the screen are compiled for the screen, and the anti-aliasing pass for both of its outputs
+  // (screen, or the target FSR reads), so the first drop of the dynamic resolution builds nothing.
+  warm() {
+    const r = this.game.renderer, rt0 = r.getRenderTarget();
+    const mesh = this._warmMesh ||= new THREE.Mesh(new THREE.BufferGeometry()
+      .setAttribute('position', new THREE.Float32BufferAttribute([-1, 3, 0, -1, -1, 0, 3, -1, 0], 3))
+      .setAttribute('uv', new THREE.Float32BufferAttribute([0, 2, 0, 0, 2, 0], 2)));
+    mesh.frustumCulled = false;
+    const cam = this._warmCam ||= new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const compile = (materials, target) => {
+      r.setRenderTarget(target);
+      for (const m of materials) { mesh.material = m; r.compile(mesh, cam); }
+    };
+    const aa = this._aaMaterials, last = aa[aa.length - 1];
+    compile([...this.godRays.materials, ...this.bloom.materials, this.grade.material, ...aa, this.fsr.easu], this.aaRT);
+    compile([last, this.fsr.rcas], null);
+    r.setRenderTarget(rt0);
   }
 
   setRenderSize(w, h) { this._renderSize = w ? { w, h } : null; this.resize(); }
@@ -189,9 +224,11 @@ export class PostFX {
     const rs = this._renderSize, up = !!rs && rs.w < b.x - 1;
     const w = up ? rs.w : b.x, h = up ? rs.h : b.y;
     this.fsr.enabled = up;
-    if (up) this.fsr.setOutput(b.x, b.y);
-    this.composer.setPixelRatio(1);
-    this.composer.setSize(w, h);
+    if (up) { this.fsr.setOutput(b.x, b.y); this.aaRT.setSize(w, h); }
+    this.sceneRT.setSize(w, h);
+    this.ldrRT.setSize(w, h);
+    this.aoRT?.setSize(w, h);
+    for (const p of [this.ao, this.godRays, this.bloom, this.aa, this.fsr]) p?.setSize(w, h);
     this.grade.uniforms.uRes.value.set(w, h);
   }
 }

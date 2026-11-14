@@ -2,17 +2,16 @@
 // last pass of the post chain. The scene and every post pass run at the dynamic-resolution size (DynRes.scale); this
 // pass turns that image into the canvas's full size, keeping edges (rigging, coastlines, sails) sharp where a plain
 // stretch blurs them.
-// API: const fsr = new FsrPass(); fsr.setOutput(w, h) (canvas drawing-buffer size); fsr.warm(renderer) (compile both
-//      programs, called by game.warmup); fsr.sharpness (stops, 0 = max,
-//      default 0.35); fsr.enabled. The composer's setSize(w, h) gives the input size. Must be the last enabled pass
-//      (it draws to the screen); when disabled the previous pass draws to the screen as before.
+// API: const fsr = new FsrPass(); fsr.setSize(w, h) (input size); fsr.setOutput(w, h) (canvas drawing-buffer size);
+//      fsr.render(renderer, inputTexture) draws to the screen (PostFX runs it only while fsr.enabled);
+//      fsr.easu / fsr.rcas (programs to precompile, see PostFX.warm); fsr.sharpness (stops, 0 = max, default 0.35).
 // Steps: EASU reads the 12 texels around each output pixel (texelFetch, no filtering), finds the local edge direction
 //   and length from their luma, and blends them with a Lanczos-like kernel stretched along the edge, clamped to the
 //   min/max of the 4 nearest texels (no ringing) -> an RGBA8 target at output size; RCAS then sharpens it with a
 //   5-tap cross whose strength is limited per pixel so it never clips -> screen.
 // Input is the anti-aliased, tone-mapped, sRGB-encoded image (FSR 1 expects perceptual space, after AA).
 import * as THREE from 'three';
-import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
 const vert = /* glsl */`
 varying vec2 vUv;
@@ -119,10 +118,9 @@ void main() {
   gl_FragColor = vec4( ( lobe * ( b + d + f + h ) + e ) / ( 4.0 * lobe + 1.0 ), 1.0 );
 }`;
 
-export class FsrPass extends Pass {
+export class FsrPass {
   constructor({ sharpness = 0.35 } = {}) {
-    super();
-    this.needsSwap = false;
+    this.enabled = true;
     this.sharpness = sharpness;
     this.easu = new THREE.ShaderMaterial({ name: 'FsrEasu', vertexShader: vert, fragmentShader: easuFrag,
       uniforms: { tDiffuse: { value: null }, uIn: { value: new THREE.Vector2(1, 1) }, uOut: { value: new THREE.Vector2(1, 1) } }, depthTest: false, depthWrite: false });
@@ -140,28 +138,16 @@ export class FsrPass extends Pass {
     this.easu.uniforms.uOut.value.set(w, h);
   }
 
-  render(renderer, writeBuffer, readBuffer) {
+  render(renderer, inputTexture) {
     const eu = this.easu.uniforms;
-    eu.tDiffuse.value = readBuffer.texture;
+    eu.tDiffuse.value = inputTexture;
     eu.uIn.value.copy(this._in);
     renderer.setRenderTarget(this.target);
     this.quad.material = this.easu; this.quad.render(renderer);
     this.rcas.uniforms.tDiffuse.value = this.target.texture;
     this.rcas.uniforms.uSharp.value = Math.pow(2, -this.sharpness);
-    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    renderer.setRenderTarget(null);
     this.quad.material = this.rcas; this.quad.render(renderer);
-  }
-
-  // compile both programs at load (game.warmup): no hitch the first time the resolution drops
-  warm(renderer) {
-    const rt = renderer.getRenderTarget();
-    this.easu.uniforms.tDiffuse.value = this.target.texture;   // any texture: the output is discarded
-    this.rcas.uniforms.tDiffuse.value = this.target.texture;
-    const tmp = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false });
-    renderer.setRenderTarget(tmp);
-    this.quad.material = this.easu; this.quad.render(renderer);
-    this.quad.material = this.rcas; this.quad.render(renderer);
-    renderer.setRenderTarget(rt); tmp.dispose();
   }
 
   dispose() { this.easu.dispose(); this.rcas.dispose(); this.target.dispose(); this.quad.dispose(); }
