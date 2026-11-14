@@ -115,7 +115,9 @@ export class PirateLords {
       const e = s.lords[l.id];
       if (!e || e.defeated || this.alive(l.id) || (e.next && now < e.next)) continue;
       const lp = this._lairPos(e); if (!lp) continue;
-      if (Math.hypot(lp.x - p.x, lp.z - p.z) > LORD_TUNING.spawnRange) continue;
+      const dist = Math.hypot(lp.x - p.x, lp.z - p.z);
+      if (dist < LORD_TUNING.spawnRange * 1.3) g.combat?.shipReady?.(l.type, 'pirate');   // on the approach: his ship's model is built in the background
+      if (dist > LORD_TUNING.spawnRange) continue;
       if (this._spawn(l, lp.x, lp.z, 250, 900)) n++;
     }
   }

@@ -38,9 +38,11 @@ export class LivingWorld {
     this.game = game;
     this._t = 0; this._wpT = 0;
     this.convoyShips = new Map();   // convoy id -> ship (runtime)
+    this._convoyDraws = new Map();  // convoy id -> { tier, types }: ships drawn ahead of the spawn (models built meanwhile)
+    this._hunterPicks = {};         // nation -> hunter type drawn ahead of the spawn
     this.ensure();
     const ev = game.events;
-    ev.on('game:loaded', () => { this.convoyShips.clear(); this.ensure(); });
+    ev.on('game:loaded', () => { this.convoyShips.clear(); this._convoyDraws.clear(); this.ensure(); });
     ev.on('career:day', () => this._onDay());
     ev.on('ship:sunk', ({ ship } = {}) => this._onLost(ship));
     ev.on('ship:struck', ({ ship } = {}) => this._onLost(ship));
@@ -349,7 +351,11 @@ export class LivingWorld {
       if (sh) this.convoyShips.delete(c.id);   // dispersed out of sight: it will resume its route
       const pos = this.convoyPos(c); if (!pos) continue;
       const d = Math.hypot(pos.x - p.x, pos.z - p.z);
-      if (d > CONVOYS.spawnRange || d < 900) continue;
+      if (d < 900) continue;
+      if (d > CONVOYS.spawnRange) {   // on the approach: the ships are drawn, their models built in the background
+        if (d < CONVOYS.spawnRange * 1.3) this._convoyTypes(c, g.seaZones?.tierAt(pos.x, pos.z) ?? 2);
+        continue;
+      }
       // nearest open water along the route
       let x = pos.x, z = pos.z, ok = false;
       for (let k = 0; k < 12 && !ok; k++) {
@@ -359,7 +365,9 @@ export class LivingWorld {
       }
       if (!ok) continue;
       const heading = Math.atan2(pos.b.x - x, -(pos.b.z - z));
-      const { charge } = g.combat.spawnConvoy({ faction: c.faction, x, z, heading, treasure: c.treasure });
+      const tier = g.seaZones?.tierAt(x, z) ?? 2;
+      const { charge } = g.combat.spawnConvoy({ faction: c.faction, x, z, heading, treasure: c.treasure, tier, types: this._convoyTypes(c, tier) });
+      this._convoyDraws.delete(c.id);
       charge.convoyId = c.id;
       const to = this._portById(c.to);
       if (charge.ai) charge.ai.waypoint = { x: to.harborPoint.x, z: to.harborPoint.z, port: to };
@@ -367,6 +375,14 @@ export class LivingWorld {
       g.events.emit('convoy:spawn', { convoy: c, ship: charge });
       if (c.known) g.events.emit('notify', { text: `Sails on the horizon: the ${nationAdj(c.faction)} convoy announced at the tavern is heading for ${to.name}.`, kind: 'info', topic: 'rumour', defer: 'prologue' });
     }
+  }
+  // the ships of an announced convoy (combat.convoyTypes), drawn once for a sea tier; asks for their models
+  _convoyTypes(c, tier) {
+    const cb = this.game.combat;
+    let draw = this._convoyDraws.get(c.id);
+    if (!draw || draw.tier !== tier) this._convoyDraws.set(c.id, draw = { tier, types: cb.convoyTypes({ treasure: c.treasure, tier }) });
+    for (const t of [draw.types.type, ...draw.types.guardTypes]) cb.shipReady(t, c.faction);
+    return draw.types;
   }
   _onLost(ship) {
     if (!ship?.convoyId) return;
@@ -386,7 +402,8 @@ export class LivingWorld {
       if (inf < INFAMY.threshold) { delete s.hunters[n]; continue; }
       s.hunters[n] ??= T + INFAMY.firstDelay;
       const heavy = inf >= INFAMY.heavy;
-      if (T < s.hunters[n] || this.hunters(n).length >= (heavy ? 2 : 1)) continue;
+      if (T < s.hunters[n]) { if (pl && T > s.hunters[n] - 12) this._hunterType(n, heavy); continue; }   // due soon: her model is built in the background
+      if (this.hunters(n).length >= (heavy ? 2 : 1)) continue;
       if (this._spawnHunter(n, heavy)) s.hunters[n] = T + INFAMY.cooldown;
       else s.hunters[n] = T + 10;
     }
@@ -396,6 +413,19 @@ export class LivingWorld {
       this._wpT = 4;
       for (const sh of g.ships) if (sh.hunterOf && sh.ai && sh.ai.state === 'cruise' && !g.seaZones?.forbids(sh, pl.position.x, pl.position.z, pl)) sh.ai.waypoint = { x: pl.position.x, z: pl.position.z };
     }
+  }
+  // the hunter's type, drawn under the cap of the player's zone (src/data/seaZones.js, cap.hunter) and kept until
+  // she is spawned; asks for her model
+  _hunterType(n, heavy) {
+    const g = this.game;
+    const capC = g.seaZones?.cap(g.seaZones.tierAt(g.player.position.x, g.player.position.z), 'hunter').maxClass ?? 5;
+    let pool = INFAMY.types[heavy ? 1 : 0].filter(t => SHIP_SPECS[t] && classOf(t) <= capC);
+    if (!pool.length) pool = INFAMY.types[0].filter(t => SHIP_SPECS[t] && classOf(t) <= capC);
+    if (!pool.length) pool = ['brig'];
+    const type = pool.includes(this._hunterPicks[n]) ? this._hunterPicks[n] : pool[Math.floor(Math.random() * pool.length)] || 'frigate';
+    this._hunterPicks[n] = type;
+    g.combat?.shipReady?.(type, n);
+    return type;
   }
   _spawnHunter(n, heavy) {
     const g = this.game, p = g.player, c = g.combat;
@@ -407,12 +437,8 @@ export class LivingWorld {
       ok = Math.abs(x) < 7600 && Math.abs(z) < 7600 && !g.islands?.isLand?.(x, z, 80);
     }
     if (!ok) return null;
-    // sea tiers: hunters capped by the player's zone (src/data/seaZones.js, cap.hunter)
-    const capC = g.seaZones?.cap(g.seaZones.tierAt(p.position.x, p.position.z), 'hunter').maxClass ?? 5;
-    let pool = INFAMY.types[heavy ? 1 : 0].filter(t => SHIP_SPECS[t] && classOf(t) <= capC);
-    if (!pool.length) pool = INFAMY.types[0].filter(t => SHIP_SPECS[t] && classOf(t) <= capC);
-    if (!pool.length) pool = ['brig'];
-    const type = pool[Math.floor(Math.random() * pool.length)] || 'frigate';
+    const type = this._hunterType(n, heavy);
+    delete this._hunterPicks[n];
     const NAMES = { english: ['Retribution', 'Avenger', 'Nemesis'], spanish: ['Justicia', 'Castigo', 'San Miguel'], french: ['Le Justicier', 'La Vengeance', 'Le Redoutable'], dutch: ['Wraak', 'Gerechtigheid', 'Zwaard'] };
     const nm = NAMES[n] || NAMES.english;
     const sh = c.spawnAI({ type, faction: n, role: 'hunter', x, z, heading: Math.atan2(p.position.x - x, -(p.position.z - z)), sailSetting: 0.9,

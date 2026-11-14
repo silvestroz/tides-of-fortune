@@ -1,9 +1,10 @@
-// buildHullGeometry(gb, H, design, colors) -> info
+// buildHullSteps(gb, H, design, colors, rnd) -> generator of the hull build; its return value is info
 //   Lofts the hull skin (painted strakes, wales, paint band, boot-top), inner bulwarks + cap rail, decks,
 //   castle bulkheads, transom stern with windows/gallery/carvings/lanterns, stem/cutwater/head + figurehead,
 //   rudder, gunports (lids, cannons, muzzle anchors), channels, catheads/anchors and deck props.
+//   Each `yield` is a point where the build may wait for the next frame (see builder.js).
 // info: { ports:{port:[{pos,dir}],starboard:[..]}, deckHeight, sternLanterns:[Vector3], lights:[Vector3] (deck lantern),
-//         channels:[{s, y, xOut}], bowTip, headZ, ensignStaff }
+//         channels:[{s, y, xOut}], bowTip, headZ, ensignStaff, skinRange, skinSteps() -> generator painting the skin texture }
 import * as THREE from 'three';
 import { SURF, trs, basisMatrix } from './builder.js';
 import { mulberry32, clamp01, smooth } from './noise.js';
@@ -37,7 +38,7 @@ const LANTERN = (() => {
   return new THREE.LatheGeometry(pts, 6);
 })();
 
-export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
+export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
   const L = H.L, B = H.B;
   const info = { ports: { port: [], starboard: [] }, sternLanterns: [], channels: [], lights: [] };
   const oak = C(d.hullColor || '#a5703a');
@@ -56,6 +57,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
   // context of the fine-detail pass (hullFine.js)
   const F = { gb, H, d, info, rnd, G, BARREL, c: { oak, oakDark, tar, bottom, gold, trim, paint, iron, glass, ochre } };
 
+  yield;
   // ---------------- s sampling (dense near castle breaks & ends)
   const breaks = [];
   for (const k of ['fc', 'qd', 'poop']) if (d.castles[k]) breaks.push(d.castles[k].s);
@@ -141,6 +143,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
   // hull shader can redraw the plank seams analytically (anti-aliased) from v alone (uSkinR = [ys0, ys1])
   let skinY0 = 1e9, skinY1 = -1e9; for (const s of sList) { skinY0 = Math.min(skinY0, H.yBot(s) - so(s)); skinY1 = Math.max(skinY1, H.yTop(s) - so(s)); }
 
+  yield;
   // ---------------- outer skin
   // emitted twice — full resolution for the near geometry (LOD tag 1) and a coarse copy for the far geometry
   // (tag 2: every other station except around the castle breaks and ends, ~1/3 of the rows) with the same UVs/colours
@@ -148,7 +151,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     const s = sList[i];
     if (i % 2 === 0 || i === sList.length - 1 || s < 0.02 || s > 0.98 || breaks.some(b => Math.abs(s - b) < 0.0135)) farIdx.push(i);
   }
-  const skinPass = (idxList, rowsOf, tag) => {
+  const skinPass = function* (idxList, rowsOf, tag) {
     const prevLod = gb.curLod; gb.curLod = tag;
     for (const side of [-1, 1]) {
       for (const [lo, hi, col, surf, rows0, bulge] of bands) {
@@ -165,16 +168,19 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
             const u = arc[i] / arcTot, v = 20 + (y - so(s) - skinY0) / (skinY1 - skinY0);
             ids.push(gb.vertex(p, f.n, u, v, col, surf, 2, aoSide(y, f.n)));
           }
+          if (rows > 4 && ids.length % (24 * (rows + 1)) === 0) yield;
         }
         // winding: compute so that geometric normal matches vertex normal
         emitGrid(ids, idxList.length, rows, null);
+        yield;
       }
     }
     gb.curLod = prevLod;
   };
-  skinPass(sList.map((_, i) => i), (r) => r, 1);
-  skinPass(farIdx, (r, bulge) => bulge ? 2 : Math.max(1, Math.round(r / 3)), 2);
+  yield* skinPass(sList.map((_, i) => i), (r) => r, 1);
+  yield* skinPass(farIdx, (r, bulge) => bulge ? 2 : Math.max(1, Math.round(r / 3)), 2);
 
+  yield;
   // ---------------- transom (closing panel at s=1), same bands -> colours match
   const zT = (y) => H.z(1, y);
   {
@@ -204,6 +210,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     }
     for (let r = 0; r < rows; r++) { const a = ids[r], b = ids[rows + 1 + r], c = ids[rows + 2 + r], e = ids[r + 1]; gb.quad(a, b, c, e); gb.quad(a, e, c, b); }
   }
+  yield;
   // ---------------- inner bulwark + cap rail
   const tB = 0.14;
   const innerPt = (s, y, side) => { const p = H.point(s, y, side); const f = H.frame(s, y, side); return p.addScaledVector(f.n, -tB); };
@@ -221,6 +228,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     }
     emitGrid(ids, sList.length, 2, null);
     emitGrid(cap, sList.length, 1, UP);
+    yield;
   }
   // inner transom
   {
@@ -236,6 +244,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     emitGrid(capIds, 2, 1, UP);
   }
 
+  yield;
   // ---------------- decks (flat planked segments)
   const segs = []; let s0 = 0.0;
   for (const b of breaks.slice().sort((a, b) => a - b)) { segs.push([s0, b]); s0 = b; }
@@ -258,6 +267,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
   }
   info.deckHeight = H.deckLevel(H.sMax);
 
+  yield;
   // ---------------- castle bulkheads (break fronts) with doors/windows/rails
   const bulk = (s, faceDir) => {
     const ya = H.deckLevel(s - 0.006), yb = H.deckLevel(s + 0.006);
@@ -291,9 +301,12 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     gb.add(G.box, m, { color: oakDark, surf: SURF.wood, brk: brkLo + rnd() * 0.7, worldUV: 'auto' });
   }
   if (d.castles.fc) bulk(d.castles.fc.s, 1);
+  yield;
   if (d.castles.qd) bulk(d.castles.qd.s, -1);
+  yield;
   if (d.castles.poop) bulk(d.castles.poop.s, -1);
 
+  yield;
   // ---------------- gunports, lids, cannons
   const deckOf = (k, s) => {
     if (k === 'main') return H.deckY(s);
@@ -349,10 +362,12 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
           fineGunTackle(F, car, out, bx, r, len, p, tt, sz);
         }
         info.ports[side < 0 ? 'port' : 'starboard'].push({ pos: muzzle.clone().addScaledVector(out, 0.08), dir: out.clone() });
+        yield;
       }
     }
   }
 
+  yield;
   // ---------------- stern: windows, gallery, carvings, lanterns, taffrail crest
   const st = d.stern;
   {
@@ -377,6 +392,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
         gb.add(G.box, trs(x, yc - wH / 2 - 0.05, zc + 0.04, -0.1, 0, 0, wW + 0.16, 0.08, 0.06), { color: gold, surf: SURF.gold });
         // arched pediment over the windows
         gb.add(G.tor, trs(x, yc + wH / 2 + 0.05, zc + 0.05, -0.1, 0, 0, wW * 0.55, wW * 0.4, 0.4), { color: gold, surf: SURF.gold });
+        yield;
       }
       // pilasters between windows (gold)
       for (let i = 0; i <= n; i++) {
@@ -385,12 +401,14 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
       }
       // horizontal mouldings
       gb.add(G.box, trs(0, yc - rowH / 2, zc + 0.04, -0.1, 0, 0, hwT * 2.15, 0.09, 0.1), { color: gold, surf: SURF.gold });
+      yield;
       // stern gallery (balcony) for big ships
       if (st.gallery && r === 0) {
         const gz = zc + 0.9, gy = yc - rowH / 2 - 0.05, gw = hwT * 2.0;
         gb.add(G.box, trs(0, gy, gz - 0.42, 0, 0, 0, gw, 0.16, 1.1), { color: oakDark, surf: SURF.wood, worldUV: 'auto', ao: (p, nn) => nn.y < 0 ? 0.55 : 1 });
         const nb = Math.round(gw / 0.25);
         for (let k = 0; k <= nb; k++) gb.add(BALUSTER, trs(-gw / 2 + gw * k / nb, gy + 0.06, gz + 0.08, 0, 0, 0, 0.1, 0.48, 0.1), { color: gold, surf: SURF.gold, brk: 0.4 + rnd() * 0.6, lod: 1 });
+        yield;
         gb.add(G.box, trs(0, gy + 0.56, gz + 0.08, 0, 0, 0, gw, 0.07, 0.1), { color: gold, surf: SURF.gold });
         gb.add(G.box, trs(0, gy + rowH * 0.95, gz - 0.42, 0, 0, 0, gw * 1.02, 0.1, 1.15), { color: gold, surf: SURF.gold });
         for (const sx of [-1, 1]) gb.add(G.box, trs(sx * gw / 2, gy + rowH * 0.47, gz - 0.42, 0, 0, 0, 0.12, rowH * 0.95, 1.1), { color: trim, surf: SURF.paint, worldUV: 'auto' });
@@ -398,10 +416,12 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
         for (let k = 0; k <= 4; k++) gb.add(G.box, trs(-gw / 2 + gw * k / 4, gy - 0.25, gz - 0.3, 0.6, 0, 0, 0.1, 0.5, 0.12), { color: gold, surf: SURF.gold });
       }
     }
+    yield;
     // counter carving band below windows: name board in trim with gold scrolls
     const cy = yBase - 0.2; const hwc = H.hw(1, cy) * 0.8;
     gb.add(G.box, trs(0, cy, zT(cy) + 0.05, -0.1, 0, 0, hwc * 2, 0.3, 0.05), { color: trim, surf: SURF.paint });
     for (const sx of [-1, 1]) gb.add(G.tor, trs(sx * hwc * 0.85, cy, zT(cy) + 0.08, -0.1, 0, sx > 0 ? 0 : Math.PI, 0.18, 0.18, 0.4), { color: gold, surf: SURF.gold });
+    yield;
     // corner quarter-pieces: tall gilded figures/scrolls at the transom corners
     const qy0 = yBase - 0.2, qy1 = yTopS;
     for (const sx of [-1, 1]) {
@@ -412,6 +432,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
       }
       gb.add(G.tor, trs(sx * H.hw(1, qy1) * 0.85, qy1 + 0.2, zT(qy1) + 0.02, 0, 0, sx > 0 ? -0.6 : Math.PI + 0.6, 0.35, 0.35, 0.6), { color: gold, surf: SURF.gold });
     }
+    yield;
     // taffrail crest (arched carved panel with shell/sun motif)
     const cr = st.crest; const ty = yTopS;
     {
@@ -436,6 +457,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
       }
       for (const sx of [-1, 1]) gb.add(G.tor, trs(sx * w * 0.55, ty + cr * 0.32, zT(ty) + 0.08, 0, 0, sx > 0 ? 0.3 : Math.PI - 0.3, cr * 0.22, cr * 0.22, 0.5), { color: gold, surf: SURF.gold });
     }
+    yield;
     // lanterns on the taffrail
     const nl = st.lanterns;
     for (let k = 0; k < nl; k++) {
@@ -454,12 +476,14 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     info.ensignStaff = V3(0, ty + cr * 0.6, zT(ty) - 0.15);
   }
 
+  yield;
   // ---------------- quarter galleries (bowed, glazed, lead-roofed: hullFine.js), level with the stern windows
   if (st.quarterGalleries) {
     const yBase = Math.max(d.transomY + 0.25, H.deckY(1) - 0.2), rowsN = st.windowRows.length;
-    fineQuarterGalleries(F, { y0: yBase - 0.05, h: Math.min(2.7, rowsN * Math.min(1.25, (H.yTop(1) - 0.5 - yBase) / rowsN) + 0.05), zT });
+    yield* fineQuarterGalleries(F, { y0: yBase - 0.05, h: Math.min(2.7, rowsN * Math.min(1.25, (H.yTop(1) - 0.5 - yBase) / rowsN) + 0.05), zT });
   }
 
+  yield;
   // ---------------- carved/painted panel frieze along the upper strake of the castles (big ships)
   if (L >= 30) {
     const portSet = [];
@@ -483,10 +507,12 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
           gb.add(G.box, basisMatrix(c, tt, up, f.n, w, h, 0.04), { color: gold, surf: SURF.gold });
         }
         gb.add(G.sphLo, basisMatrix(p.clone().addScaledVector(f.n, 0.04), tt, up, f.n, 0.11, 0.11, 0.04), { color: gold, surf: SURF.gold });
+        yield;
       }
     }
   }
 
+  yield;
   // ---------------- rudder & stern post (hullFine.js), keel
   {
     fineRudder(F, zT);
@@ -496,6 +522,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     for (let i = 0; i < 24; i++) gb.line(kp[i], kp[i + 1], 0.16, bottom, SURF.tar, 4);
   }
 
+  yield;
   // ---------------- stem, cutwater & head
   {
     const yb = H.yBot(0);
@@ -517,7 +544,9 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     const m = new THREE.Matrix4().makeBasis(V3(0, 0, 1), V3(0, 1, 0), V3(-1, 0, 0)); m.setPosition(0.16, 0, 0);
     gb.add(g, m, { color: oakDark, surf: SURF.wood, worldUV: 'auto' });
     g.dispose();
+    yield;
     fineHead(F, { dly, tipY, tipZ, headLen });   // head rails, head timbers, cheeks, grating
+    yield;
     info.headTip = V3(0, tipY + 0.4, tipZ);
     // figurehead
     const fp = V3(0, tipY + 0.45, tipZ - 0.1);
@@ -551,9 +580,11 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     }
   }
 
+  yield;
   // ---------------- catheads + bower anchors
   fineAnchors(F);
 
+  yield;
   // ---------------- deck furniture
   const dl = (s) => H.deckLevel(s);
   const zs = (s) => H.z(s, dl(s));
@@ -570,6 +601,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     for (let i = 0; i <= n; i++) gb.add(G.box, trs(-w / 2 + w * i / n, y + 0.31, z, 0, 0, 0, 0.05, 0.04, l), { color: C('#7a5230'), surf: SURF.wood });
     for (let i = 0; i <= n; i++) gb.add(G.box, trs(0, y + 0.31, z - l / 2 + l * i / n, 0, 0, 0, w, 0.04, 0.05), { color: C('#7a5230'), surf: SURF.wood });
     gb.add(G.box, trs(0, y + 0.28, z, 0, 0, 0, w, 0.02, l), { color: C('#120c08'), surf: SURF.tar });
+    yield;
   }
   gb.defBrk = null;
   // capstan
@@ -580,6 +612,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     gb.add(G.cyl, trs(0, y + 0.95, z, 0, 0, 0, r * 1.25, 0.18, r * 1.25), { color: oakDark, surf: SURF.wood });
     for (let k = 0; k < 4; k++) gb.add(G.box, trs(0, y + 0.95, z, 0, (k * Math.PI) / 4, 0, r * 6, 0.07, 0.07), { color: C('#7a5230'), surf: SURF.wood });
   }
+  yield;
   // wheel & binnacle on the quarterdeck (or aft main deck)
   {
     const s = d.castles.qd ? Math.min(0.9, d.castles.qd.s + 0.07) : 0.86; const y = dl(s), z = zs(s);
@@ -595,6 +628,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     gb.add(G.sph, trs(0, y + 1.05, z - 1.1, 0, 0, 0, 0.22, 0.14, 0.22), { color: gold, surf: SURF.gold });
     info.wheelPos = V3(0, y, z);
   }
+  yield;
   gb.defBrk = 2.2;
   // barrels and crates (small clusters)
   const clutter = rnd() * 1000;
@@ -611,6 +645,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     }
   }
   void clutter;
+  yield;
   // ship's boat on the main deck
   if (d.boat) {
     const s = d.castles.fc ? d.castles.fc.s + 0.13 : 0.35; const y = dl(s) + 0.45, z = zs(s);
@@ -618,6 +653,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     fineBoat(F, y, z, bl, bw);
   }
   gb.defBrk = null;
+  yield;
   // belfry near forecastle break
   if (d.castles.fc) {
     const s = d.castles.fc.s - 0.02, y = dl(s), z = zs(s);
@@ -637,6 +673,7 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
     gb.add(G.cone, trs(0, yl + s * 0.98, zl, 0, 0, 0, s * 0.52, s * 0.45, s * 0.52), { color: iron, surf: SURF.iron, brk: 2.3, lod: 1 });
     info.lights.push(V3(0, yl, zl));
   }
+  yield;
   // ---------------- channels (chainwales) for shrouds: one per mast per side
   for (const m of d.masts) {
     const s = m.s, y = H.deckY(s) + H.castleRaise(s) + 0.05 * H.bulH;
@@ -648,13 +685,14 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
       info.channels.push({ s, side, y, mid: p.clone().addScaledVector(f.n, out), len, dir: f.ds.clone() });
     }
   }
-  fineDeck(F, { dl, zs, deckHalf, breaks: [d.castles.fc && [d.castles.fc.s, 1], d.castles.qd && [d.castles.qd.s, -1], d.castles.poop && [d.castles.poop.s, -1]].filter(Boolean) });
-  fineSide(F, { ports: portMarks, arcTot, wales, so });
-  // painted on first use (makeHullMaterial) — the towns' moored hulls never use it; getTypeGeo() shares it
-  // between the nations of one type (it doesn't depend on the colours)
+  yield;
+  yield* fineDeck(F, { dl, zs, deckHalf, breaks: [d.castles.fc && [d.castles.fc.s, 1], d.castles.qd && [d.castles.qd.s, -1], d.castles.poop && [d.castles.poop.s, -1]].filter(Boolean) });
+  yield;
+  yield* fineSide(F, { ports: portMarks, arcTot, wales, so });
+  // info.skinSteps() starts the painting of the skin texture (a generator, see paintSkinSteps). It doesn't depend on
+  // the colours: shipModel.js paints it once per type, for the first real ship (the towns' moored hulls never use it)
   const skinArgs = { H, d, sList, arc, arcTot, skinY0, skinY1, bands, wales, so, portMarks, channels: info.channels.slice() };
-  let skin;
-  Object.defineProperty(info, 'skinTex', { enumerable: true, configurable: true, get: () => (skin === undefined ? (skin = paintSkinTexture(skinArgs)) : skin), set: v => { skin = v; } });
+  info.skinSteps = () => paintSkinSteps(skinArgs);
   info.skinRange = [skinY0, skinY1];
   return info;
 }
@@ -663,7 +701,8 @@ export function buildHullGeometry(gb, H, d, colors, rnd = mulberry32(77)) {
 // Per-design canvas (mipmapped) laid over the outer hull skin. RGB = multiplier (128 = x1) on the band colour:
 // wide strakes with a clear value step per plank, wale relief (lit top / cast shadow below), rust & salt runs
 // under ports, scuppers and chain plates, weed and salt bleaching at the waterline. Readable at 100-300 m.
-function paintSkinTexture({ H, d, sList, arc, arcTot, skinY0, skinY1, bands, wales, so, portMarks, channels }) {
+// A generator (it yields every four columns); its return value is the texture, null without a DOM.
+function* paintSkinSteps({ H, d, sList, arc, arcTot, skinY0, skinY1, bands, wales, so, portMarks, channels }) {
   if (typeof document === 'undefined') return null;
   const W = 1024, HH = 256;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = HH;
@@ -746,6 +785,7 @@ function paintSkinTexture({ H, d, sList, arc, arcTot, skinY0, skinY1, bands, wal
       const o = (py * W + px) * 4;
       D[o] = Math.min(255, r * 128); D[o + 1] = Math.min(255, g * 128); D[o + 2] = Math.min(255, b * 128); D[o + 3] = 255;
     }
+    if ((px & 3) === 3) yield;
   }
   ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(cv);

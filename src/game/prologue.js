@@ -35,7 +35,10 @@ export class Prologue {
   step() { return this.hints.goal()?.step || null; }
   get active() { return /^p-/.test(this.step() || ''); }
 
-  start() { this.bye = null; this._hPrev = null; this.hints._advance('p-sail', { sailed: false, turned: 0 }); }
+  start() {
+    this.game.combat?.shipReady?.(PROLOGUE.type, 'pirate');   // the target's model is built in the background meanwhile
+    this.bye = null; this._hPrev = null; this.hints._advance('p-sail', { sailed: false, turned: 0 });
+  }
   skip() {
     const t = this.target;
     if (t && t.alive && !t.struck && !t.sinking) this.game.removeShip(t);   // no motionless rover left behind offshore

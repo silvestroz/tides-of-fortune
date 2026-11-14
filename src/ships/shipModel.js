@@ -21,12 +21,16 @@
 //   update() also accepts: luff 0..1 (from ship.js), rudder -1..1 (turns the rudder blade? — visual only, small)
 //   Draw calls per ship: hull+spars+rigging (1), sails (1), flags (1), crew (1, instanced), lantern glow points (1).
 //   model.lodFar          true while the hull draws its far LOD geometry (gfx-mer, LOD_FAR_M / LOD_NEAR_M)
+// Building ahead of time (a ship that appears out of sight must not cost a frame):
+//   prepareShipGeometry(type, faction) -> bool   true once the geometry and skin of that ship are cached; otherwise
+//                         queues their build, which stepShipBuilds(ms?) advances a little per frame
+// getShipStaticParts(type, faction) -> cached raw geometry of a type (moored hulls, land scenes)
 import * as THREE from 'three';
 import { SHIP_DESIGNS, FACTION_PAINT, FACTION_TRIM } from './art/configs.js';
 import { HullShape } from './art/hullShape.js';
 import { GeoBuilder } from './art/builder.js';
-import { buildHullGeometry } from './art/hull.js';
-import { buildRig } from './art/rig.js';
+import { buildHullSteps } from './art/hull.js';
+import { buildRigSteps } from './art/rig.js';
 import { makeHullMaterial, makeSailMaterial, makeFlagMaterial, updateGlobals } from './art/materials.js';
 import { buildFlagGeometry, getCrewGeometry, getCrewMaterial, getGlowMaterial, buildFoamGeometry, makeFoamMaterial } from './art/extras.js';
 import { getFlagTex, EMBLEM_INDEX } from './art/textures.js';
@@ -86,33 +90,84 @@ function lodNearM() { return QUALITY.shipLodNearM ?? LOD_NEAR_M; }
 
 // ------------------------------------------------------------------ geometry cache (per type)
 // Geometry depends only on type + paint colours (baked into vertex colours) -> cache by type|faction.
+// A build is 30 to 100 ms of work (hull, rig, typed arrays) and the hull skin of a type as much again: written as
+// generators (art/builder.js), run in one go by whoever needs the ship now, or a little per frame by
+// stepShipBuilds() for the ships asked ahead of time with prepareShipGeometry().
 const _geoCache = new Map();
-const _skinByType = new Map();   // type -> () => hull planking texture (lazy, shared by the nations)
+const _skins = new Map();        // type -> { paint: () => generator, gen, tex } hull planking texture, shared by the nations
+const _jobs = new Map();         // type|faction -> build in hand (prepareSteps), oldest first
 const SAIL_COLOR = '#f4ead6';
+const BUILD_MS = 1.5;            // time the builds in hand may take per stepShipBuilds() call
 
-function getTypeGeo(type, faction) {
-  const key = type + '|' + faction;
-  if (_geoCache.has(key)) return _geoCache.get(key);
+function* typeGeoSteps(type, faction) {
   const spec = SHIP_SPECS[type], d = SHIP_DESIGNS[type];
   const H = new HullShape(spec, d);
   const gb = new GeoBuilder();
   const rnd = mulberry32(type.length * 977 + 13);
   const colors = { paint: new THREE.Color(FACTION_PAINT[faction] || FACTION_PAINT.english), trim: new THREE.Color(FACTION_TRIM[faction] || FACTION_TRIM.english) };
-  const info = buildHullGeometry(gb, H, d, colors, rnd);
+  const info = yield* buildHullSteps(gb, H, d, colors, rnd);
   // one planking texture per type, painted for the first real ship (not for moored hulls)
-  let skin = _skinByType.get(type);
-  if (!skin) { const paint = Object.getOwnPropertyDescriptor(info, 'skinTex').get; let t; skin = () => (t === undefined ? (t = paint()) : t); _skinByType.set(type, skin); }
-  Object.defineProperty(info, 'skinTex', { enumerable: true, configurable: true, get: skin });
-  const rig = buildRig(gb, H, d, info, mulberry32(type.length * 31 + 7), SAIL_COLOR);
-  const hullGeo = gb.build();
+  if (!_skins.has(type)) _skins.set(type, { paint: info.skinSteps, gen: null, tex: undefined });
+  const skin = _skins.get(type);
+  Object.defineProperty(info, 'skinTex', { enumerable: true, configurable: true, get: () => { while (!paintSkin(skin)); return skin.tex; } });
+  const rig = yield* buildRigSteps(gb, H, d, info, mulberry32(type.length * 31 + 7), SAIL_COLOR);
+  yield;
+  const hullGeo = yield* gb.buildSteps();
   // far LOD = same vertex buffers, index without fine detail and with a coarse skin (art/builder.js tags)
   const hullGeoFar = new THREE.BufferGeometry();
   for (const [k, a] of Object.entries(hullGeo.attributes)) hullGeoFar.setAttribute(k, a);
   hullGeoFar.setIndex(new THREE.BufferAttribute(hullGeo.userData.farIndex, 1));
   hullGeoFar.boundingSphere = hullGeo.boundingSphere.clone(); hullGeoFar.boundingBox = hullGeo.boundingBox.clone();
   const res = { H, d, info, rig, hullGeo, hullGeoFar, sailGeo: rig.sailGeo, foamGeo: buildFoamGeometry(H) };
-  _geoCache.set(key, res);
+  _geoCache.set(type + '|' + faction, res);
   return res;
+}
+
+// one step of a type's skin painting; true once the texture exists (null without a DOM)
+function paintSkin(skin) {
+  if (skin.tex !== undefined) return true;
+  const r = (skin.gen ||= skin.paint()).next();
+  if (r.done) { skin.tex = r.value; skin.gen = skin.paint = null; }
+  return r.done;
+}
+
+function getTypeGeo(type, faction) {
+  const key = type + '|' + faction;
+  if (!_geoCache.has(key)) {
+    // a build in hand for this ship is finished now (its skin stays with stepShipBuilds or the first model)
+    const steps = _jobs.get(key) || typeGeoSteps(type, faction);
+    while (!_geoCache.has(key)) steps.next();
+  }
+  return _geoCache.get(key);
+}
+
+// everything a model of this type and nation needs that is slow to make: geometry, then the skin of the type
+function* prepareSteps(type, faction) {
+  const key = type + '|' + faction;
+  if (!_geoCache.has(key)) yield* typeGeoSteps(type, faction);
+  const skin = _skins.get(type);
+  while (!paintSkin(skin)) yield;
+}
+
+// prepareShipGeometry(type, faction) -> true when buildShipModel(type, { faction }) will find its geometry and skin
+// ready (a millisecond); otherwise the build is queued for stepShipBuilds() and the caller asks again later.
+export function prepareShipGeometry(type, faction = 'english') {
+  if (!SHIP_SPECS[type]) type = 'brig';
+  const key = type + '|' + faction;
+  if (_geoCache.has(key) && _skins.get(type).tex !== undefined) return true;
+  if (!_jobs.has(key)) _jobs.set(key, prepareSteps(type, faction));
+  return false;
+}
+
+// stepShipBuilds(ms?) advances the queued builds for at most `ms` (once per frame, src/core/game.js)
+export function stepShipBuilds(ms = BUILD_MS) {
+  const t0 = performance.now();
+  for (const [key, job] of _jobs) {
+    let r; do r = job.next(); while (!r.done && performance.now() - t0 < ms);
+    if (!r.done) return;
+    _jobs.delete(key);
+    if (performance.now() - t0 >= ms) return;
+  }
 }
 
 // crew placement spots per type (local positions on decks)

@@ -3,6 +3,8 @@
 // every vertex also carries a CPU-side LOD tag (1 = fine detail, dropped from the far geometry; 2 = far only): small or thin
 // parts added with add() (gilded beads, rails, port frames, grates…), parts flagged { lod: 1 } (guns, carriages),
 // ratlines and running rigging. build() stores the far index in geometry.userData.farIndex (same vertices).
+// The ship builders are generators (buildHullSteps, buildRigSteps, buildSteps(), paintSkinSteps): each `yield` is a point
+// where the build may be put down until the next frame (shipModel.js stepShipBuilds).
 import * as THREE from 'three';
 const _bb = new THREE.Box3();
 
@@ -122,28 +124,38 @@ export class GeoBuilder {
     for (let i = 0; i < points.length - 1; i++) this.line(points[i], points[i + 1], r, color, surf, sides);
   }
 
-  build() {
+  build() { return drain(this.buildSteps()); }
+
+  // build() as a generator (one typed array or index pass per step); its return value is the geometry
+  *buildSteps() {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
-    g.setAttribute('aSurf', new THREE.Float32BufferAttribute(this.surf, 4));
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3)); yield;
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3)); yield;
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2)); yield;
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3)); yield;
+    g.setAttribute('aSurf', new THREE.Float32BufferAttribute(this.surf, 4)); yield;
     g.setAttribute('aBreak', new THREE.Float32BufferAttribute(this.brk, 1));
-    g.setAttribute('aPiv', new THREE.Float32BufferAttribute(this.piv, 2));
+    g.setAttribute('aPiv', new THREE.Float32BufferAttribute(this.piv, 2)); yield;
     // LOD tags: 0 both geometries, 1 near only (fine detail), 2 far only (coarse stand-ins, e.g. the hull skin)
     const T = this.lodTag, I = this.idx, near = [], far = [];
     for (let i = 0; i < I.length; i += 3) {
       const a = T[I[i]], b = T[I[i + 1]], c = T[I[i + 2]];
       if (a !== 2 && b !== 2 && c !== 2) near.push(I[i], I[i + 1], I[i + 2]);
       if (a !== 1 && b !== 1 && c !== 1) far.push(I[i], I[i + 1], I[i + 2]);
+      if (i % 30000 === 29997) yield;
     }
     const big = this.count > 65535;
-    g.setIndex(big ? new THREE.Uint32BufferAttribute(near, 1) : new THREE.Uint16BufferAttribute(near, 1));
+    g.setIndex(big ? new THREE.Uint32BufferAttribute(near, 1) : new THREE.Uint16BufferAttribute(near, 1)); yield;
+    g.userData.farIndex = big ? new Uint32Array(far) : new Uint16Array(far); yield;
     g.computeBoundingSphere(); g.computeBoundingBox();
-    g.userData.farIndex = big ? new Uint32Array(far) : new Uint16Array(far);
     return g;
   }
+}
+
+// runs a build generator to its end in one go and returns its value
+function drain(steps) {
+  let r; do r = steps.next(); while (!r.done);
+  return r.value;
 }
 
 // Build a matrix from position + basis vectors (x, y, z columns) + scale
