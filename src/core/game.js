@@ -181,7 +181,7 @@ export class Game {
     this.bootMark('start:warmup');
     this.events.on('state:change', e => { if (e.from === 'menu' && e.to === 'sail') this.warmup(); });
     if (this.params.get('frozen')) this.frozen = true;
-    installGpuProbe(this);   // suggest the ultra tier once on a strong GPU
+    installGpuProbe(this);   // suggest once the tier that suits the machine: ultra on a strong GPU, Standard when ultra does not hold
     window.__ready = true;
     // loading summary in the console (measure on a real machine: F12 → Console)
     { const nm = {}; for (const [k, v] of Object.entries(this)) if (v && typeof v === 'object' && v.constructor && v.constructor !== Object) nm[v.constructor.name] ??= k;   // minified names → game keys
