@@ -5,7 +5,12 @@
 //   tier cap: 'low' / 'medium' -> min(devicePixelRatio, 1); 'ultra' -> max(1.5, dpr); 'high' -> max(1, dpr);
 //   pixel budget: QUALITY.maxMpx megapixels rendered (2.2 / 2.8 / 3.7 / 8.3 by tier), so a 4K or wide screen is
 //   rendered at a lower ratio and scaled up instead of paying for every pixel. Recomputed when the window resizes.
-// It starts at min(1, ceiling). Every ~1 s the 60th percentile of the frame intervals of that second is compared with
+// It starts at the scale that last held on this machine: once a scale has stayed 10 s at sea (no full-screen mode),
+// it is kept in localStorage 'tof.dynres' per quality tier with the window's size, and the next session starts from
+// it if its window is within a quarter of that size (in pixels), on the nearest step at or under it. With nothing
+// kept it starts at min(1, ceiling); the climb rules below take a strong machine up to its ceiling either way.
+// Nothing is read or kept for automated browsers (navigator.webdriver), ?dynres=0 and ?pr=N.
+// Every ~1 s the 60th percentile of the frame intervals of that second is compared with
 // the target interval T = game.pacer.targetMs (display refresh x presented cadence, 16.7 ms at 60 Hz):
 //   above the native ratio (scale > 1): > 1.08 T -> one step down
 //   at or below it: > max(1.08 T, 18 ms) -> one step down (resolution only defends ~55 fps)
@@ -29,6 +34,7 @@
 import { QUALITY } from './constants.js';
 const CHECK_MS = 1000, STEPS = [0.7, 0.8, 0.9, 1, 1.25, 1.5, 1.75, 2];
 const FAST_HZ = 75, FAST_FLOOR = 0.8, STALL_MS = 250;
+const STORE_KEY = 'tof.dynres', STABLE_MS = 10000, SIZE_NEAR = 1.25;
 
 export class DynRes {
   constructor(game) {
@@ -42,7 +48,10 @@ export class DynRes {
     this.fsr = false;
     this._size = '';
     this._ceiling();
-    this.scale = forced > 0 ? forced : Math.min(1, this.cap);
+    this._remembers = this.enabled && !globalThis.navigator?.webdriver;
+    this._kept = this._recall();    // scale in storage for this tier and window size (0: none)
+    this.scale = forced > 0 ? forced : this._kept || Math.min(1, this.cap);
+    this._heldAt = 0; this._heldScale = this.scale;   // since when the scale has not moved
     this.ms = 16.7;            // smoothed frame interval
     this._last = 0; this._check = 0; this._good = 0;
     this._win = [];             // intervals of the current check window (decisions on a percentile)
@@ -61,6 +70,29 @@ export class DynRes {
     this.ladder = STEPS.filter(s => s < this.cap - 0.01);
     if (this.cap < STEPS[0]) this.ladder = [Math.round(this.cap * 0.8 * 100) / 100];   // huge screen on a small budget
     this.ladder.push(this.cap);
+  }
+
+  // every tier's kept scale: { <tier>: { px, scale } }
+  _stored() {
+    try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {}; } catch { return {}; }
+  }
+
+  // the kept scale for this tier if the window is about the size it was measured on, on this window's ladder
+  _recall() {
+    if (!this._remembers) return 0;
+    const e = this._stored()[this.game.quality], px = innerWidth * innerHeight;
+    if (!e || !(e.scale > 0) || !(e.px > 0) || px > e.px * SIZE_NEAR || px < e.px / SIZE_NEAR) return 0;
+    return this.ladder.filter(s => s <= e.scale + 1e-6).pop() ?? this.ladder[0];
+  }
+
+  // called once per decision: keeps a scale that has held STABLE_MS while the sea was drawn
+  _remember(now) {
+    if (this.game.renderOverride || this.scale !== this._heldScale || !this._heldAt) { this._heldScale = this.scale; this._heldAt = now; return; }
+    if (!this._remembers || this.scale === this._kept || now - this._heldAt < STABLE_MS) return;
+    this._kept = this.scale;
+    const all = this._stored();
+    all[this.game.quality] = { px: innerWidth * innerHeight, scale: this.scale };
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(all)); } catch { /* storage blocked or full */ }
   }
 
   _wantFsr() {
@@ -137,6 +169,7 @@ export class DynRes {
       const up = this.ladder[idx + 1];
       if (ms < T * 0.78 || (this._good >= 4 && !((this._blocked.get(up) || 0) > now))) { this._set(up); this._good = 0; }
     }
+    this._remember(now);
   }
 
   _set(s) {

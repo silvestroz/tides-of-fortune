@@ -5,7 +5,8 @@
 // The displays are also given the timestamp jitter measured on a 120 Hz laptop panel (MEASURED below), a display
 // that changes while the game runs, and rates outside the usual list.
 // The second half runs the pacer together with the dynamic resolution (src/core/dynres.js, on a stubbed window):
-// frame cost = cpuMs + gpuMs x scale², so a lower scale only helps a GPU-bound machine.
+// frame cost = cpuMs + gpuMs x scale², so a lower scale only helps a GPU-bound machine. It ends with the scale
+// the dynamic resolution starts from (kept in a stubbed localStorage).
 // Usage: node tools/test-pacer.mjs
 import { FramePacer } from '../src/core/framePacer.js';
 import { DynRes } from '../src/core/dynres.js';
@@ -215,6 +216,41 @@ screen(1920, 1080, 1);
   check('60 Hz, GPU just short, measured jitter: one step down keeps 60 fps', r.hzSeen.join() === '60' && r.scale <= 0.92 && r.scale >= 0.88 && r.maxDiv === 1 && r.fps > 57, infoJ(r)); }
 { const r = runBoth({ hz: 60, cpuMs: 3, gpuMs: 11, jitter: 'measured', seconds: 120 });
   check('60 Hz, room to spare, measured jitter: native scale', r.hzSeen.join() === '60' && r.minScale >= 1 && r.maxDiv === 1, infoJ(r)); }
+
+// ---- start-up scale: the last scale that held, kept per tier and window size ----
+const kept = new Map();
+const storage = { getItem: k => kept.get(k) ?? null, setItem: (k, v) => { kept.set(k, String(v)); } };
+const fresh = (query = '', quality = 'high') => new DynRes({ params: new URLSearchParams(query), quality, pacer: null, renderer: { setPixelRatio() {}, setSize() {} }, post: null });
+const keptScale = tier => JSON.parse(kept.get('tof.dynres') || '{}')[tier]?.scale;
+screen(1512, 744, 2);
+check('start-up, no storage at all: native scale', fresh().scale === 1, `scale ${fresh().scale}`);
+globalThis.localStorage = storage;
+check('start-up, nothing kept: native scale, not the ceiling', fresh().scale === 1 && fresh().cap > 1.5, `scale ${fresh().scale} ceiling ${fresh().cap}`);
+{ const r = runBoth({ ...LAPTOP, seconds: 120 });
+  check('a session on the laptop keeps the scale that held', keptScale('high') === 0.9 && kept.size === 1, `kept ${kept.get('tof.dynres')} (session ended at ${r.dr.scale})`);
+  check('next session starts from it', fresh().scale === 0.9, `scale ${fresh().scale}`); }
+check('another tier has its own entry: native scale', fresh('', 'ultra').scale === 1, `scale ${fresh('', 'ultra').scale}`);
+check('?dynres=0 and ?pr=1.5 ignore it', fresh('dynres=0').scale === 1 && fresh('pr=1.5').scale === 1.5, `scale ${fresh('dynres=0').scale} / ${fresh('pr=1.5').scale}`);
+screen(1400, 800, 2);
+check('window of about the same size: same start', fresh().scale === 0.9, `scale ${fresh().scale}`);
+screen(2560, 1300, 1);
+check('window three times as large: native scale', fresh().scale === 1, `scale ${fresh().scale}`);
+screen(1512, 744, 2);
+{ const before = kept.get('tof.dynres');
+  Object.defineProperty(globalThis, 'navigator', { value: { webdriver: true }, configurable: true });
+  const r = runBoth({ ...LAPTOP, cpuMs: 2, gpuMs: 2, seconds: 60 });
+  check('automated browser: nothing read, nothing kept', r.startScale === 1 && kept.get('tof.dynres') === before, `start ${r.startScale}, kept ${kept.get('tof.dynres')}`);
+  Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true }); }
+{ const r = runBoth({ ...LAPTOP, cpuMs: 2, gpuMs: 1, seconds: 90 });
+  check('strong machine starting from a kept 0.9: climbs to its ceiling, which is kept in turn', r.startScale === 0.9 && r.dr.scale === r.dr.cap && keptScale('high') === r.dr.cap, `start ${r.startScale} end ${r.dr.scale} kept ${keptScale('high')}`);
+  check('next session starts at that ceiling', fresh().scale === r.dr.cap, `scale ${fresh().scale}`); }
+kept.set('tof.dynres', '{"high":{"px":1124928,"scale":1.3}}');
+check('kept scale between two steps: the step under it', fresh().scale === 1.25, `scale ${fresh().scale}`);
+kept.set('tof.dynres', 'not json');
+check('unreadable entry: native scale', fresh().scale === 1, `scale ${fresh().scale}`);
+globalThis.localStorage = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+{ const r = runBoth({ ...LAPTOP, seconds: 30 });
+  check('storage that throws: native start, the session runs', r.startScale === 1 && r.fps > 50, `start ${r.startScale} fps ${r.fps.toFixed(0)}`); }
 
 console.log(fail ? `\n${fail} failure(s)` : '\nall passed');
 process.exit(fail ? 1 : 0);
