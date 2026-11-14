@@ -1,4 +1,5 @@
-// buildRig(gb, H, design, info, rnd) -> { sailGeo, pivots, tops:[Vector3], flagHoists:{ensign, pennants[]}, mastBreak }
+// buildRigSteps(gb, H, design, info, rnd, sailColor) -> generator (a step per mast, see builder.js); its return value is
+//   { sailGeo, pivots, tops:[Vector3], pennants:[Vector3], masts, bsTip, jbTip, fallIdx }
 //   Masts (lower/top/topgallant with doublings, tops, crosstrees, caps), bowsprit + jibboom, yards, booms, gaffs,
 //   lateen yards; standing rigging (shrouds + ratlines, futtocks, backstays, stays) and running rigging (braces, lifts),
 //   crow's nest on fore-and-aft rigs. Spars/rigging go into the hull GeoBuilder (one draw call); sails into their own
@@ -61,7 +62,7 @@ class SailBuilder {
   }
 }
 
-export function buildRig(gb, H, d, info, rnd, sailColor) {
+export function* buildRigSteps(gb, H, d, info, rnd, sailColor) {
   const L = H.L, B = H.B;
   const sb = new SailBuilder();
   const spar = C('#6a4526'), sparDark = C('#3b2716'), mastC = C('#7a5432');
@@ -76,6 +77,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
 
   const sail = (c) => { const k = 0.94 + rnd() * 0.08; return C(sailColor).multiplyScalar(k); };
 
+  yield;
   // ---------- bowsprit
   const bs = d.bowsprit;
   const bsStart = V3(0, H.deckLevel(0.03) + 0.3, H.z(0.05, H.deckLevel(0.05)));
@@ -119,6 +121,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
     }
   }
 
+  yield;
   // ---------- masts
   for (let i = 0; i < nM; i++) {
     const m = d.masts[i];
@@ -174,6 +177,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
       pennants.push(at(yMastTop).add(V3(0, 0.05, ofsG)));
       M.headT = at(yTT).add(V3(0, 0, ofsT)); M.headL = at(yLT); M.headG = at(yMastTop).add(V3(0, 0, ofsG));
       M.topP = tp; M.tw = tw; M.tl = tl;
+      yield;
       // yards
       const Wc = Math.min(m.yard * B * 2.0, L * 0.6);
       const footY = H.deckLevel(sM) + H.bulH + 1.4;
@@ -212,6 +216,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
           gb.curPiv = [-1, 0];
         }
         M.yards.push({ c, w: yd.w, arm: yd.w * 0.48, brk: yd.brk });
+        yield;
         if (yd.sail) {
           const sc = sail();
           const top = c.clone().add(V3(0, -0.15, 0.12));
@@ -230,6 +235,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
           sb.grid(10, 8, P, anc, V3(0, 0, -1), depth, yd.group, emb, sc, 2 * i, yd.brk, [rnd() * 7, rnd() * 7]);
         }
       }
+      yield;
       // braces: from yardarms aft to the next mast (or the rail)
       for (const y of M.yards) for (const sx of [-1, 1]) {
         const arm = y.c.clone().add(V3(sx * y.arm, 0, 0));
@@ -243,7 +249,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
       // spanker (gaff + boom) on the aftermost square mast
       if (m.spanker) gaffRig(M, y0 + Hm * 0.36, false, 2);
       // shrouds
-      shrouds(M, yLT - 1.0, tw, tl);
+      yield* shrouds(M, yLT - 1.0, tw, tl);
     } else {
       // pole mast (gaff / sloop / lateen)
       const yTop = y0 + Hm;
@@ -264,6 +270,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
         tops.push(cn.clone().add(V3(0, 1.3, 0)));
       } else tops.push(at(y0 + Hm * 0.7));
       M.topP = at(yDbl); M.tw = 1.2; M.tl = 1.0;
+      yield;
       if (m.rig === 'lateen') lateenRig(M);
       else {
         // fore-and-aft: gaff main + optional square topsail / gaff topsail
@@ -297,10 +304,12 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
           sb.grid(6, 6, P, (u, v) => hd.clone().lerp(thr, v), V3(1, 0, 0), 0.35, 2, 1, sail(), 2 * i + 1, 10.9, [rnd() * 7, rnd() * 7]);
         }
       }
-      shrouds(M, yDbl + 1.0, 0.0, 0.0);
+      yield* shrouds(M, yDbl + 1.0, 0.0, 0.0);
     }
+    yield;
   }
 
+  yield;
   // ---------- stays between masts and to the bowsprit; headsails
   const fm = masts[0];
   const fmIsPole = d.masts[0].rig !== 'square';
@@ -328,6 +337,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
       gb.add(G.sph, trs(he.x, he.y, he.z, 0, 0, 0, 0.1, 0.17, 0.17), { color: black, surf: SURF.wood, lod: 1 });
     });
   }
+  yield;
   // headsails (jibs / fore staysail) on the stays
   const nHS = d.headsails;
   const jibClewBase = fm.at(fm.y0 + 1.6);
@@ -362,7 +372,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
     gb.add(g, basisMatrix(a.clone().lerp(b, 0.5), xx, dir, zz, 1, len, 1), { color: col, surf: SURF.wood, brk, uvScale: [1, len / 5], uvOffset: [rnd() * 4, rnd() * 4] });
     g.dispose();
   }
-  function shrouds(M, yHead, tw) {
+  function* shrouds(M, yHead, tw) {
     const sCh = info.channels.filter(c => Math.abs(c.s - M.s) < 1e-6);
     const n = Math.max(3, Math.min(7, Math.round(B * 0.42 + (d.masts[M.i].h > 0.9 ? 1 : 0))));
     for (const ch of sCh) {
@@ -384,6 +394,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
         topP.push(head.clone().add(V3(side * (tw ? Math.min(0.5, tw * 0.12) : 0.15), 0, (t - 0.5) * 0.6)));
       }
       for (let k = 0; k < n; k++) gb.line(bot[k], topP[k], 0.045, tarRope, SURF.rope, 3);
+      yield;
       // ratlines
       const h = topP[0].y - bot[0].y;
       const nr = Math.floor(h / 0.42);
@@ -394,6 +405,7 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
           gb.line(a, b, 0.016, tarRope, SURF.ratline, 3, 1, 0.55 + 0.45 * ((j * 7 + k * 3) % 11) / 11);
         }
       }
+      yield;
       // topmast shrouds from the top's edge to the topmast head, + backstays to the channel
       if (M.headT && M.headT !== M.headL) {
         const edge = M.topP.clone().add(V3(side * (tw ? tw * 0.48 : 0.5), 0.05, 0));
@@ -470,5 +482,6 @@ export function buildRig(gb, H, d, info, rnd, sailColor) {
     sb.grid(9, 7, P, (u) => a.clone().lerp(b, u).add(V3(0, 0.1, 0)), V3(1, 0, 0), 0.05 * len + 0.3, 2, 1, sail(), 2 * i + 1, 2, [rnd() * 7, rnd() * 7]);
   }
 
+  yield;
   return { sailGeo: sb.build(), pivots, tops, pennants, masts, bsTip, jbTip, fallIdx };
 }

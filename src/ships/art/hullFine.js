@@ -2,14 +2,15 @@
 // shaped by what it does. Everything small is tagged for the near LOD only; the silhouette pieces (rudder, quarter
 // galleries, anchors, boat) stay in both.
 //   fineRudder(F, zT)             one-piece blade with a hance, sternpost, pintle straps
-//   fineQuarterGalleries(F, o)    bowed galleries blended into the hull side: drop, glazed band, lead roof, finials
+//   fineQuarterGalleries(F, o)*   bowed galleries blended into the hull side: drop, glazed band, lead roof, finials
 //   fineSternWindow(F, …)         leaded lattice of one stern window;  BALUSTER  turned baluster (lathe, y 0..1)
-//   fineSide(F, o)                moulded rails along the sheer, fenders, entry steps, hawse holes, swivel guns
+//   fineSide(F, o)*               moulded rails along the sheer, fenders, entry steps, hawse holes, swivel guns
 //   finePortLid(F, …)             strap hinges and lanyard of one gunport lid;  fineGunTackle(F, …)  breeching ropes
 //   fineHead(F, o)                head rails with head timbers, cheeks, grating;  fineLion(F, fp, fs)  figurehead
 //   fineAnchors(F)                catheads with knees, bower anchors (shank, arms, palms, stock, ring)
-//   fineDeck(F, o)                ladders at the breaks, fife rails and pin rails with coils, galley chimney
+//   fineDeck(F, o)*               ladders at the breaks, fife rails and pin rails with coils, galley chimney
 //   fineBoat(F, …)                ship's boat: lofted shell, thwarts, gunwale, oars, chocks
+// * = a generator of build steps (see builder.js): called with yield* from buildHullSteps
 // F = { gb, H, d, info, rnd, G, BARREL, c: { oak, oakDark, tar, bottom, gold, trim, paint, iron, glass, ochre } }
 import * as THREE from 'three';
 import { SURF, trs, basisMatrix } from './builder.js';
@@ -29,6 +30,8 @@ const RING = new THREE.TorusGeometry(1, 0.14, 4, 10);
 
 // run fn with every part forced into the near LOD
 const near = (gb, fn) => { const p = gb.curLod; gb.curLod = 1; fn(); gb.curLod = p; };
+// the same for a generator of build steps (the GeoBuilder belongs to one build: its LOD state survives the yields)
+function* nearSteps(gb, steps) { const p = gb.curLod; gb.curLod = 1; yield* steps; gb.curLod = p; }
 
 // Quad surface from a grid of points pts[i][j] (i along, j across). Normals from the grid, one colour per cell
 // (cell(i, j) -> [color, surf] or null to skip), winding chosen against `out(p)` (rough outward direction).
@@ -79,7 +82,7 @@ export function fineRudder(F, zT) {
 
 // ---------------------------------------------------------------- quarter galleries
 // o: { y0, h, zAft(y) }  — window band from y0 over h, aft face flush with the transom
-export function fineQuarterGalleries(F, { y0, h, zT }) {
+export function* fineQuarterGalleries(F, { y0, h, zT }) {
   const { gb, H, d, G, c } = F, L = H.L;
   const lead = C('#66707a');
   const len = Math.min(L * 0.085, 3.8), out = 0.42 + L * 0.006, dropH = Math.min(1.4, h * 0.6), roofH = 0.85;
@@ -107,15 +110,17 @@ export function fineQuarterGalleries(F, { y0, h, zT }) {
       if (kind === 'roof') return [lead, SURF.iron];
       return j >= 1 && (j - 1) % 4 !== 0 ? [c.glass, SURF.glass] : [c.gold, SURF.gold];
     }, outDir, (p) => 0.75 + 0.25 * clamp01((p.y - (y0 - dropH)) / dropH));
+    yield;
     // aft face, in the plane of the transom
     const aft = rows.map(([y, R]) => [V3(side * (Math.abs(P(1, y, 0).x) - 0.04), y, zT(y) + 0.0), P(1, y, R)]);
     surface(gb, aft, (i) => [rows[i][2] === 'roof' ? lead : rows[i][2] === 'win' ? c.glass : c.trim, rows[i][2] === 'win' ? SURF.glass : rows[i][2] === 'roof' ? SURF.iron : SURF.paint], () => V3(0, 0, 1));
-    near(gb, () => {
+    yield* nearSteps(gb, (function* () {
       // mouldings along the body
       for (const [y, R, col, r] of [[y0, 1.05, c.gold, 0.06], [y0 + h * sill, 1.03, c.gold, 0.045], [y0 + h * (1 - frieze), 1.03, c.gold, 0.045], [y1, 1.1, c.gold, 0.07]]) {
         const p = []; for (let j = 0; j <= NU; j++) p.push(P(j / NU, y, R + 0.02)); p.push(V3(p[NU].x - side * out * 0.6, y, p[NU].z + 0.03));
         gb.rope(p, r, col, SURF.gold, 4);
       }
+      yield;
       // leaded lattice over the glass: two horizontal leads + one vertical per light
       const wa = y0 + h * sill, wb = y0 + h * (1 - frieze);
       for (const t of [1 / 3, 2 / 3]) { const p = []; for (let j = 1; j <= NU; j++) p.push(P(j / NU, wa + (wb - wa) * t, 1.012)); gb.rope(p, 0.014, c.oakDark, SURF.wood, 3); }
@@ -125,7 +130,8 @@ export function fineQuarterGalleries(F, { y0, h, zT }) {
       gb.add(G.sphLo, trs(top.x, top.y + 0.12, top.z, 0, 0, 0, 0.1, 0.16, 0.1), { color: c.gold, surf: SURF.gold });
       gb.add(G.cone, trs(top.x, top.y + 0.4, top.z, 0, 0, 0, 0.05, 0.3, 0.05), { color: c.gold, surf: SURF.gold });
       gb.add(G.sphLo, trs(bot.x, bot.y - 0.1, bot.z, 0, 0, 0, 0.11, 0.17, 0.11), { color: c.gold, surf: SURF.gold });
-    });
+    })());
+    yield;
   }
 }
 
@@ -143,11 +149,11 @@ export function fineSternWindow(F, x, yc, zc, wW, wH) {
 
 // ---------------------------------------------------------------- hull sides
 // o: { ports: [[s, yBottom, size]], arcTot, wales }
-export function fineSide(F, { ports, arcTot, wales, so }) {
+export function* fineSide(F, { ports, arcTot, wales, so }) {
   const { gb, H, d, G, BARREL, c } = F, L = H.L;
   const inPort = (s, y) => ports.some(([ps, yb, sz]) => Math.abs(s - ps) * arcTot < sz * 0.72 && y > yb - 0.12 && y < yb + sz + 0.12);
   const hull = (s, y, side, off) => { const p = H.point(s, y, side), f = H.frame(s, y, side); return p.addScaledVector(f.n, off); };
-  near(gb, () => {
+  yield* nearSteps(gb, (function* () {
     // moulded rails following the true sheer under the castles (waist rail and drift rail) + rail under the cap
     const rails = [[(s) => H.deckY(s) + 0.12, 0.06, 0.985, 0.075, c.oakDark, SURF.wood], [(s) => H.deckY(s) + H.bulH * 0.62, 0.05, 0.985, 0.05, c.gold, SURF.gold]];
     if (H.castleRaise(0.99) > 1.2) rails.push([(s) => H.yTop(s) - Math.min(1.0, H.castleRaise(s) * 0.55) - 0.25, 0.05, 0.985, 0.055, c.oakDark, SURF.wood]);
@@ -159,6 +165,7 @@ export function fineSide(F, { ports, arcTot, wales, so }) {
         if (p && prev) gb.line(prev, p, r, col, surf, 4);
         prev = p;
       }
+      yield;
     }
     // fenders and entry steps in the waist, in the gaps between the gunports of the main battery
     const row = d.ports[0], gaps = [];
@@ -179,6 +186,7 @@ export function fineSide(F, { ports, arcTot, wales, so }) {
           gb.add(G.box, basisMatrix(p.addScaledVector(f.n, 0.06), f.ds, UP, f.n, 0.62, 0.06, 0.13), { color: c.oakDark, surf: SURF.wood });
         }
       }
+      yield;
       // hawse holes with their bolsters, each side of the stem
       for (const k of [0, 1]) {
         const s = 0.022 + k * (0.01 + 0.25 / L), y = H.deckY(s) - 0.35 - H.fb * 0.06, p = H.point(s, y, side), f = H.frame(s, y, side);
@@ -197,8 +205,9 @@ export function fineSide(F, { ports, arcTot, wales, so }) {
         gb.add(BARREL, basisMatrix(p.clone().add(V3(0, 0.36, 0)).addScaledVector(dir, -0.38), bx, dir, V3().crossVectors(bx, dir).normalize(), 0.055, 0.95, 0.055), { color: C('#8a6a2c'), surf: SURF.gold });
         gb.line(p.clone().add(V3(0, 0.36, 0)).addScaledVector(dir, -0.38), p.clone().add(V3(0, 0.26, 0)).addScaledVector(dir, -0.7), 0.018, c.iron, SURF.iron, 3);
       }
+      yield;
     }
-  });
+  })());
 }
 
 // strap hinges + lanyard of an open gunport lid
@@ -307,11 +316,11 @@ export function fineAnchors(F) {
 
 // ---------------------------------------------------------------- deck fittings
 // o: { dl(s), zs(s), deckHalf(s, y), breaks: [[s, faceDir]] }
-export function fineDeck(F, { dl, zs, deckHalf, breaks }) {
+export function* fineDeck(F, { dl, zs, deckHalf, breaks }) {
   const { gb, H, d, G, info, c } = F, B = H.B;
   const wood = C('#6b4423'), pinC = C('#8a6038');
   gb.defBrk = 2.2;   // hidden with the rest of the deck clutter on the duel deck
-  near(gb, () => {
+  yield* nearSteps(gb, (function* () {
     // ladders at the breaks of the castles, one each side
     for (const [s, faceDir] of breaks) {
       const ya = dl(s - 0.008), yb = dl(s + 0.008), yl = Math.min(ya, yb), yh = Math.max(ya, yb), h = yh - yl;
@@ -326,6 +335,7 @@ export function fineDeck(F, { dl, zs, deckHalf, breaks }) {
     }
     // fife rail abaft each mast: two bitts, a cross rail, belaying pins, coils of the halliards
     for (const m of d.masts) {
+      yield;
       const y = dl(m.s), z = zs(m.s) + m.r * 1.2 + 0.75, w = Math.min(B * 0.2, 1.9);
       if (Math.abs(dl(m.s + 0.03) - y) > 0.2) continue;   // no room before a break
       for (const sx of [-1, 1]) {
@@ -342,6 +352,7 @@ export function fineDeck(F, { dl, zs, deckHalf, breaks }) {
     }
     // pin rails inside the bulwarks under the shrouds, with pins and coils
     for (const ch of info.channels) {
+      yield;
       const s = ch.s, yd = dl(s), y = yd + Math.min(0.85, (H.yTop(s) - yd) * 0.72);
       const p = H.point(s, y, ch.side), f = H.frame(s, y, ch.side);
       const inb = p.addScaledVector(f.n, -0.24), len = ch.len * 0.78;
@@ -359,7 +370,7 @@ export function fineDeck(F, { dl, zs, deckHalf, breaks }) {
       gb.add(G.box, trs(x, y + 0.5, z, 0, 0, 0, 0.36, 1.0, 0.36), { color: c.iron, surf: SURF.iron });
       gb.add(G.box, trs(x, y + 1.06, z - 0.05, 0.25, 0, 0, 0.46, 0.1, 0.5), { color: c.iron, surf: SURF.iron });
     }
-  });
+  })());
   gb.defBrk = null;
 }
 

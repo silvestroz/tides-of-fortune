@@ -18,6 +18,12 @@
 //   startSinking(ship, {explode})  begin the sinking sequence (emits 'ship:sinking' now, 'ship:sunk' at the end)
 //   spawnAI(opts)                  spawn a ship with an AI controller. opts = spawnShip opts + { role }
 //   setTrafficTarget(n)            desired AI population (default 16); 0 disables top-up
+//   shipReady(type, faction) -> bool  true once a ship of that type and nation can be spawned without building her
+//                                  model geometry in the frame; otherwise starts that build in the background. For
+//                                  spawns out of the player's sight: ask again later, spawn when true. The traffic
+//                                  top-up works that way (a planned ship appears a second or two after the draw).
+//   convoyTypes({ treasure?, type?, guards?, tier? }) -> { type, guardTypes[] }  the ships a convoy is made of; pass
+//                                  it as spawnConvoy({ ..., types }) to spawn exactly those (after shipReady)
 //   noMagazine                     bool: disable random magazine explosions (scripted scenes)
 //   AMMO                           { round|chain|grape: { speed, maxElev, spread, pellets, ... } }
 //   stats                          { shots, hits, splashes, sunk, struck, rescued }
@@ -36,7 +42,7 @@ import * as THREE from 'three';
 import { FACTIONS } from '../core/constants.js';
 import { isHostile, relation, onPlayerAttack, onPlayerSink, getReputation, HOSTILE_REP } from './factions.js';
 import { AIController } from '../ships/ai.js';
-import { SHIP_SPECS } from '../ships/shipModel.js';
+import { SHIP_SPECS, prepareShipGeometry } from '../ships/shipModel.js';
 import { pickTrafficType, classOf } from '../data/shipTypes.js';
 import { ZONE_TIERS } from '../data/seaZones.js';   // sea tiers
 import { theShip, ofShip } from '../core/i18n.js';
@@ -95,7 +101,7 @@ export class CombatSystem {
     this.game = game;
     this.stats = { shots: 0, hits: 0, splashes: 0, sunk: 0, struck: 0, boards: 0, rescued: 0 };
     this.trafficTarget = 16;
-    this._trafficT = 5;
+    this._trafficT = 5; this._trafficPlan = null;   // _trafficPlan: a drawn ship waiting for her geometry
     this._boardCd = new WeakMap();
 
     // elevation lookup per ammo (range -> elevation), launch height ~2.5 m
@@ -969,7 +975,17 @@ export class CombatSystem {
     return r < R.merchant ? 'merchant' : r < R.merchant + R.pirate ? 'pirate' : 'patrol';
   }
 
+  shipReady(type, faction) { return prepareShipGeometry(type, faction); }
+
+  // _spawnRandom(nearPlayer) draws a ship or a convoy of the traffic and spawns it at once
   _spawnRandom(nearPlayer) {
+    const plan = this._planRandom(nearPlayer);
+    return plan && this._spawnPlan(plan);
+  }
+
+  // The draw alone: where, who, which ships. -> { x, z, ships: [[type, faction]], convoy: spawnConvoy args | null,
+  // ship: spawnAI opts | null }, or null when no open water was found.
+  _planRandom(nearPlayer) {
     const game = this.game, isl = game.islands, rnd = Math.random;
     const ports = isl?.ports || [];
     const nations = ['english', 'spanish', 'french', 'dutch'];
@@ -1018,11 +1034,18 @@ export class CombatSystem {
     // convoys: some merchants sail under escort; now and then a Spanish treasure galleon with two
     if (role === 'merchant') {
       const r = rnd();
-      if (faction === 'spanish' && r < CONVOY.treasure && tier >= 2) return this.spawnConvoy({ faction, x, z, heading, treasure: true, tier }).charge;
-      if (r < CONVOY.escorted) return this.spawnConvoy({ faction, x, z, heading, type, name, crew, tier }).charge;
+      let convoy = null;
+      if (faction === 'spanish' && r < CONVOY.treasure && tier >= 2) convoy = { faction, x, z, heading, treasure: true, tier };
+      else if (r < CONVOY.escorted) convoy = { faction, x, z, heading, type, name, crew, tier };
+      if (convoy) {
+        convoy.types = this.convoyTypes(convoy);
+        return { x, z, convoy, ship: null, ships: [convoy.types.type, ...convoy.types.guardTypes].map(t => [t, faction]) };
+      }
     }
-    return this.spawnAI({ type, faction, role, x, z, heading, sailSetting: role === 'merchant' ? 0.8 : 0.6, name, crew });
+    return { x, z, convoy: null, ship: { type, faction, role, x, z, heading, sailSetting: role === 'merchant' ? 0.8 : 0.6, name, crew }, ships: [[type, faction]] };
   }
+
+  _spawnPlan(plan) { return plan.convoy ? this.spawnConvoy(plan.convoy).charge : this.spawnAI(plan.ship); }
 
   // freshName(list, rnd?) a name of the list that no ship afloat bears (one rnd() draw, as before); all taken: any
   freshName(list, rnd = Math.random) {
@@ -1032,30 +1055,41 @@ export class CombatSystem {
     return from[Math.floor(rnd() * from.length)];
   }
 
-  // spawnConvoy({ faction, x, z, heading, treasure?, type?, name?, crew?, guards? }) -> { charge, guards[] }
-  // A merchant (or treasure galleon, ship.treasure = true) with 1–2 escorts of its nation (AIController.guardOf).
-  // Sea tiers: `tier` (default: the spawn point's) caps the escorts (ZONE_TIERS[t].cap.escort) and the great
-  // galleon (tier III); in guarded waters, the escorts only defend their charge (ai.defendOnly).
-  spawnConvoy({ faction = 'spanish', x, z, heading = 0, treasure = false, type, name, crew, guards, tier } = {}) {
-    tier ??= this.game.seaZones?.tierAt(x, z) ?? 2;
+  // convoyTypes({ treasure?, type?, guards?, tier? }) -> { type, guardTypes[] }: the charge and her escorts, drawn
+  // under the caps of the sea tier (ZONE_TIERS[t].cap.escort; the great galleon only in tier III)
+  convoyTypes({ treasure = false, type, guards, tier = 2 } = {}) {
     const escCap = ZONE_TIERS[tier]?.cap.escort ?? 5;
     type = treasure ? (Math.random() < 0.3 && tier >= 3 ? 'greatgalleon' : 'galleon') : type || 'merchantman';
     { const mCap = ZONE_TIERS[tier]?.cap.merchant ?? 5; if (classOf(type) > mCap) type = classOf('nao') <= mCap ? 'nao' : 'merchantman'; }   // announced convoy in guarded waters: no galleon
+    const guardTypes = [];
+    for (let k = 0, n = guards ?? (treasure ? 2 : 1); k < n; k++) {
+      let gt = treasure && k === 0 ? 'frigate' : Math.random() < 0.5 ? 'brig' : 'frigate';
+      if (classOf(gt) > escCap) gt = classOf('corvette') <= escCap ? 'corvette' : 'brig';
+      guardTypes.push(gt);
+    }
+    return { type, guardTypes };
+  }
+
+  // spawnConvoy({ faction, x, z, heading, treasure?, type?, name?, crew?, guards?, types? }) -> { charge, guards[] }
+  // A merchant (or treasure galleon, ship.treasure = true) with 1–2 escorts of its nation (AIController.guardOf).
+  // Sea tiers: `tier` (default: the spawn point's) caps the ships (convoyTypes; `types` = a draw made beforehand);
+  // in guarded waters, the escorts only defend their charge (ai.defendOnly).
+  spawnConvoy({ faction = 'spanish', x, z, heading = 0, treasure = false, type, name, crew, guards, tier, types } = {}) {
+    tier ??= this.game.seaZones?.tierAt(x, z) ?? 2;
+    const guardTypes = (types ||= this.convoyTypes({ treasure, type, guards, tier })).guardTypes;
+    type = types.type;
     const spec = SHIP_SPECS[type] || SHIP_SPECS.merchantman;
     const charge = this.spawnAI({ type, faction, role: 'merchant', x, z, heading, sailSetting: 0.65,
       name: name || this.freshName(treasure ? TREASURE_NAMES : NAMES[faction] || NAMES.english),
       crew: crew ?? Math.round(spec.crewMax * (treasure ? 0.75 : 0.5)) });
     charge.treasure = treasure; charge.guards = [];
-    const n = guards ?? (treasure ? 2 : 1);
     const slots = [{ x: 110, z: -70 }, { x: -110, z: -70 }, { x: 0, z: -160 }];
     const sh = Math.sin(heading), ch = Math.cos(heading);
-    for (let k = 0; k < n; k++) {
+    for (let k = 0; k < guardTypes.length; k++) {
       const o = slots[k % slots.length];
       const gx = x + ch * o.x + sh * o.z, gz = z + sh * o.x - ch * o.z;
       if (this.game.islands?.isLand?.(gx, gz, 40)) continue;
-      let gt = treasure && k === 0 ? 'frigate' : Math.random() < 0.5 ? 'brig' : 'frigate';
-      if (classOf(gt) > escCap) gt = classOf('corvette') <= escCap ? 'corvette' : 'brig';
-      const gs = SHIP_SPECS[gt];
+      const gt = guardTypes[k], gs = SHIP_SPECS[gt];
       const gd = this.spawnAI({ type: gt, faction, role: 'patrol', x: gx, z: gz, heading, sailSetting: 0.65,
         name: this.freshName(NAMES[faction] || NAMES.english), crew: Math.round(gs.crewMax * 0.75) });
       gd.ai.guardOf = charge; gd.ai.guardSlot = { ...o }; gd.escorting = charge;
@@ -1071,11 +1105,25 @@ export class CombatSystem {
     return n;
   }
 
+  // Top-up: every 8 s, far idle ships leave and, under the target, one ship or convoy is drawn. She is spawned
+  // once the geometry of her ships is built (shipReady: a few frames to a few seconds for a new type or nation),
+  // if her spot is still clear and far from the player.
   _updateTraffic(dt) {
+    const game = this.game, p = game.player, plan = this._trafficPlan;
+    if (plan && (!p || this.trafficTarget <= 0)) this._trafficPlan = null;
+    else if (plan) {
+      let ready = true;
+      for (const [type, faction] of plan.ships) if (!this.shipReady(type, faction)) ready = false;
+      if (ready) {
+        this._trafficPlan = null;
+        const clear = Math.hypot(plan.x - p.position.x, plan.z - p.position.z) > 1400
+          && !game.ships.some(s => Math.hypot(s.position.x - plan.x, s.position.z - plan.z) < 150);
+        if (clear) this._spawnPlan(plan);
+      }
+    }
     this._trafficT -= dt;
     if (this._trafficT > 0) return;
     this._trafficT = 8;
-    const game = this.game, p = game.player;
     if (!p || this.trafficTarget <= 0) return;
     let ai = 0;
     for (let i = game.ships.length - 1; i >= 0; i--) {
@@ -1088,7 +1136,7 @@ export class CombatSystem {
       }
       ai++;
     }
-    if (ai < this.trafficTarget) this._spawnRandom(true);
+    if (ai < this.trafficTarget) this._trafficPlan ||= this._planRandom(true);
   }
 
   _despawn(s) {

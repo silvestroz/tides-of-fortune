@@ -98,7 +98,7 @@ function greyTex() {
   return _greyTex;
 }
 
-// skinTex: per-design hull skin texture from buildHullGeometry (info.skinTex); optional
+// skinTex: per-design hull skin texture (info.skinTex, painted by shipModel.js from info.skinSteps); optional
 // skinRange: [ys0, ys1] sheer-relative heights of the skin's v = 20..21 (info.skinRange); without it (merged moored
 // hulls, duel dressing) the analytic plank seams are off
 export function makeHullMaterial(skinTex = null, skinRange = null) {

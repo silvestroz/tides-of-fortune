@@ -20,7 +20,7 @@ import { Ship } from '../ships/ship.js';
 import { SeaZones } from '../world/seaZones.js';   // sea tiers
 import { Villages } from '../game/village.js';     // fishing villages
 import { WeatherZones } from '../world/weatherZones.js';
-import { buildShipModel, SHIP_SPECS } from '../ships/shipModel.js';
+import { buildShipModel, SHIP_SPECS, stepShipBuilds } from '../ships/shipModel.js';
 import { warmupPortraits } from '../ui/port/portrait3d.js';   // character portraits
 import { CameraRig } from '../camera/cameraRig.js';
 import { PlayerController } from '../ships/playerController.js';
@@ -224,6 +224,7 @@ export class Game {
     this.time += dt;
     for (const s of this.systems) s.update?.(dt, this.time);
     for (const ship of this.ships) ship.update(dt, this.time);
+    stepShipBuilds();                   // ship geometry asked ahead of time (combat.shipReady), a little per frame
     this.cameraRig?.lateUpdate?.(dt);   // camera positions after ships move
     this.nameplates?.update(dt);
     this.duel?.lateUpdate?.(dt);        // the duel camera overrides the rig while active
