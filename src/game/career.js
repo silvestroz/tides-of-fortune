@@ -28,6 +28,7 @@ import { Family } from './family.js';                 // married life (game.fami
 import { mutinyOutcome } from '../data/mutiny.js';
 import { MISSIONS, CARGOES, QUARRY_NAMES, QUARRY_TEXT, WRECKS, RESCUE_TEXT, SCOUT_TEXT, qtyLabel, fill, cap, theShipN, dayLabel } from '../data/missions.js';   // governor's missions
 import { GOODS } from '../data/world.js';
+import { playerWear, wearSeaDay } from '../data/hullWear.js';   // the flagship's hull fouls at sea
 
 export const RANKS = ['Commoner', 'Ensign', 'Lieutenant', 'Captain', 'Major', 'Colonel', 'Admiral', 'Baron', 'Count', 'Duke'];
 export const LAND_GRANT = [0, 0, 0, 50, 100, 200, 400, 800, 1600, 3000];
@@ -110,6 +111,7 @@ export class Career {
     ev.on('port:leave', () => this._checkCargo('lost'));
     // deadlines were recalibrated (MISSIONS.perDay); a mission accepted before that (save without `missionDelays`)
     // gains MISSIONS.oldBonus days, once; every mission accepted since sets the flag
+    ev.on('game:loaded', () => game.player?.model?.setWear(playerWear(game.state)));
     ev.on('game:loaded', () => {
       const st = game.state; if (!st || st.missionDelays >= 2) return;
       for (const m of st.missions || []) if (m.status === 'active' && m.deadline && !m.ready) m.deadline += MISSIONS.oldBonus ?? 2;
@@ -180,6 +182,7 @@ export class Career {
       if (d.day > DIM[d.month - 1]) { d.day = 1; d.month++; if (d.month > 12) { d.month = 1; d.year++; } }
       if (atSea) {
         s.daysAtSea++;
+        g.player?.model?.setWear(wearSeaDay(s));
         const crew = g.player?.crew ?? s.crew ?? 0;
         const fx = g.fortune?.fx;   // specialists & items
         s.foodDue = (s.foodDue || 0) + crew / 25 * (fx?.foodMul ?? 1) / DAY_SCALE;   // barrels per day (cooper: −30 %), fractional

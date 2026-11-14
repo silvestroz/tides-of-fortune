@@ -437,7 +437,7 @@ function shipyard({ kit: k, port, game }) {
   };
   S.setShip = (type, o = {}) => {
     const faction = o.faction || pl?.faction || 'english';
-    if (cur.model && type === cur.type && faction === cur.faction && !o.force) { cur.name = o.name ?? cur.name; S.setDamage(o.damage); return cur.model; }
+    if (cur.model && type === cur.type && faction === cur.faction && !o.force) { cur.name = o.name ?? cur.name; S.setDamage(o.damage); cur.model.setWear?.(o.wear); return cur.model; }
     let model = null;
     try { model = buildShipModel(type, { faction, seed: 77, name: o.name, sailSetting: 0, jack: false }); } catch (e) { console.warn('shipyard: model', type, e); return cur.model; }
     if (cur.model) { s.remove(cur.model.group); cur.model.dispose?.(); }
@@ -448,6 +448,7 @@ function shipyard({ kit: k, port, game }) {
     model.group.traverse(q => { if (q.isMesh && !q.isInstancedMesh && q.material && !q.material.transparent && !q.material.isMeshBasicMaterial) { q.castShadow = q.castShadow || q.geometry.type !== 'PlaneGeometry'; q.receiveShadow = true; }
       else if (q.isInstancedMesh) { q.castShadow = true; q.receiveShadow = true; } });
     S.setDamage(o.damage);
+    model.setWear?.(o.wear);   // flagship: its own weathering; a hull on the slipway: fresh paint
     model.update?.(0, 0, { sailSetting: 0, windRel: 0.6, speed: 0, damage: cur.dmg });
     layScaffold(model.length || 30, model.deckHeight);
     fit();
