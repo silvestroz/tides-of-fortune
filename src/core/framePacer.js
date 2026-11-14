@@ -5,7 +5,7 @@
 //   const pacer = new FramePacer({ mode, calibrate })   mode: 'auto' | 'max' | '60' (settings.fps)
 //   pacer.tick(ts) -> dt (s) to simulate and render this refresh, or -1 to skip it (nothing drawn, the previous
 //                     image stays on screen). ts = the rAF timestamp (ms) given to renderer.setAnimationLoop.
-//   pacer.refreshMs  measured display refresh period (ms) ; pacer.hz (rounded)
+//   pacer.refreshMs  display refresh period (ms) ; pacer.hz (the usual rate it stands for, else rounded)
 //   pacer.div        refreshes per presented frame (1 = every refresh)
 //   pacer.targetMs   refreshMs * div: the frame interval the dynamic resolution aims for
 //   pacer.mode       settable at any time
@@ -14,10 +14,20 @@
 //                    does not divide the cadence meanwhile (resolution first, cadence second)
 //   pacer.resetProbe()  allow the tries again (called by DynRes when the resolution changes)
 // Steps:
-//   - refresh period: among the last 240 rAF intervals (skipped refreshes included), the shortest cluster holding
-//     at least 3 % of them; its median. Missed frames only add longer clusters, so they do not lengthen it. When
-//     every frame is late, the cluster found is a whole multiple of the period measured before: that period is
-//     kept. So that the true period is known even on a machine that is late from its first image, the first
+//   - refresh period: read every 250 ms from the rAF intervals of the last 2 s (skipped refreshes included).
+//     rAF timestamps are not exact: on some panels (120 Hz laptops) an on-time interval lands anywhere within
+//     15 % of the period, and a busy main thread delays one callback and shortens the next. Both spread the
+//     intervals evenly around the true period, so a centre is read and never an edge:
+//       1. the shortest group of intervals (within 20 % of each other) holding at least 5 % of them marks the
+//          period; missed frames only add groups at whole multiples of it, further up;
+//       2. the reading is the mean of every interval within 40 % of that mark, re-centred until it settles: early
+//          and late timestamps cancel out, a long-then-short pair counts for two periods, the multiples stay out;
+//       3. within 3 % of a usual display rate (60, 72, 75, 90, 100, 120, 144, 165, 180, 240 Hz) it is that rate
+//          and its exact period; any other rate (50, 85 Hz…) keeps the period read, followed slowly afterwards;
+//       4. once a rate is known, another one replaces it only when four readings in a row (1 s) agree on it
+//          within 1.5 %: a burst of odd intervals, or a window half-way between two displays, changes nothing.
+//     When every frame is late, the group found is a whole multiple of the period known: that period is kept.
+//     So that the true period is known even on a machine that is late from its first image, the first
 //     24 refreshes after the loop starts are not drawn (0.2 to 0.4 s under the loading screen): callbacks with no
 //     work come at the display's own rate. `calibrate: false` skips that (automated tools).
 //     Under 75 Hz the cadence is never divided.
@@ -29,7 +39,9 @@
 //     one step faster for 2 s and keeps it if the frames hold (3 failed tries in a row: stops trying until
 //     resetProbe(), called when the resolution scale changes).
 //   - '60': div = max(1, floor((hz + 5) / 60)) (144 Hz: 72 fps, 240 Hz: 60 fps) ; 'max': div = 1.
-const WIN = 240, EVAL_MS = 2000, PROBE_EVERY_MS = 45000, PROBE_MS = 2000, MIN_FPS = 48, CALIBRATE = 24;
+const EVAL_MS = 2000, PROBE_EVERY_MS = 45000, PROBE_MS = 2000, MIN_FPS = 48, CALIBRATE = 24;
+const RING = 512, WIN_MS = 2000, MEASURE_MS = 250, MIN_SHARE = 0.05, CONFIRM = 4, AGREE = 0.015;
+const USUAL_HZ = [60, 72, 75, 90, 100, 120, 144, 165, 180, 240], SNAP = 0.03;
 
 export class FramePacer {
   constructor({ mode = 'auto', calibrate = true } = {}) {
@@ -38,8 +50,10 @@ export class FramePacer {
     this.refreshMs = 1000 / 60; this.hz = 60;
     this.div = 1;
     this.hold = false; this._held = false;
-    this._raw = []; this._rawI = 0;     // ring of raw rAF intervals
-    this._bestMs = 0;                   // display period last measured from frames that were on time
+    this._raw = new Float64Array(RING); this._at = new Float64Array(RING); this._n = 0;   // ring of raw rAF intervals and their timestamps
+    this._known = false;                // a period has been read (until then refreshMs is the 60 Hz default)
+    this._cand = 0; this._candN = 0;    // another period being confirmed, readings in a row that agreed on it
+    this._measureAt = 0;
     this._last = 0;                     // previous rAF timestamp
     this._lastShown = 0;                // timestamp of the last presented frame
     this._carry = 0;                    // rounding error of dt (ms), paid back later
@@ -56,12 +70,12 @@ export class FramePacer {
     if (!this._last) { this._last = this._lastShown = ts; this._evalAt = ts + EVAL_MS; this._probeAt = ts + PROBE_EVERY_MS; return 1 / 60; }
     const d = ts - this._last;
     this._last = ts;
-    if (d > 0 && d < 50) { if (this._raw.length < WIN) this._raw.push(d); else this._raw[this._rawI = (this._rawI + 1) % WIN] = d; }
+    if (d > 0 && d < 50) { const i = this._n++ % RING; this._raw[i] = d; this._at[i] = ts; }
     if (this._cal > 0) {   // opening measure: nothing is drawn, so the callbacks come at the display's own rate
-      if (--this._cal === 0) { this._measure(); this._lastShown = ts; this._evalAt = ts + EVAL_MS; this._probeAt = ts + PROBE_EVERY_MS; }
+      if (--this._cal === 0) { this._measure(ts); this._lastShown = ts; this._evalAt = ts + EVAL_MS; this._probeAt = ts + PROBE_EVERY_MS; }
       return -1;
     }
-    if (this._raw.length >= 30 && (this._raw.length < WIN || this._rawI % 30 === 0)) this._measure();
+    if (ts >= this._measureAt) this._measure(ts);
     if (this.hold) this._held = true;
     this._chooseDiv(ts);
 
@@ -84,25 +98,54 @@ export class FramePacer {
     return ms / 1000;
   }
 
-  _measure() {
-    const s = this._raw.slice().sort((a, b) => a - b), need = Math.max(6, Math.ceil(s.length * 0.03));
-    // smallest interval shared by enough samples: its cluster's median is the period (a lone short interval,
-    // two callbacks in one refresh, does not count; missed refreshes only add longer clusters)
+  // centre of the shortest well-filled group of intervals of the last WIN_MS (ms), 0 when there are too few
+  _period(ts) {
+    const s = [];
+    for (let i = Math.min(this._n, RING) - 1; i >= 0; i--) if (this._at[i] > ts - WIN_MS) s.push(this._raw[i]);
+    if (s.length < 12) return 0;
+    s.sort((a, b) => a - b);
+    const need = Math.max(6, Math.ceil(s.length * MIN_SHARE));
     for (let i = 0; i < s.length; i++) {
-      if (!(s[i] > 3)) continue;
+      if (!(s[i] > 3)) continue;   // two callbacks in one refresh
       let j = i; while (j < s.length && s[j] < s[i] * 1.2) j++;
       if (j - i < need) continue;
-      const m0 = s[(i + j) >> 1], c = s.filter(v => Math.abs(v - m0) < m0 * 0.1);   // re-centred on its median
-      const ms = c[c.length >> 1], k = this._bestMs ? ms / this._bestMs : 1, n = Math.round(k);
-      // a whole multiple (2 to 4) of a period already measured: every frame is late, the display is not slower.
+      let m = s[(i + j) >> 1];
+      for (let pass = 0; pass < 6; pass++) {
+        let sum = 0, n = 0;
+        for (const v of s) if (v > m * 0.6 && v < m * 1.4) { sum += v; n++; }
+        m = sum / n;
+      }
+      return m;
+    }
+    return 0;
+  }
+
+  _measure(ts) {
+    this._measureAt = ts + MEASURE_MS;
+    const ms = this._period(ts);
+    if (!ms) return;
+    const k = ms / this.refreshMs, n = Math.round(k);
+    if (this._known) {
+      if (Math.abs(k - 1) < SNAP) {   // the display known: an odd rate follows its reading, a usual one stays exact
+        this._cand = 0;
+        if (!USUAL_HZ.includes(this.hz)) this._set(this.refreshMs + (ms - this.refreshMs) * 0.1);
+        return;
+      }
+      // a whole multiple (2 to 4) of the period known: every frame is late, the display is not slower.
       // Keeping the true period lets 'auto' and the dynamic resolution act on it (a window moved to a display at
       // exactly half the rate reads the same and ends at the same cadence: one image every two refreshes).
-      if (n >= 2 && n <= 4 && Math.abs(k - n) < 0.06 * n) return;
-      this._bestMs = ms;
-      this.refreshMs = ms; this.hz = Math.round(1000 / ms);
-      return;
+      if (n >= 2 && n <= 4 && Math.abs(k - n) < 0.06 * n) { this._cand = 0; return; }
+      if (Math.abs(ms - this._cand) < AGREE * this._cand) this._candN++; else this._candN = 1;
+      this._cand = ms;
+      if (this._candN < CONFIRM) return;
     }
+    this._known = true; this._cand = 0;
+    const near = USUAL_HZ.reduce((a, h) => (Math.abs(1000 / h - ms) < Math.abs(1000 / a - ms) ? h : a));
+    if (Math.abs(ms * near / 1000 - 1) < SNAP) this._set(1000 / near, near); else this._set(ms);
   }
+
+  // hz of an odd rate: the rounded reading, kept while the reading stays within 0.75 Hz of it (no flicker at x.5)
+  _set(ms, hz = Math.abs(1000 / ms - this.hz) < 0.75 ? this.hz : Math.round(1000 / ms)) { this.refreshMs = ms; this.hz = hz; }
 
   _maxDiv() { return Math.max(1, Math.floor(this.hz / MIN_FPS)); }
 
