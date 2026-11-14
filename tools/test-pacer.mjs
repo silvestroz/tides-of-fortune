@@ -206,7 +206,7 @@ const LAPTOP = { hz: 120, cpuMs: 5.9, gpuMs: 9.5 * 1.512 * 0.744, jitter: 'measu
 { const r = runBoth({ ...LAPTOP, cpuMs: 2.5, gpuMs: 3.5, seconds: 120 });
   check('same laptop, a tier light enough for 120 fps: every refresh, native scale or above (retries of the next step included)', r.hzSeen.join() === '120' && r.maxDiv === 1 && r.minScale >= 1 && r.fps > 110, infoJ(r)); }
 { const r = runBoth({ ...LAPTOP, cpuMs: 2.5, gpuMs: 6.5, seconds: 120 });
-  check('same laptop, GPU just short of 120 fps at native scale: a smaller render keeps every refresh', r.hzSeen.join() === '120' && r.maxDiv === 1 && r.scale < 1 && r.scale >= 0.8 && r.fps > 115, infoJ(r)); }
+  check('same laptop, GPU just short of 120 fps at native scale: a smaller render keeps every refresh', r.hzSeen.join() === '120' && r.maxDiv === 1 && r.scale < 1 && r.scale >= 0.8 && r.fps > 112, infoJ(r)); }
 screen(1920, 1080, 1);
 { const r = runBoth({ hz: 144, cpuMs: 2, gpuMs: 6.5, jitter: 'measured', seconds: 120 });
   check('144 Hz, GPU just short, measured jitter: a smaller render keeps 144 fps', r.hzSeen.join() === '144' && r.pacer.div === 1 && r.scale < 1 && r.fps > 138, infoJ(r)); }

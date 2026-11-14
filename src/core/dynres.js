@@ -14,6 +14,7 @@
 // the target interval T = game.pacer.targetMs (display refresh x presented cadence, 16.7 ms at 60 Hz):
 //   above the native ratio (scale > 1): > 1.08 T -> one step down
 //   at or below it: > max(1.08 T, 18 ms) -> one step down (resolution only defends ~55 fps)
+//   at any scale: more than one frame in ten over 1.3 T (a refresh late) -> one step down: an even rate comes first
 // Fast screens (pacer.hz >= 75, ?chase=0 turns this off): resolution gives way before the cadence does. Down to a
 // floor below native (0.8 with settings.fps 'auto', the bottom of the ladder with 'max'), a late screen rate costs
 // one step: > 1.08 T on the 76th percentile, so that it reacts just before the pacer's own test (a quarter of the
@@ -153,12 +154,16 @@ export class DynRes {
     // target, i.e. one more hitch
     const chasing = floor < 1 && this.scale > floor + 1e-6 && this.scale <= 1 + 1e-6;
     const w = this._win.sort((a, b) => a - b), ms = w.length >= 8 ? w[Math.floor(w.length * (chasing ? 0.76 : 0.6))] : this.ms;
+    const p90 = w.length >= 20 ? w[Math.floor(w.length * 0.9)] : 0;
     this._win.length = 0;
     const T = pacer?.targetMs || 1000 / 60;
     const i = this.ladder.findIndex(s => s >= this.scale - 1e-6);
     const idx = i < 0 ? this.ladder.length - 1 : i;
     const slow = this.scale > 1 + 1e-6 || chasing ? T * 1.08 : Math.max(T * 1.08, 18);
-    if (ms > slow && idx > 0) {
+    // uneven cadence: more than one frame in ten a refresh late is a visible judder even when the typical frame is
+    // on time (54 fps made of 60 fps and 40 fps frames); a step down trades it for an even rate
+    const uneven = p90 > T * 1.3;
+    if ((ms > slow || uneven) && idx > 0) {
       // a scale that keeps failing is retried less and less often (20 s, 40 s … 5 min): each retry is a second of late frames
       const n = this._fails.get(this.ladder[idx]) || 0;
       this._fails.set(this.ladder[idx], n + 1);

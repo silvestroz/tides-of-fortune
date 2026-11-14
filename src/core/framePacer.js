@@ -42,6 +42,7 @@
 const EVAL_MS = 2000, PROBE_EVERY_MS = 45000, PROBE_MS = 2000, MIN_FPS = 48, CALIBRATE = 24;
 const RING = 512, WIN_MS = 2000, MEASURE_MS = 250, MIN_SHARE = 0.05, CONFIRM = 4, AGREE = 0.015;
 const USUAL_HZ = [60, 72, 75, 90, 100, 120, 144, 165, 180, 240], SNAP = 0.03;
+const SAME = 0.07;   // a reading this close to the known period is the same display read under load (callbacks arriving late), not another one
 
 export class FramePacer {
   constructor({ mode = 'auto', calibrate = true } = {}) {
@@ -126,7 +127,7 @@ export class FramePacer {
     if (!ms) return;
     const k = ms / this.refreshMs, n = Math.round(k);
     if (this._known) {
-      if (Math.abs(k - 1) < SNAP) {   // the display known: an odd rate follows its reading, a usual one stays exact
+      if (Math.abs(k - 1) < SAME) {   // the display known: an odd rate follows its reading, a usual one stays exact
         this._cand = 0;
         if (!USUAL_HZ.includes(this.hz)) this._set(this.refreshMs + (ms - this.refreshMs) * 0.1);
         return;
