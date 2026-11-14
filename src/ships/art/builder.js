@@ -3,6 +3,12 @@
 // every vertex also carries a CPU-side LOD tag (1 = fine detail, dropped from the far geometry; 2 = far only): small or thin
 // parts added with add() (gilded beads, rails, port frames, grates…), parts flagged { lod: 1 } (guns, carriages),
 // ratlines and running rigging. build() stores the far index in geometry.userData.farIndex (same vertices).
+// A third index, geometry.userData.distIndex, draws the ship a kilometre away from the same vertices again: of the far
+// geometry it keeps the parts added with add() that are DIST_MIN long or more (masts, spars, tops, stem, bulkheads…),
+// those flagged { dist: true } (stern lanterns), every line (standing rigging) and what a builder emits while curDist
+// is 1 (transom), and it adds the triangles the builders push into idxDist (the far skin, the decks, the bulwarks and
+// the quarter galleries drawn through a few of their stations and rows; the outer face alone of each gunport, stern
+// window and frieze panel, see distFace()).
 // The ship builders are generators (buildHullSteps, buildRigSteps, buildSteps(), paintSkinSteps): each `yield` is a point
 // where the build may be put down until the next frame (shipModel.js stepShipBuilds).
 import * as THREE from 'three';
@@ -11,6 +17,8 @@ const _bb = new THREE.Box3();
 const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _m3 = new THREE.Matrix3();
 const _c = new THREE.Color();
 const _UPN = new THREE.Vector3(0, 1, 0);
+// a part whose largest side is under DIST_MIN (m) is left out of the distant geometry: about 2 pixels where it is drawn
+const DIST_MIN = 1.5;
 
 export const SURF = {
   wood:   [0, 0.86, 0, 1],
@@ -32,6 +40,7 @@ export class GeoBuilder {
     this._lineU = 0; this._lineV = 0; this.curPiv = [-1, 0]; this.piv = [];
     this.pos = []; this.nor = []; this.uv = []; this.col = []; this.surf = []; this.brk = []; this.idx = [];
     this.lodTag = []; this.curLod = 0;
+    this.distTag = []; this.curDist = 0; this.idxDist = [];
   }
   get count() { return this.pos.length / 3; }
 
@@ -40,14 +49,15 @@ export class GeoBuilder {
     this.pos.push(p.x, p.y, p.z); this.nor.push(n.x, n.y, n.z); this.uv.push(u, v);
     this.col.push(color.r * ao, color.g * ao, color.b * ao);
     this.surf.push(surf[0], surf[1], surf[2], surf[3]); this.brk.push(brk); this.piv.push(this.curPiv[0], this.curPiv[1]);
-    this.lodTag.push(this.curLod);
+    this.lodTag.push(this.curLod); this.distTag.push(this.curDist);
     return this.count - 1;
   }
   tri(a, b, c) { this.idx.push(a, b, c); }
   quad(a, b, c, d) { this.idx.push(a, b, c, a, c, d); }
 
   // Add a THREE.BufferGeometry transformed by matrix.
-  // o: { color, surf, brk, uvScale:[su,sv], uvOffset:[ou,ov], swapUV, ao: fn(worldPos, worldNormal)->factor, worldUV:'xz'|'zy'|'xy' }
+  // o: { color, surf, brk, uvScale:[su,sv], uvOffset:[ou,ov], swapUV, ao: fn(worldPos, worldNormal)->factor, worldUV:'xz'|'zy'|'xy',
+  //      lod: 0 | 1 (far-LOD tag, by size when absent), dist: true (in the distant geometry whatever its size) }
   add(geom, matrix, o = {}) {
     const g = geom.index ? geom : geom;
     const P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv;
@@ -59,14 +69,12 @@ export class GeoBuilder {
     const su = o.uvScale ? o.uvScale[0] : 1, sv = o.uvScale ? o.uvScale[1] : 1;
     const ou = o.uvOffset ? o.uvOffset[0] : Math.random() * 4, ov = o.uvOffset ? o.uvOffset[1] : Math.random() * 4;
     // far-LOD tag: explicit o.lod, else small (all sides < 0.7 m, two < 0.35 m) or very thin (two sides < 0.12 m) parts
-    let lod = o.lod;
-    if (lod == null) {
-      if (!geom.boundingBox) geom.computeBoundingBox();
-      _bb.copy(geom.boundingBox).applyMatrix4(matrix);
-      const e = [_bb.max.x - _bb.min.x, _bb.max.y - _bb.min.y, _bb.max.z - _bb.min.z].sort((a, b) => a - b);
-      lod = (e[1] < 0.12 || (e[2] < 0.7 && e[1] < 0.35)) ? 1 : 0;
-    }
+    if (!geom.boundingBox) geom.computeBoundingBox();
+    _bb.copy(geom.boundingBox).applyMatrix4(matrix);
+    const e = [_bb.max.x - _bb.min.x, _bb.max.y - _bb.min.y, _bb.max.z - _bb.min.z].sort((a, b) => a - b);
+    const lod = o.lod ?? ((e[1] < 0.12 || (e[2] < 0.7 && e[1] < 0.35)) ? 1 : 0);
     const prevLod = this.curLod; this.curLod = lod || prevLod;
+    const prevDist = this.curDist; if (this.curLod !== 1 && (o.dist || e[2] >= DIST_MIN)) this.curDist = 1;
     for (let i = 0; i < P.count; i++) {
       _v.fromBufferAttribute(P, i).applyMatrix4(matrix);
       _n.fromBufferAttribute(N, i).applyMatrix3(_m3).normalize();
@@ -86,8 +94,14 @@ export class GeoBuilder {
     }
     if (g.index) { const I = g.index.array; for (let i = 0; i < I.length; i++) this.idx.push(base + I[i]); }
     else for (let i = 0; i < P.count; i++) this.idx.push(base + i);
-    this.curLod = prevLod;
+    this.curLod = prevLod; this.curDist = prevDist;
     return this;
+  }
+
+  // Distant geometry: the +z face alone of the box (a BoxGeometry) just added with add(), which started at vertex v0;
+  // nothing when that box is fine detail (not in the far geometry either).
+  distFace(v0) {
+    if (this.lodTag[v0] !== 1) this.idxDist.push(v0 + 16, v0 + 18, v0 + 17, v0 + 18, v0 + 19, v0 + 17);
   }
 
   // Thin rope/spar between a and b: n-sided prism (no caps). taper = radius at b relative to a.
@@ -102,6 +116,7 @@ export class GeoBuilder {
     // far LOD: ratlines, running rigging and short thin lines are fine detail (standing rigging and spars stay)
     const prevLod = this.curLod;
     if (surf === SURF.ratline || surf === SURF.run || (r < 0.035 && len < 1.2)) this.curLod = 1;
+    const prevDist = this.curDist; if (this.curLod !== 1) this.curDist = 1;
     for (let i = 0; i < sides; i++) {
       const ang = (i / sides) * Math.PI * 2;
       n.copy(s1).multiplyScalar(Math.cos(ang)).addScaledVector(s2, Math.sin(ang));
@@ -111,7 +126,7 @@ export class GeoBuilder {
       p.copy(b).addScaledVector(n, r * taper); this.vertex(p, n, this._lineU + len / 6, vv, c, surf, brk);
       this.curPiv = sv;
     }
-    this.curLod = prevLod;
+    this.curLod = prevLod; this.curDist = prevDist;
     this._lineU = (this._lineU + 0.37) % 7; this._lineV = (this._lineV + 0.21) % 5;
     for (let i = 0; i < sides; i++) {
       const j = (i + 1) % sides;
@@ -147,6 +162,12 @@ export class GeoBuilder {
     const big = this.count > 65535;
     g.setIndex(big ? new THREE.Uint32BufferAttribute(near, 1) : new THREE.Uint16BufferAttribute(near, 1)); yield;
     g.userData.farIndex = big ? new Uint32Array(far) : new Uint16Array(far); yield;
+    const D = this.distTag, dist = this.idxDist.slice();
+    for (let i = 0; i < I.length; i += 3) {
+      if (D[I[i]] && D[I[i + 1]] && D[I[i + 2]]) dist.push(I[i], I[i + 1], I[i + 2]);
+      if (i % 60000 === 59997) yield;
+    }
+    g.userData.distIndex = big ? new Uint32Array(dist) : new Uint16Array(dist); yield;
     g.computeBoundingSphere(); g.computeBoundingBox();
     return g;
   }

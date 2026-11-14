@@ -1,6 +1,6 @@
 // Captures of the ship workshop (tools/shiplab.html): node tools/shiplab-shot.mjs <folder> <type> [cam[:extra]…]
 // Cams: quarter (default), side, stern, bow, head, deck, waist, top, rig, far; extra = more URL parameters
-// (e.g. quarter:far=1). Prints the triangle counts of the hull geometry (near / far) and of the sails. Dev server: TOF_URL.
+// (e.g. quarter:far=1, quarter:far=2). Prints the triangle counts of the hull geometry (drawn / far / distant) and of the sails. Dev server: TOF_URL.
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import { BASE, launchOpts } from './_env.mjs';
@@ -20,7 +20,7 @@ for (const v of views) {
   await page.waitForFunction(() => window.__labReady, null, { timeout: 240000 });
   const info = await page.evaluate(() => window.__labInfo);
   await page.screenshot({ path: `${out}/${type}-${cam}${extra ? '-' + extra.replace(/[^a-z0-9]+/gi, '') : ''}.png` });
-  console.log(`${type} ${cam}: ${info.tris} tris (far ${info.farTris}), sails ${info.sailTris}, ${info.verts} verts, ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  console.log(`${type} ${cam}: ${info.tris} tris (far ${info.farTris}, distant ${info.distTris}), sails ${info.sailTris}, ${info.verts} verts, ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 }
 console.log(errors.length ? 'ERRORS: ' + errors.slice(0, 5).join(' | ') : 'console clean');
 await browser.close();

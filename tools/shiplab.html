@@ -12,11 +12,11 @@
 <script type="module">
 // Ship workshop (dev tool, not in the build): one procedural ship model on a flat sea under a plain sun, without the
 // game around it. Loads in a few seconds, for modelling iterations; the in-game check stays ?shot=ships&view=one.
-//   /tools/shiplab.html?type=frigate&faction=english&cam=quarter|side|stern|bow|deck|head|top|waist|rig&set=0.5&far=0
+//   /tools/shiplab.html?type=frigate&faction=english&cam=quarter|side|stern|bow|deck|head|top|waist|rig&set=0.5&far=0|1|2
 //   &pos=x,y,z&look=x,y,z overrides the camera (ship-local metres: x starboard, y up, z aft).
 //   &cam=profile: orthographic starboard elevation, whole hull, on white with no sea (reference picture for drawings);
 //   &yards=85 swings the square yards into the plane of the picture, as on a sail plan.
-//   window.__labReady turns true once the image is stable; window.__labInfo = { tris, farTris, sailTris, verts };
+//   window.__labReady turns true once the image is stable; window.__labInfo = { tris, farTris, distTris, sailTris, verts };
 //   window.__lab = { model, scene, camera, renderer } for debugging from the console.
 //   Captures: node tools/shiplab-shot.mjs <folder> <type> [cam…]
 import * as THREE from 'three';
@@ -77,23 +77,28 @@ if (profile) {
 }
 
 const hull = model.group.children[0];
-if (q.get('far') === '1') {   // far LOD preview: the shared far index of the cached type geometry
+// far=1: far LOD preview (the far index of the cached type geometry); far=2: distant LOD (its distant index)
+const reindexed = (geo, index) => {
   const g = new THREE.BufferGeometry();
-  for (const [k, a] of Object.entries(hull.geometry.attributes)) g.setAttribute(k, a);
-  g.setIndex(new THREE.BufferAttribute(hull.geometry.userData.farIndex, 1)); hull.geometry = g;
-}
+  for (const [k, a] of Object.entries(geo.attributes)) g.setAttribute(k, a);
+  g.setIndex(new THREE.BufferAttribute(index, 1)); return g;
+};
+const full = hull.geometry;
+if (q.get('far') === '1') hull.geometry = reindexed(full, full.userData.farIndex);
+if (q.get('far') === '2') hull.geometry = reindexed(full, full.userData.distIndex);
 model.update(0, 0, { sailSetting: parseFloat(q.get('set') || '0.5'), windRel: parseFloat(q.get('wind') || '2.35'), speed: 6 });
 if (q.get('yards')) {   // sail-plan convention: square yards swung into the plane of the drawing, fore-and-aft sails amidships
   const piv = hull.material.userData.u.uPiv.value, a = parseFloat(q.get('yards')) * Math.PI / 180;
   for (let i = 0; i < 8; i++) piv[i].z = i < 6 && i % 2 === 0 ? a : 0;
 }
 const info = {
-  tris: Math.round(model.group.children[0].geometry.index.count / 3),
-  farTris: Math.round((model.group.children[0].geometry.userData.farIndex?.length || 0) / 3),
+  tris: Math.round(hull.geometry.index.count / 3),
+  farTris: Math.round(full.userData.farIndex.length / 3),
+  distTris: Math.round(full.userData.distIndex.length / 3),
   sailTris: Math.round(model.group.children[1].geometry.index.count / 3),
   verts: model.group.children[0].geometry.attributes.position.count,
 };
-document.getElementById('lbl').textContent = q.get('label') === '0' ? '' : `${type} — ${info.tris} tris (far ${info.farTris}), sails ${info.sailTris}, ${info.verts} verts`;
+document.getElementById('lbl').textContent = q.get('label') === '0' ? '' : `${type} — ${info.tris} tris (far ${info.farTris}, distant ${info.distTris}), sails ${info.sailTris}, ${info.verts} verts`;
 window.__labInfo = info; window.__lab = { model, scene, camera, renderer };
 let n = 0;
 renderer.setAnimationLoop(() => { renderer.render(scene, camera); if (++n === 4) { window.__labReady = true; renderer.setAnimationLoop(null); } });

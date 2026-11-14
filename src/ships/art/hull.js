@@ -117,25 +117,39 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
     return a;
   };
 
-  // generic grid emitter with automatic winding
-  function emitGrid(rowsVerts, cols, nrows, outwardHint) {
+  // generic grid emitter with automatic winding. With `cols`/`rows` lists (indices of the stations and rows to keep)
+  // the same grid is drawn coarser, through those vertices only, into the distant index (gb.idxDist).
+  function emitGrid(rowsVerts, ncols, nrows, outwardHint, cols = null, rows = null) {
     // rowsVerts[i*(nrows+1)+r]. Winding is decided PER QUAD against the vertex normals (outward): deciding once from
     // the first quad (degenerate/folded at the stem) inverted whole bands, so the near skin was back-face culled and
     // the far side's inner face showed through.
     const pa = V3(), pb = V3(), pc = V3(), pe = V3(), nn = V3(), t = V3();
+    const out = cols ? gb.idxDist : gb.idx;
+    const nc = cols ? cols.length : ncols, nr = rows ? rows.length - 1 : nrows;
     let last = false;
-    for (let i = 0; i < cols - 1; i++) for (let r = 0; r < nrows; r++) {
-      const a = rowsVerts[i * (nrows + 1) + r], b = rowsVerts[(i + 1) * (nrows + 1) + r];
-      const c = rowsVerts[(i + 1) * (nrows + 1) + r + 1], e = rowsVerts[i * (nrows + 1) + r + 1];
+    for (let i = 0; i < nc - 1; i++) for (let r = 0; r < nr; r++) {
+      const i0 = cols ? cols[i] : i, i1 = cols ? cols[i + 1] : i + 1, r0 = rows ? rows[r] : r, r1 = rows ? rows[r + 1] : r + 1;
+      const a = rowsVerts[i0 * (nrows + 1) + r0], b = rowsVerts[i1 * (nrows + 1) + r0];
+      const c = rowsVerts[i1 * (nrows + 1) + r1], e = rowsVerts[i0 * (nrows + 1) + r1];
       pa.fromArray(gb.pos, a * 3); pb.fromArray(gb.pos, b * 3); pc.fromArray(gb.pos, c * 3); pe.fromArray(gb.pos, e * 3);
       const n = t.crossVectors(pc.sub(pa), pe.sub(pb));
       if (outwardHint) nn.copy(outwardHint);
       else { nn.fromArray(gb.nor, a * 3); for (const k of [b, c, e]) nn.x += gb.nor[k * 3], nn.y += gb.nor[k * 3 + 1], nn.z += gb.nor[k * 3 + 2]; }
       const d = n.dot(nn);
       const flip = Math.abs(d) < 1e-12 ? last : d < 0; last = flip;
-      if (flip) gb.quad(a, e, c, b); else gb.quad(a, b, c, e);
+      if (flip) out.push(a, e, c, a, c, b); else out.push(a, b, c, a, c, e);
     }
   }
+  // stations of a list kept by the distant geometry: both ends, the two stations that frame each castle break (the
+  // steps of the sheer line), and one every 9 % of the length in between (4 % round the bow, where the plan curves)
+  const distCols = (ss) => {
+    const keep = []; let lastS = -1;
+    ss.forEach((s, i) => {
+      const atBreak = breaks.some(b => Math.abs(Math.abs(s - b) - 0.012) < 1e-4), inBreak = breaks.some(b => Math.abs(s - b) < 0.0115);
+      if (i === 0 || i === ss.length - 1 || atBreak || (!inBreak && s - lastS >= (s < 0.16 ? 0.04 : 0.09))) { keep.push(i); lastS = s; }
+    });
+    return keep;
+  };
 
   const arc = []; { let acc = 0, p0 = null; for (const s of sList) { const p = H.point(s, H.fb, 1); if (p0) acc += p.distanceTo(p0); arc.push(acc); p0 = p; } }
   const arcTot = arc[arc.length - 1] || 1;
@@ -172,6 +186,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
         }
         // winding: compute so that geometric normal matches vertex normal
         emitGrid(ids, idxList.length, rows, null);
+        if (tag === 2) emitGrid(ids, idxList.length, rows, null, distCols(idxList.map(i => sList[i])), [0, rows]);
         yield;
       }
     }
@@ -183,6 +198,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
   yield;
   // ---------------- transom (closing panel at s=1), same bands -> colours match
   const zT = (y) => H.z(1, y);
+  gb.curDist = 1;   // the transom and its backing plate are a dozen quads: the distant geometry keeps them whole
   {
     const s = 1;
     for (const [lo, hi, col, surf, rows] of bands) {
@@ -210,6 +226,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
     }
     for (let r = 0; r < rows; r++) { const a = ids[r], b = ids[rows + 1 + r], c = ids[rows + 2 + r], e = ids[r + 1]; gb.quad(a, b, c, e); gb.quad(a, e, c, b); }
   }
+  gb.curDist = 0;
   yield;
   // ---------------- inner bulwark + cap rail
   const tB = 0.14;
@@ -227,10 +244,12 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
       cap.push(gb.vertex(po, UP, s * L / 6, 0, oakDark, SURF.wood, 2, 1), gb.vertex(pi, UP, s * L / 6, 0.06, oakDark, SURF.wood, 2, 1));
     }
     emitGrid(ids, sList.length, 2, null);
+    emitGrid(ids, sList.length, 2, null, distCols(sList), [0, 2]);
     emitGrid(cap, sList.length, 1, UP);
     yield;
   }
   // inner transom
+  gb.curDist = 1;
   {
     const yt = H.yTop(1), dl = H.deckLevel(1);
     const ids = [];
@@ -243,6 +262,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
     for (const side of [-1, 1]) { const po = H.point(1, yt, side); const pi = po.clone(); pi.x *= 0.96; pi.z -= tB; capIds.push(gb.vertex(po, UP, 0, 0, oakDark, SURF.wood), gb.vertex(pi, UP, 0, 0.1, oakDark, SURF.wood)); }
     emitGrid(capIds, 2, 1, UP);
   }
+  gb.curDist = 0;
 
   yield;
   // ---------------- decks (flat planked segments)
@@ -264,6 +284,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
       }
     }
     emitGrid(ids, ss.length, NX, UP);
+    emitGrid(ids, ss.length, NX, UP, distCols(ss), [0, NX]);
   }
   info.deckHeight = H.deckLevel(H.sMax);
 
@@ -327,7 +348,9 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
         const n = f.n, t = f.ds, up = V3().crossVectors(n, t).normalize(); if (up.y < 0) up.negate();
         const tt = V3().crossVectors(up, n).normalize();
         // dark opening (recess)
+        const pv = gb.count;
         gb.add(G.box, basisMatrix(p.clone().addScaledVector(n, 0.012), tt, up, n, sz, sz * 0.86, 0.02), { color: C('#0a0705'), surf: SURF.tar, ao: () => 0.4 });
+        gb.distFace(pv);
         // frame
         for (const [ox, oy, w, h] of [[0, sz * 0.47, sz + 0.14, 0.07], [0, -sz * 0.47, sz + 0.14, 0.07], [sz * 0.53, 0, 0.07, sz * 0.94], [-sz * 0.53, 0, 0.07, sz * 0.94]]) {
           const c = p.clone().addScaledVector(tt, ox).addScaledVector(up, oy).addScaledVector(n, 0.03);
@@ -384,7 +407,9 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
       const zc = zT(yc) + 0.05;
       for (let i = 0; i < n; i++) {
         const x = -hwT + 2 * hwT * (i + 0.5) / n;
+        const wv = gb.count;
         gb.add(G.box, trs(x, yc, zc, -0.1, 0, 0, wW, wH, 0.04), { color: glass, surf: SURF.glass });
+        gb.distFace(wv);
         // mullions
         fineSternWindow(F, x, yc, zc, wW, wH);   // leaded lattice, stiles, keystone
         // gilded frame
@@ -397,7 +422,9 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
       // pilasters between windows (gold)
       for (let i = 0; i <= n; i++) {
         const x = -hwT + 2 * hwT * i / n;
+        const pv = gb.count;
         gb.add(G.box, trs(x, yc, zc + 0.03, -0.1, 0, 0, 0.1, rowH * 0.95, 0.08), { color: gold, surf: SURF.gold });
+        gb.distFace(pv);
       }
       // horizontal mouldings
       gb.add(G.box, trs(0, yc - rowH / 2, zc + 0.04, -0.1, 0, 0, hwT * 2.15, 0.09, 0.1), { color: gold, surf: SURF.gold });
@@ -467,7 +494,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
       const s = 0.38 + L * 0.004 + (k === (nl - 1) / 2 ? 0.12 : 0);
       gb.add(G.cyl6, trs(x, yb + 0.25, z - 0.1, 0.35, 0, 0, 0.05, 0.9, 0.05), { color: iron, surf: SURF.iron });
       const lc = V3(x, yb + 0.55 + s, z + 0.1);
-      gb.add(LANTERN, trs(lc.x, lc.y, lc.z, 0, 0, 0, s * 0.62, s * 1.6, s * 0.62), { color: glass, surf: SURF.lamp });
+      gb.add(LANTERN, trs(lc.x, lc.y, lc.z, 0, 0, 0, s * 0.62, s * 1.6, s * 0.62), { color: glass, surf: SURF.lamp, dist: true });
       gb.add(G.cone, trs(lc.x, lc.y + s * 1.05, lc.z, 0, 0, 0, s * 0.55, s * 0.5, s * 0.55), { color: gold, surf: SURF.gold });
       gb.add(G.sphLo, trs(lc.x, lc.y + s * 1.38, lc.z, 0, 0, 0, s * 0.12, s * 0.12, s * 0.12), { color: gold, surf: SURF.gold });
       gb.add(G.cyl6, trs(lc.x, lc.y - s * 0.85, lc.z, 0, 0, 0, s * 0.5, s * 0.12, s * 0.5), { color: gold, surf: SURF.gold });
@@ -501,7 +528,9 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
         const p = H.point(s, y, side), f = H.frame(s, y, side);
         const up = V3().crossVectors(f.n, f.ds).normalize(); if (up.y < 0) up.negate();
         const tt = V3().crossVectors(up, f.n).normalize();
+        const fv = gb.count;
         gb.add(G.box, basisMatrix(p.clone().addScaledVector(f.n, 0.015), tt, up, f.n, pw, 0.42, 0.03), { color: trim.clone().multiplyScalar(0.75), surf: SURF.paint });
+        gb.distFace(fv);
         for (const [ox, oy, w, h] of [[0, 0.24, pw + 0.08, 0.05], [0, -0.24, pw + 0.08, 0.05], [pw / 2 + 0.02, 0, 0.05, 0.5], [-pw / 2 - 0.02, 0, 0.05, 0.5]]) {
           const c = p.clone().addScaledVector(tt, ox).addScaledVector(up, oy).addScaledVector(f.n, 0.03);
           gb.add(G.box, basisMatrix(c, tt, up, f.n, w, h, 0.04), { color: gold, surf: SURF.gold });

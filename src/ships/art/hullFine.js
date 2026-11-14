@@ -35,7 +35,9 @@ function* nearSteps(gb, steps) { const p = gb.curLod; gb.curLod = 1; yield* step
 
 // Quad surface from a grid of points pts[i][j] (i along, j across). Normals from the grid, one colour per cell
 // (cell(i, j) -> [color, surf] or null to skip), winding chosen against `out(p)` (rough outward direction).
-function surface(gb, pts, cell, out, ao = 1) {
+// distJ: column bounds [j0, j1, …] of the same surface in the distant geometry, one quad per row between two bounds
+// (from the corners of the first and last cells of the run, so their colours blend across it).
+function surface(gb, pts, cell, out, ao = 1, distJ = null) {
   const NI = pts.length - 1, NJ = pts[0].length - 1;
   const nrm = (i, j) => {
     const a = pts[Math.max(0, i - 1)][j], b = pts[Math.min(NI, i + 1)][j], c = pts[i][Math.max(0, j - 1)], e = pts[i][Math.min(NJ, j + 1)];
@@ -44,12 +46,20 @@ function surface(gb, pts, cell, out, ao = 1) {
     if (n.dot(out(pts[i][j])) < 0) n.negate();
     return n;
   };
+  const cells = [];
   for (let i = 0; i < NI; i++) for (let j = 0; j < NJ; j++) {
     const cc = cell(i, j); if (!cc) continue;
     const q = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]];
     const ids = q.map(([a, b]) => { const p = pts[a][b]; return gb.vertex(p, nrm(a, b), p.z / 4, p.y / 2.4, cc[0], cc[1], 2, typeof ao === 'function' ? ao(p) : ao); });
     const fn = V3().crossVectors(pts[i + 1][j + 1].clone().sub(pts[i][j]), pts[i][j + 1].clone().sub(pts[i + 1][j]));
-    if (fn.dot(out(pts[i][j])) >= 0) gb.quad(ids[0], ids[1], ids[2], ids[3]); else gb.quad(ids[0], ids[3], ids[2], ids[1]);
+    const front = fn.dot(out(pts[i][j])) >= 0;
+    if (front) gb.quad(ids[0], ids[1], ids[2], ids[3]); else gb.quad(ids[0], ids[3], ids[2], ids[1]);
+    cells[i * NJ + j] = { ids, front };
+  }
+  if (distJ) for (let i = 0; i < NI; i++) for (let k = 0; k < distJ.length - 1; k++) {
+    const a = cells[i * NJ + distJ[k]], b = cells[i * NJ + distJ[k + 1] - 1]; if (!a || !b) continue;
+    if (a.front) gb.idxDist.push(a.ids[0], a.ids[1], b.ids[2], a.ids[0], b.ids[2], b.ids[3]);
+    else gb.idxDist.push(a.ids[0], b.ids[3], b.ids[2], a.ids[0], b.ids[2], a.ids[1]);
   }
 }
 
@@ -109,11 +119,11 @@ export function* fineQuarterGalleries(F, { y0, h, zT }) {
       if (kind === 'frieze') return [c.trim, SURF.paint];
       if (kind === 'roof') return [lead, SURF.iron];
       return j >= 1 && (j - 1) % 4 !== 0 ? [c.glass, SURF.glass] : [c.gold, SURF.gold];
-    }, outDir, (p) => 0.75 + 0.25 * clamp01((p.y - (y0 - dropH)) / dropH));
+    }, outDir, (p) => 0.75 + 0.25 * clamp01((p.y - (y0 - dropH)) / dropH), [0, 1, 5, 9, 13, 17]);
     yield;
     // aft face, in the plane of the transom
     const aft = rows.map(([y, R]) => [V3(side * (Math.abs(P(1, y, 0).x) - 0.04), y, zT(y) + 0.0), P(1, y, R)]);
-    surface(gb, aft, (i) => [rows[i][2] === 'roof' ? lead : rows[i][2] === 'win' ? c.glass : c.trim, rows[i][2] === 'win' ? SURF.glass : rows[i][2] === 'roof' ? SURF.iron : SURF.paint], () => V3(0, 0, 1));
+    surface(gb, aft, (i) => [rows[i][2] === 'roof' ? lead : rows[i][2] === 'win' ? c.glass : c.trim, rows[i][2] === 'win' ? SURF.glass : rows[i][2] === 'roof' ? SURF.iron : SURF.paint], () => V3(0, 0, 1), 1, [0, 1]);
     yield* nearSteps(gb, (function* () {
       // mouldings along the body
       for (const [y, R, col, r] of [[y0, 1.05, c.gold, 0.06], [y0 + h * sill, 1.03, c.gold, 0.045], [y0 + h * (1 - frieze), 1.03, c.gold, 0.045], [y1, 1.1, c.gold, 0.07]]) {

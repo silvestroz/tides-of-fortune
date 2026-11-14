@@ -45,10 +45,12 @@ export const QUALITY_TIERS = {
   // low/high: shipLodFarM/shipLodNearM and shadowR tightened from the 250/220 m and 90 m defaults
   // (src/ships/shipModel.js, src/world/sky.js) — hulls switch to the far LOD sooner, smaller shadow box (fewer
   // towns/ships rasterised into the shadow map, same idea as splitting towns into chunks).
+  // shipLodDistM/shipLodDistBackM: where ships switch to their distant geometry and back (m, 1000/900 elsewhere,
+  // src/ships/shipModel.js).
   // `medium` keeps its original values (old saves / ?quality=medium) but is no longer offered in the
   // “Graphics” menu since the switch to 3 presets (QUALITY_UI_ORDER: Performance/Standard/Ultra).
   low:    { shadowMapSize: 1024, maxMpx: 2.2, clouds: 0.45, vegetation: 0.35, oceanSegs: 0.75, antialias: false,
-            shipLodFarM: 170, shipLodNearM: 145, shadowR: 65 },
+            shipLodFarM: 170, shipLodNearM: 145, shipLodDistM: 800, shipLodDistBackM: 720, shadowR: 65 },
   medium: { shadowMapSize: 2048, maxMpx: 2.8, clouds: 0.75, vegetation: 0.65, oceanSegs: 0.875, antialias: true  },
   high:   { shadowMapSize: 2048, maxMpx: 3.7, clouds: 1,    vegetation: 1,    oceanSegs: 1,    antialias: true,
             shipLodFarM: 220, shipLodNearM: 190, shadowR: 80 },
@@ -63,7 +65,7 @@ export const QUALITY_TIERS = {
   ultra:  { swell: 1.6, shadowMapSize: 4096, maxMpx: 8.3, clouds: 1,    cloudDetail: 0.6, vegetation: 1,    oceanSegs: 1.3,  antialias: true, oceanLodR: [380, 2800],
             shadowR: 150, shadowSoft: 2.5, vegStep: 8, vegNear: 760, vegMid: 1900, vegFar: 3600, vegShadowR: 230,
             msaa: 8, smaa: true, ao: true, particles: 1.6, wakeSize: 2048, prCap: 1.5,
-            shipLodFarM: 340, shipLodNearM: 295, godRayDiv: 2.5 },
+            shipLodFarM: 340, shipLodNearM: 295, shipLodDistM: 1400, shipLodDistBackM: 1260, godRayDiv: 2.5 },
 };
 // “Graphics” menu: 3 presets shown instead of 4. Medium merged with Low under “Performance” —
 // clicking “Performance” writes quality:'low'; `medium` stays a valid internal id (compat, never written by the

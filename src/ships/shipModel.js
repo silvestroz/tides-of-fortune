@@ -19,8 +19,12 @@
 //   setDuelMode(bool)     carved/gilded duel set dressing on (hides ship's boat, hatches, barrels)
 //   setSailColor(hex)     re-tint canvas (e.g. black sails for a pirate flagship)
 //   update() also accepts: luff 0..1 (from ship.js), rudder -1..1 (turns the rudder blade? — visual only, small)
-//   Draw calls per ship: hull+spars+rigging (1), sails (1), flags (1), crew (1, instanced), lantern glow points (1).
-//   model.lodFar          true while the hull draws its far LOD geometry (gfx-mer, LOD_FAR_M / LOD_NEAR_M)
+//   Draw calls per ship: hull+spars+rigging (1), sails (1), flags (1), ensign staff (1), waterline foam (1),
+//                         crew (1, instanced, under 70 m), lantern glow points (1).
+//   model.lod             level of detail drawn: 0 full model, 1 far (beyond LOD_FAR_M), 2 distant (beyond LOD_DIST_M:
+//                         hull and rig in a quarter of the far triangles, the same sails; no staff, lantern glow at
+//                         night only, foam skirt and wake only when seen from above; sails and flags culled out of view)
+//   model.lodFar          true while the hull draws its far or distant geometry (LOD_FAR_M / LOD_NEAR_M)
 // Building ahead of time (a ship that appears out of sight must not cost a frame):
 //   prepareShipGeometry(type, faction) -> bool   true once the geometry and skin of that ship are cached; otherwise
 //                         queues their build, which stepShipBuilds(ms?) advances a little per frame
@@ -31,7 +35,7 @@ import { HullShape } from './art/hullShape.js';
 import { GeoBuilder } from './art/builder.js';
 import { buildHullSteps } from './art/hull.js';
 import { buildRigSteps } from './art/rig.js';
-import { makeHullMaterial, makeSailMaterial, makeFlagMaterial, updateGlobals } from './art/materials.js';
+import { makeHullMaterial, makeSailMaterial, makeFlagMaterial, updateGlobals, GLOBAL } from './art/materials.js';
 import { buildFlagGeometry, getCrewGeometry, getCrewMaterial, getGlowMaterial, buildFoamGeometry, makeFoamMaterial } from './art/extras.js';
 import { getFlagTex, EMBLEM_INDEX } from './art/textures.js';
 import { mulberry32 } from './art/noise.js';
@@ -87,6 +91,14 @@ for (const [id, t] of Object.entries(SHIP_TYPES)) {
 export const LOD_FAR_M = 250, LOD_NEAR_M = 220;
 function lodFarM() { return QUALITY.shipLodFarM ?? LOD_FAR_M; }
 function lodNearM() { return QUALITY.shipLodNearM ?? LOD_NEAR_M; }
+// distant level: beyond LOD_DIST_M, back to the far level under LOD_DIST_BACK_M (QUALITY.shipLodDistM /
+// shipLodDistBackM per tier). The distances are set for a 1080-line picture, where a metre is 1.1 pixel at 1 000 m and
+// what the distant geometry leaves out (rails, port lids, deck furniture, stern carving: all under 1.5 m, most under
+// 1 m) is a pixel or less; a taller picture pushes them out in proportion, up to twice.
+export const LOD_DIST_M = 1000, LOD_DIST_BACK_M = 900;
+function lodDistScale() { return Math.max(1, Math.min(2, window.innerHeight * (window.devicePixelRatio || 1) / 1080)); }
+function lodDistM() { return (QUALITY.shipLodDistM ?? LOD_DIST_M) * lodDistScale(); }
+function lodDistBackM() { return (QUALITY.shipLodDistBackM ?? LOD_DIST_BACK_M) * lodDistScale(); }
 
 // ------------------------------------------------------------------ geometry cache (per type)
 // Geometry depends only on type + paint colours (baked into vertex colours) -> cache by type|faction.
@@ -113,12 +125,20 @@ function* typeGeoSteps(type, faction) {
   const rig = yield* buildRigSteps(gb, H, d, info, mulberry32(type.length * 31 + 7), SAIL_COLOR);
   yield;
   const hullGeo = yield* gb.buildSteps();
-  // far LOD = same vertex buffers, index without fine detail and with a coarse skin (art/builder.js tags)
-  const hullGeoFar = new THREE.BufferGeometry();
-  for (const [k, a] of Object.entries(hullGeo.attributes)) hullGeoFar.setAttribute(k, a);
-  hullGeoFar.setIndex(new THREE.BufferAttribute(hullGeo.userData.farIndex, 1));
-  hullGeoFar.boundingSphere = hullGeo.boundingSphere.clone(); hullGeoFar.boundingBox = hullGeo.boundingBox.clone();
-  const res = { H, d, info, rig, hullGeo, hullGeoFar, sailGeo: rig.sailGeo, foamGeo: buildFoamGeometry(H) };
+  // far LOD = same vertex buffers, index without fine detail and with a coarse skin (art/builder.js tags);
+  // distant LOD = same vertex buffers again, index of what still shows a kilometre away
+  const reindexed = (geo, index) => {
+    const g = new THREE.BufferGeometry();
+    for (const [k, a] of Object.entries(geo.attributes)) g.setAttribute(k, a);
+    g.setIndex(new THREE.BufferAttribute(index, 1));
+    g.boundingSphere = geo.boundingSphere.clone(); g.boundingBox = geo.boundingBox.clone();
+    return g;
+  };
+  const hullGeoFar = reindexed(hullGeo, hullGeo.userData.farIndex);
+  const hullGeoDist = reindexed(hullGeo, hullGeo.userData.distIndex);
+  // sails are only culled out of view at the distant level: a sphere round the whole rig, with room to billow
+  rig.sailGeo.boundingSphere.copy(hullGeo.boundingSphere).radius += 4;
+  const res = { H, d, info, rig, hullGeo, hullGeoFar, hullGeoDist, sailGeo: rig.sailGeo, foamGeo: buildFoamGeometry(H) };
   _geoCache.set(type + '|' + faction, res);
   return res;
 }
@@ -233,16 +253,16 @@ export function buildShipModel(type, opts = {}) {
   const flags = new THREE.Mesh(flagGeo, flagMat);
   flags.castShadow = false; flags.customDepthMaterial = flagMat.userData.depth; flags.frustumCulled = false;
   group.add(flags);
+  // the flags are only culled at the distant level: a sphere that holds them whichever way they stream
+  flagGeo.boundingSphere.copy(T.hullGeo.boundingSphere).radius += eL + 5 + spec.length * 0.18;
   // ensign staff (separate tiny line in hull geo would need cache split per type; build a thin cylinder mesh instead -> merged into flags group via shared material)
-  {
-    const g = new THREE.CylinderGeometry(0.05, 0.07, staffTop.y - ens.y + 0.6, 5);
-    g.translate(0, (staffTop.y + ens.y) / 2 - 0.3 + 0.0, 0);
-    g.translate(0, 0, staffTop.z);
-    const staff = new THREE.Mesh(g, _getStaffMat());
-    staff.castShadow = true;
-    group.add(staff);
-    group.userData.staffGeo = g;
-  }
+  const staffGeo = new THREE.CylinderGeometry(0.05, 0.07, staffTop.y - ens.y + 0.6, 5);
+  staffGeo.translate(0, (staffTop.y + ens.y) / 2 - 0.3 + 0.0, 0);
+  staffGeo.translate(0, 0, staffTop.z);
+  const staff = new THREE.Mesh(staffGeo, _getStaffMat());
+  staff.castShadow = true;
+  group.add(staff);
+  group.userData.staffGeo = staffGeo;
 
   // waterline foam skirt + stern wake (transparent, drawn after the sea)
   const foamMat = makeFoamMaterial();
@@ -328,7 +348,7 @@ export function buildShipModel(type, opts = {}) {
   su.uLampA.value = hu.uLampA.value; su.uLampB.value = hu.uLampB.value;
   const piv = hu.uPiv.value;
   for (let i = 0; i < 8; i++) piv[i].copy(rig.pivots[i]);
-  const st = { set: opts.sailSetting ?? 0.5, brace: 0, boom: 0, fill: 1, side: 1, luff: 0, strike: 0, strikeTarget: 0, flagYaw: 0, hullD: 0, sailD: 0, far: false };
+  const st = { set: opts.sailSetting ?? 0.5, brace: 0, boom: 0, fill: 1, side: 1, luff: 0, strike: 0, strikeTarget: 0, flagYaw: 0, hullD: 0, sailD: 0, far: false, dist: false, flat: false };
   let damageOverride = null;
 
   const model = {
@@ -337,6 +357,7 @@ export function buildShipModel(type, opts = {}) {
     cannonPorts, mastTops, sternLanterns, ensignAnchor, bowAnchor,
     type, faction,
     get lodFar() { return st.far; },
+    get lod() { return st.dist ? 2 : st.far ? 1 : 0; },
     update(dt, t, o = {}) {
       updateGlobals(t);
       const snap = !st.init || dt === 0; st.init = true;
@@ -385,7 +406,8 @@ export function buildShipModel(type, opts = {}) {
       const dmg = damageOverride || o.damage;
       if (dmg) this.setDamage(dmg);
       const cam = typeof window !== 'undefined' ? window.__game?.camera : null;
-      const camD = cam ? cam.position.distanceTo(group.position) * (cam.fov || 52) / 52 : 0;   // zoom-aware range
+      const camR = cam ? cam.position.distanceTo(group.position) : 0;
+      const camD = camR * (cam?.fov || 52) / 52;   // zoom-aware range
       crew.visible = !cam || camD < 70;
       // hull LOD with hysteresis (far: no guns, rails, beads, ratlines or running rigging; coarse skin).
       // Only for models in the world scene: port stages (shipyard) render their own camera -> always the full model.
@@ -395,7 +417,22 @@ export function buildShipModel(type, opts = {}) {
       // sea-only shading (day glass, gilding glints, lantern pools, flag folds): off on port stages and the duel deck
       hu.uSea.value = su.uSea.value = fu.uSea.value = inWorld && !hu.uDuel.value ? 1 : 0;
       glowGeo.setDrawRange(0, hu.uSea.value ? Infinity : info.sternLanterns.length);   // deck lantern: sea only
-      if (far !== st.far) { st.far = far; hull.geometry = far ? T.hullGeoFar : T.hullGeo; }
+      // distant level with its own hysteresis: lighter hull geometry, the same sails, no ensign staff (a tenth of a
+      // pixel wide), sails and flags culled against the view like the hull (their animation moves them a few pixels
+      // at most at that range)
+      const dist = far && (st.dist ? camD > lodDistBackM() : camD > lodDistM());
+      if (far !== st.far || dist !== st.dist) {
+        st.far = far; st.dist = dist;
+        hull.geometry = dist ? T.hullGeoDist : far ? T.hullGeoFar : T.hullGeo;
+        sails.frustumCulled = flags.frustumCulled = dist;
+        staff.visible = !dist;
+      }
+      // distant level: the lantern glow is drawn at night only (by day it is under a pixel and nearly transparent),
+      // the foam skirt and wake only when seen from above (from near sea level they are under a pixel high)
+      glow.visible = !dist || GLOBAL.uNight.value > 0.02;
+      const above = camR > 0 ? (cam.position.y - group.position.y) / camR : 1;
+      st.flat = dist && above < (st.flat ? 0.045 : 0.035);
+      foam.visible = !st.flat;
       // sails are never frustum-culled (vertex-animated), so only ships near the camera (inside the ±90–150 m shadow
       // box around it) draw them into the shadow map
       sails.castShadow = !cam || camD < 170;

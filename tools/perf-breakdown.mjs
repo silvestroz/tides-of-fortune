@@ -1,7 +1,8 @@
 // Triangle / draw-call breakdown by system, near Havana (default game start, sail
 // mode, Élevé unless ?quality=…): one render with everything, then one render per top-level scene group hidden
 // (ships, towns `LOD`, terrain, ocean, vegetation `Mesh`, `DirectionalLight` = the shadow pass…). A group's delta
-// includes its share of the shadow pass. Also prints the nearest towns' LOD level / triangles and each ship's hull LOD.
+// includes its share of the shadow pass. Also prints the nearest towns' LOD level / triangles and each ship's distance, level of detail
+// (near / far / distant) and hull+sail triangles.
 // usage: node tools/perf-breakdown.mjs [fixed|natural] [extra query] [w] [h]
 //   fixed  : AI removed, 24 non-AI ships of 12 types at seeded open-water spots 150–3 000 m around the player (27 ships
 //            with the player and pre-placed ones) — the same scene before / after a change
@@ -80,7 +81,8 @@ const r = await page.evaluate(async (mode) => {
     res.towns.push({ d, lvl, near: triOf(near), nearOwn, chunks: chunkKids.length, kids, far: far ? triOf(far) : 0, r });
   }
   res.towns.sort((a, b) => a.d - b.d); res.towns = res.towns.slice(0, 3);
-  res.perShip = g.ships.map(s => [s.type, Math.round(Math.hypot(s.position.x - cam.x, s.position.z - cam.z)), s.model.lodFar ? 'far' : 'near', Math.round(((s.model.lodFar ? s.model.group.children[0].geometry : s.model.group.children[0].geometry).index.count) / 3)].join(' ')).sort((a, b) => +a.split(' ')[1] - +b.split(' ')[1]);
+  res.perShip = g.ships.map(s => [s.type, Math.round(Math.hypot(s.position.x - cam.x, s.position.z - cam.z)), ['near', 'far', 'distant'][s.model.lod],
+    Math.round(s.model.group.children[0].geometry.index.count / 3) + '+' + Math.round(s.model.group.children[1].geometry.index.count / 3)].join(' ')).sort((a, b) => +a.split(' ')[1] - +b.split(' ')[1]);
   res.cam = [cam.x, cam.y, cam.z].map(Math.round);
   return res;
 }, mode);
