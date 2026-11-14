@@ -23,7 +23,8 @@
     #app { position: fixed; inset: 0; }
     #app canvas { display: block; width: 100%; height: 100%; }
     /* Loading screen: pure CSS, animated with transform / opacity only, so it stays smooth while the game generates
-       the world and compiles its shaders on the main thread. Removed by src/main.js when game.start() finishes. */
+       the world and compiles its shaders on the main thread. Removed by src/main.js when game.start() finishes.
+       Under the title: a small ship rocking on the swell (.ship) and the message (.msg). */
     #boot { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; color: #f3e6c4;
       background: radial-gradient(120% 90% at 50% 38%, #1d3a4d 0%, #10222f 55%, #070e15 100%);
       transition: opacity .7s ease; }
@@ -50,15 +51,26 @@
     #boot .flagrow .dia { width: .38em; height: .38em; transform: rotate(45deg);
       background: linear-gradient(160deg, #fbe7a6 0%, #d9b55a 22%, #8a6424 48%, #c9a24a 64%, #f1d488 82%, #7a5a1e 100%); box-shadow: 0 0 .3em rgba(0,0,0,.6); }
     #boot .sub { margin-top: .3em; font: italic 400 1.25em/1.2 Spectral, Georgia, serif; color: #efe0b8; text-shadow: 0 .1em .3em rgba(0,0,0,.95); }
-    #boot .msg { margin-top: 3.2em; font: italic 400 1.15em/1.3 Spectral, Georgia, serif; color: rgba(243,230,196,.82); }
+    #boot .msg { margin-top: 1.1em; font: italic 400 1.15em/1.3 Spectral, Georgia, serif; color: rgba(243,230,196,.82); }
     #boot .msg i { font-style: normal; display: inline-block; animation: boot-dot 1.4s ease-in-out infinite; }
     #boot .msg i:nth-child(2) { animation-delay: .2s; }
     #boot .msg i:nth-child(3) { animation-delay: .4s; }
     #boot.fail .msg { color: #f0b9a0; font-style: normal; }
-    #boot.fail .fl, #boot.fail .msg i { animation-play-state: paused; }
+    /* a small ship rocking on one line of swell, above the message: two HTML elements moved by transform only, so
+       they keep moving while the main thread is busy */
+    #boot .ship { position: relative; width: 5.6em; height: 6.2em; margin: 2.2em auto 0; }
+    #boot .ship .hull { position: absolute; inset: 0 0 .9em; transform-origin: 50% 90%; animation: boot-bob 3s ease-in-out infinite; will-change: transform; }
+    #boot .ship .swell { position: absolute; left: -3.2em; right: -3.2em; bottom: 0; height: 1.5em; overflow: hidden;
+      -webkit-mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent); mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent); }
+    #boot .ship .swell > div { width: 200%; height: 100%; animation: boot-roll 7s linear infinite; will-change: transform; }
+    #boot .ship svg { display: block; width: 100%; height: 100%; overflow: visible; }
+    #boot.fail .fl, #boot.fail .msg i, #boot.fail .ship * { animation-play-state: paused; }
     @keyframes boot-wave { 0%, 100% { transform: skewY(0) scaleX(1); } 50% { transform: skewY(-3deg) scaleX(.94); } }
     @keyframes boot-dot { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
-    @media (prefers-reduced-motion: reduce) { #boot .fl, #boot .msg i { animation: none; } }
+    @keyframes boot-bob { 0%, 100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-.2em) rotate(3.5deg); } }
+    @keyframes boot-roll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+    @media (max-height: 560px) { #boot .ship { display: none; } #boot .msg { margin-top: 3.2em; } }
+    @media (prefers-reduced-motion: reduce) { #boot .fl, #boot .msg i, #boot .ship * { animation: none; } }
     /* Mobile warning: the game targets keyboard + mouse, there are no touch controls. A discreet banner
        above the loading screen (not full screen, not blocking: the player chooses), hidden by default and shown by
        the script just below only on a touch device without a mouse that hasn't dismissed it already
@@ -123,6 +135,22 @@
         <path d="M120 30 L128 24 L136 30 L128 36 Z" fill="#f1d488"/><path d="M464 30 L472 24 L480 30 L472 36 Z" fill="#f1d488"/></g></svg>
       <div class="flagrow" aria-hidden="true"><span class="fl"><svg class="flag" viewBox="0 0 60 40" width="42" height="28" aria-hidden="true"><defs><clipPath id="bootfl1c"><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z"/></clipPath><linearGradient id="bootfl1g" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity="0.18"/><stop offset="0.25" stop-color="#fff" stop-opacity="0.16"/><stop offset="0.5" stop-color="#000" stop-opacity="0.14"/><stop offset="0.75" stop-color="#fff" stop-opacity="0.12"/><stop offset="1" stop-color="#000" stop-opacity="0.22"/></linearGradient></defs><g clip-path="url(#bootfl1c)"><rect width="60" height="40" fill="#b8242c"/><rect x="0" y="0" width="26" height="18" fill="#f1e8d2"/><rect x="11" y="0" width="4" height="18" fill="#b8242c"/><rect x="0" y="7" width="26" height="4" fill="#b8242c"/><rect width="60" height="40" fill="url(#bootfl1g)"/></g><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z" fill="none" stroke="#1c120a" stroke-opacity="0.55" stroke-width="1.2"/></svg></span><i class="dia"></i><span class="fl"><svg class="flag" viewBox="0 0 60 40" width="42" height="28" aria-hidden="true"><defs><clipPath id="bootfl2c"><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z"/></clipPath><linearGradient id="bootfl2g" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity="0.18"/><stop offset="0.25" stop-color="#fff" stop-opacity="0.16"/><stop offset="0.5" stop-color="#000" stop-opacity="0.14"/><stop offset="0.75" stop-color="#fff" stop-opacity="0.12"/><stop offset="1" stop-color="#000" stop-opacity="0.22"/></linearGradient></defs><g clip-path="url(#bootfl2c)"><rect width="60" height="40" fill="#f1e2b8"/><path d="M4 3 L56 37 M56 3 L4 37" stroke="#a5201f" stroke-width="5" stroke-linecap="round" stroke-dasharray="7 2.2"/><circle cx="30" cy="20" r="4.5" fill="#e0b43a" stroke="#7a4f10" stroke-width="1"/><rect width="60" height="40" fill="url(#bootfl2g)"/></g><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z" fill="none" stroke="#1c120a" stroke-opacity="0.55" stroke-width="1.2"/></svg></span><i class="dia"></i><span class="fl"><svg class="flag" viewBox="0 0 60 40" width="42" height="28" aria-hidden="true"><defs><clipPath id="bootfl3c"><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z"/></clipPath><linearGradient id="bootfl3g" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity="0.18"/><stop offset="0.25" stop-color="#fff" stop-opacity="0.16"/><stop offset="0.5" stop-color="#000" stop-opacity="0.14"/><stop offset="0.75" stop-color="#fff" stop-opacity="0.12"/><stop offset="1" stop-color="#000" stop-opacity="0.22"/></linearGradient></defs><g clip-path="url(#bootfl3c)"><rect width="60" height="40" fill="#2e5aa8"/><g transform="translate(20 13)" fill="#e7c25a"><path d="M0 -6 C2.4 -3 2.4 0 0 2.5 C-2.4 0 -2.4 -3 0 -6Z"/><path d="M0 1.5 C3 -2 6 -1 5 2.5 C3.5 1 2 1.8 0 3.5Z"/><path d="M0 1.5 C-3 -2 -6 -1 -5 2.5 C-3.5 1 -2 1.8 0 3.5Z"/><rect x="-3.5" y="3" width="7" height="1.6"/></g><g transform="translate(40 13)" fill="#e7c25a"><path d="M0 -6 C2.4 -3 2.4 0 0 2.5 C-2.4 0 -2.4 -3 0 -6Z"/><path d="M0 1.5 C3 -2 6 -1 5 2.5 C3.5 1 2 1.8 0 3.5Z"/><path d="M0 1.5 C-3 -2 -6 -1 -5 2.5 C-3.5 1 -2 1.8 0 3.5Z"/><rect x="-3.5" y="3" width="7" height="1.6"/></g><g transform="translate(30 28)" fill="#e7c25a"><path d="M0 -6 C2.4 -3 2.4 0 0 2.5 C-2.4 0 -2.4 -3 0 -6Z"/><path d="M0 1.5 C3 -2 6 -1 5 2.5 C3.5 1 2 1.8 0 3.5Z"/><path d="M0 1.5 C-3 -2 -6 -1 -5 2.5 C-3.5 1 -2 1.8 0 3.5Z"/><rect x="-3.5" y="3" width="7" height="1.6"/></g><rect width="60" height="40" fill="url(#bootfl3g)"/></g><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z" fill="none" stroke="#1c120a" stroke-opacity="0.55" stroke-width="1.2"/></svg></span><i class="dia"></i><span class="fl"><svg class="flag" viewBox="0 0 60 40" width="42" height="28" aria-hidden="true"><defs><clipPath id="bootfl4c"><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z"/></clipPath><linearGradient id="bootfl4g" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity="0.18"/><stop offset="0.25" stop-color="#fff" stop-opacity="0.16"/><stop offset="0.5" stop-color="#000" stop-opacity="0.14"/><stop offset="0.75" stop-color="#fff" stop-opacity="0.12"/><stop offset="1" stop-color="#000" stop-opacity="0.22"/></linearGradient></defs><g clip-path="url(#bootfl4c)"><rect width="60" height="14" fill="#e07a24"/><rect y="13" width="60" height="14" fill="#f1e8d2"/><rect y="26.5" width="60" height="13.5" fill="#2a4f8f"/><rect width="60" height="40" fill="url(#bootfl4g)"/></g><path d="M0 2 C15 -1 25 5 40 2 C50 0 56 1 60 2 L60 38 C56 37 50 36 40 38 C25 41 15 35 0 38 Z" fill="none" stroke="#1c120a" stroke-opacity="0.55" stroke-width="1.2"/></svg></span></div>
       <div class="sub">Privateers, plunder and the high seas, anno 1660</div>
+      <div class="ship" aria-hidden="true">
+        <div class="hull"><svg viewBox="0 0 80 80">
+        <g stroke="#3a2a18" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M28 62 V14 M50 62 V20" fill="none" stroke="#5a4226" stroke-width="2"/>
+          <path d="M14 30 C22 27 34 27 42 30 C40 38 40 44 42 52 C34 49 22 49 14 52 C17 44 17 38 14 30Z" fill="#f3e6c4"/>
+          <path d="M18 16 C24 14 32 14 38 16 C37 20 37 23 38 27 C32 25 24 25 18 27 C19 23 19 20 18 16Z" fill="#efe0b8"/>
+          <path d="M42 34 C48 32 56 32 61 34 C60 40 60 46 61 52 C56 50 48 50 42 52 C44 46 44 40 42 34Z" fill="#f3e6c4"/>
+          <path d="M14 39 C22 36.5 34 36.5 42 39 M42 42 C48 40.5 56 40.5 61 42" fill="none" stroke="#c0392b" stroke-width="2.2"/>
+          <path d="M28 14 C33 11 37 13 42 10 V16 C37 19 33 17 28 20Z" fill="#c0392b"/>
+          <path d="M6 58 H70 L76 52 C74 64 68 72 58 72 H20 C12 72 8 66 6 58Z" fill="#8a4a2a"/>
+          <path d="M8 62 H72" fill="none" stroke="#f1d488" stroke-width="1.6"/>
+          <path d="M70 58 L79 50" fill="none" stroke="#5a4226" stroke-width="1.8"/>
+        </g>
+        <g fill="#ffd97a"><circle cx="24" cy="66.5" r="1.3"/><circle cx="34" cy="66.5" r="1.3"/><circle cx="44" cy="66.5" r="1.3"/><circle cx="54" cy="66.5" r="1.3"/></g></svg></div>
+        <div class="swell"><div><svg viewBox="0 0 400 30" preserveAspectRatio="none"><path d="M0 12 Q25 2 50 12 T100 12 T150 12 T200 12 T250 12 T300 12 T350 12 T400 12 V30 H0Z" fill="#10222f"/><path d="M0 12 Q25 2 50 12 T100 12 T150 12 T200 12 T250 12 T300 12 T350 12 T400 12" fill="none" stroke="#a9cdd6" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg></div></div>
+      </div>
       <div class="msg">Hoisting the sails<i>.</i><i>.</i><i>.</i></div>
     </div>
   </div>
