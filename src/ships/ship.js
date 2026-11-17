@@ -19,7 +19,8 @@
 //   grounded        bool, aground this frame;  scrape 0..1 impact intensity (camera shake), decays
 //   desiredHeading  rad|null  (writable) if set, the ship auto-steers toward it (AI convenience)
 //   combatSpeedF / combatTurnF  multipliers written by combat.js (dismasting, weather gauge); default 1
-//   teleport(x, z, heading?)  instant move with buoyancy reset
+//   teleport(x, z, heading?)  instant move with buoyancy reset; bumps teleportSeq (wakes and the stern foam start a
+//                             fresh trail instead of joining the old spot to the new one)
 //   steerToward(heading, dt)  sets rudder with a damped P-controller; returns remaining heading error
 //   (an AI controller far from the camera runs every 2 or 4 frames with the accumulated dt: see _think)
 // Events emitted: 'ship:grounded' { ship, impact }, 'ship:collide' { a, b, impact }
@@ -98,6 +99,7 @@ export class Ship {
   // Move instantly (spawns, tests, cutscenes): resets buoyancy springs so the ship doesn't bob in from the old height.
   teleport(x, z, heading = this.heading) {
     this.position.x = x; this.position.z = z; this.heading = heading;
+    this.teleportSeq = (this.teleportSeq || 0) + 1;
     const h = this.game.ocean?.getHeight?.(x, z) ?? 0;
     this.heave = h; this.heaveVel = 0; this.bPitch = this.bPitchVel = this.bRoll = this.bRollVel = 0;
     this.position.y = h - SINK; this.grounded = false; this._nearLandT = 0;
@@ -402,7 +404,7 @@ export class Ship {
     m.rotation.set(this.pitch, -this.heading, this.roll, 'YXZ');
     this.model.update(dt, t, {
       sailSetting: this.sailEff, windRel: this.windRel, speed: this.speed, heel: this.heel,
-      luff: this.luff, rudder: this.rudderAngle,
+      luff: this.luff, rudder: this.rudderAngle, teleportSeq: this.teleportSeq || 0,
       damage: { hull: 1 - this.hull / this.hullMax, sails: 1 - this.sails },
     });
   }

@@ -20,6 +20,7 @@
 //   setDuelMode(bool)     carved/gilded duel set dressing on (hides ship's boat, hatches, barrels)
 //   setSailColor(hex)     re-tint canvas (e.g. black sails for a pirate flagship)
 //   update() also accepts: luff 0..1 (from ship.js), rudder -1..1 (turns the rudder blade? — visual only, small)
+//                         teleportSeq (ship.teleportSeq: a change restarts the stern wake's track)
 //   Draw calls per ship: hull+spars+rigging (1), sails (1), flags (1), ensign staff (1), waterline foam (1),
 //                         crew (1, instanced, under 70 m), lantern glow points (1).
 //   model.lod             level of detail drawn: 0 full model, 1 far (beyond LOD_FAR_M), 2 distant (beyond LOD_DIST_M:
@@ -37,7 +38,7 @@ import { GeoBuilder } from './art/builder.js';
 import { buildHullSteps } from './art/hull.js';
 import { buildRigSteps } from './art/rig.js';
 import { makeHullMaterial, makeSailMaterial, makeFlagMaterial, updateGlobals, GLOBAL } from './art/materials.js';
-import { buildFlagGeometry, getCrewGeometry, getCrewMaterial, getGlowMaterial, buildFoamGeometry, makeFoamMaterial } from './art/extras.js';
+import { buildFlagGeometry, getCrewGeometry, getCrewMaterial, getGlowMaterial, buildFoamGeometry, makeFoamMaterial, WAKE_RINGS } from './art/extras.js';
 import { getFlagTex, EMBLEM_INDEX } from './art/textures.js';
 import { mulberry32 } from './art/noise.js';
 import { QUALITY } from '../core/constants.js';
@@ -268,6 +269,37 @@ export function buildShipModel(type, opts = {}) {
   // waterline foam skirt + stern wake (transparent, drawn after the sea)
   const foamMat = makeFoamMaterial();
   const foam = new THREE.Mesh(T.foamGeo, foamMat);
+  // the stern wake strip follows the stern's recent track (world xz points, newest first), re-expressed in the
+  // ship's frame each frame: it curves behind a turning ship instead of trailing straight out of the transom
+  const wk = T.foamGeo.userData.wake, wakePath = foamMat.userData.u.uPath.value;
+  const track = { xs: [], zs: [], seq: -1, step: Math.max(0.75, wk.Lw / 24), cap: 40 };
+  const layWake = (teleportSeq) => {
+    const h = -group.rotation.y, ch = Math.cos(h), sh = Math.sin(h);
+    const sx = group.position.x - sh * wk.z0, sz = group.position.z + ch * wk.z0;   // stern point (local 0, z0)
+    const xs = track.xs, zs = track.zs;
+    const moved = xs.length ? Math.hypot(sx - xs[0], sz - zs[0]) : 0;
+    if (track.seq !== teleportSeq || !xs.length || moved > 40) { xs.length = zs.length = 0; xs.push(sx); zs.push(sz); track.seq = teleportSeq; }
+    else if (moved >= track.step) { xs.unshift(sx); zs.unshift(sz); if (xs.length > track.cap) { xs.length = zs.length = track.cap; } }
+    // walk back from the stern along [stern, track...]; past the oldest point, carry on along the last segment
+    let px = sx, pz = sz, k = 0, acc = 0, dx = -sh, dz = ch;   // default direction: straight astern
+    const seg = (j) => { const qx = xs[j], qz = zs[j], l = Math.hypot(qx - px, qz - pz); return l; };
+    for (let i = 0; i <= WAKE_RINGS; i++) {
+      const u = i / WAKE_RINGS * wk.Lw;
+      while (k < xs.length) {
+        const l = seg(k);
+        if (l < 1e-3) { k++; continue; }
+        if (acc + l >= u) break;
+        acc += l; dx = (xs[k] - px) / l; dz = (zs[k] - pz) / l; px = xs[k]; pz = zs[k]; k++;
+      }
+      let wx, wz;
+      if (k < xs.length) { const l = seg(k), f = (u - acc) / l; dx = (xs[k] - px) / l; dz = (zs[k] - pz) / l; wx = px + (xs[k] - px) * f; wz = pz + (zs[k] - pz) * f; }
+      else { wx = px + dx * (u - acc); wz = pz + dz * (u - acc); }
+      const ox = wx - group.position.x, oz = wz - group.position.z;
+      wakePath[i].set(ox * ch + oz * sh, -ox * sh + oz * ch);
+    }
+  };
+  const straightWake = () => { for (let i = 0; i <= WAKE_RINGS; i++) wakePath[i].set(0, wk.z0 + i / WAKE_RINGS * wk.Lw); track.xs.length = track.zs.length = 0; };
+  straightWake();
   foam.renderOrder = 2; foam.castShadow = false; foam.receiveShadow = false;
   group.add(foam);
 
@@ -404,6 +436,8 @@ export function buildShipModel(type, opts = {}) {
       st.strike += (st.strikeTarget - st.strike) * (snap ? 1 : Math.min(1, dt * 0.6));
       fu.uStrike.value = st.strike;
       { const sp = Math.abs(o.speed || 0); const fm = foamMat.userData.u.uSpeed; fm.value += (sp - fm.value) * (snap ? 1 : Math.min(1, dt * 1.5)); }
+      // the stern wake follows the track at sea (not on a stage, in the duel or in the shipyard: dt 0 there)
+      if (dt > 0 && foam.visible) layWake(o.teleportSeq ?? 0); else if (dt === 0) straightWake();
       const dmg = damageOverride || o.damage;
       if (dmg) this.setDamage(dmg);
       const cam = typeof window !== 'undefined' ? window.__game?.camera : null;

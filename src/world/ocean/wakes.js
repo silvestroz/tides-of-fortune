@@ -8,6 +8,7 @@
 // width grows with distance from the bow at the Kelvin half-angle (19.5°), so the V arms bend when the ship turns.
 // The fragment shader draws: feathery Kelvin arms with diverging ripples, a bow cushion, a churned centre trail
 // behind the stern, all fading with age and scaled by the speed the ship had when it laid that point.
+// A teleport (ship.teleportSeq changes) or a jump of more than JUMP metres clears a ship's history.
 import * as THREE from 'three';
 
 const MAX_PTS = 160;            // per ship
@@ -15,6 +16,7 @@ const STEP = 1.5;               // metres between history points
 const MAX_AGE = 45;             // seconds a trail point survives
 const KELVIN = Math.tan(19.47 * Math.PI / 180);
 const MAX_SPLASH = 64;
+const JUMP = 40;               // metres: a bow that moved farther than this since its last point was moved, not sailed
 
 const ribbonVert = /* glsl */`
 attribute vec4 aWake;   // x: lateral metres (signed), y: distance from bow (m), z: age (s), w: speed at the time (m/s)
@@ -243,8 +245,12 @@ export class WakeSystem {
     const L = ship.length || 30;
     // bow point (history is laid at the bow so the Kelvin wedge originates at the stem)
     const bx = p.x + fx * L * 0.5, bz = p.z + fz * L * 0.5;
-    if (!tr) { tr = { pts: [], seen: t }; this.trails.set(ship, tr); }
+    if (!tr) { tr = { pts: [], seen: t, seq: ship.teleportSeq || 0 }; this.trails.set(ship, tr); }
     tr.seen = t;
+    // a teleport (leaving a port, a village, a respawn) starts a fresh trail: joining the old spot to the new one drew a
+    // straight foam strip hundreds of metres long and a hull mask (dark contact shadow, mirrored hull) beside the ship
+    const seq = ship.teleportSeq || 0;
+    if (tr.seq !== seq || (tr.pts[0] && Math.hypot(bx - tr.pts[0].x, bz - tr.pts[0].z) > JUMP)) { tr.pts.length = 0; tr.seq = seq; }
     const spd = Math.max(0, ship.speed || 0);
     const last = tr.pts[0];
     if (!last || Math.hypot(bx - last.x, bz - last.z) >= STEP || t - last.t > 1.0) {
@@ -265,7 +271,7 @@ export class WakeSystem {
     for (const s of ships) {
       if (!s || s.alive === false && !s.sinking) continue;
       if (!this.trails.has(s) && (s.speed || 0) > 0.5) {
-        const tr = { pts: [], seen: t };
+        const tr = { pts: [], seen: t, seq: s.teleportSeq || 0 };
         const fx = Math.sin(s.heading), fz = -Math.cos(s.heading), L = s.length || 30;
         const bx = s.position.x + fx * L * 0.5, bz = s.position.z + fz * L * 0.5;
         for (let i = MAX_PTS - 1; i >= 1; i--) {
