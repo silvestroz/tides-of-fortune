@@ -1,4 +1,7 @@
 // Flags (ensign / jack / masthead pennants) geometry, crew figure geometry + crew material, lantern glow sprites.
+// Waterline foam skirt + stern wake: buildFoamGeometry(H) (geometry.userData.wake = { z0, Lw } for the wake strip),
+// makeFoamMaterial() (userData.u: uSpeed, uPath = WAKE_RINGS + 1 local xz points of the wake strip's centre line,
+// written each frame by the ship model from the stern's recent track, so the strip curves behind a turning ship).
 import * as THREE from 'three';
 import { GLOBAL } from './materials.js';
 
@@ -156,6 +159,7 @@ export function getGlowMaterial() {
 }
 
 // ---------------------------------------------------------------- waterline foam skirt + stern wake (one transparent mesh)
+export const WAKE_RINGS = 16;   // segments along the stern wake strip
 // aF = (across 0 at hull .. 1 outer edge, along-hull coordinate in metres, kind 0 skirt | 1 wake, bowness 0..1)
 export function buildFoamGeometry(H) {
   const pos = [], aF = [], idx = [];
@@ -178,7 +182,9 @@ export function buildFoamGeometry(H) {
     for (let i = 0; i < N; i++) { const a = base + i * 2; idx.push(a, a + 1, a + 3, a, a + 3, a + 2); }
   }
   // wake: tapered strip trailing from the stern
-  { const base = pos.length / 3, z0 = H.z(1, y) - 0.6, hw0 = Math.max(0.6, H.hw(0.97, y)), NW = 16, Lw = H.L * 1.4;
+  let wake;
+  { const base = pos.length / 3, z0 = H.z(1, y) - 0.6, hw0 = Math.max(0.6, H.hw(0.97, y)), NW = WAKE_RINGS, Lw = H.L * 1.4;
+    wake = { z0, Lw };
     for (let i = 0; i <= NW; i++) {
       const t = i / NW, z = z0 + t * Lw, hw = hw0 * (0.85 + 1.9 * t);
       for (const sx of [-1, 1]) { pos.push(sx * hw, y + 0.01, z); aF.push(sx * 0.5 + 0.5, t, 1, 0); }
@@ -189,17 +195,30 @@ export function buildFoamGeometry(H) {
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('aF', new THREE.Float32BufferAttribute(aF, 4));
   g.setIndex(idx); g.computeBoundingSphere();
+  // the wake strip bends with the ship's track: the bounds must hold it swung to either side
+  const bs = g.boundingSphere; bs.radius = Math.max(bs.radius + bs.center.length(), Math.abs(wake.z0) + wake.Lw + 6); bs.center.set(0, 0, 0);
+  g.userData.wake = wake;
   return g;
 }
 export function makeFoamMaterial() {
   const m = new THREE.MeshBasicMaterial({ color: 0xf2f6f2, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-  const u = { uSpeed: { value: 0 } };
+  const u = { uSpeed: { value: 0 }, uPath: { value: Array.from({ length: WAKE_RINGS + 1 }, (_, i) => new THREE.Vector2(0, i)) } };
   m.userData.u = u;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u, { uTime: GLOBAL.uTime, uNight: GLOBAL.uNight });
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 aF; varying vec4 vF; varying vec2 vFP;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvF = aF; vFP = position.xz;');
+      .replace('#include <common>', `#include <common>
+attribute vec4 aF; varying vec4 vF; varying vec2 vFP; uniform vec2 uPath[${WAKE_RINGS + 1}];`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+vF = aF; vFP = position.xz;
+if (aF.z > 0.5) {
+  // wake strip: laid along the stern's recent track (uPath, local xz), its width across the track
+  int i = int(aF.y * ${WAKE_RINGS}.0 + 0.5);
+  vec2 tg = uPath[min(i + 1, ${WAKE_RINGS})] - uPath[max(i - 1, 0)];
+  float tl = length(tg);
+  tg = tl > 1e-4 ? tg / tl : vec2(0.0, 1.0);
+  transformed.xz = uPath[i] + vec2(tg.y, -tg.x) * position.x;
+}`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform float uSpeed; uniform float uTime; uniform float uNight; varying vec4 vF; varying vec2 vFP;
@@ -230,6 +249,6 @@ diffuseColor.a *= clamp(a, 0.0, 0.9);
 diffuseColor.rgb *= mix(1.0, 0.12, uNight) * (0.88 + 0.12 * n);
 #include <alphatest_fragment>`);
   };
-  m.customProgramCacheKey = () => 'shipFoam_v2';
+  m.customProgramCacheKey = () => 'shipFoam_v3';
   return m;
 }
