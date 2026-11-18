@@ -154,6 +154,11 @@
 .da-stats > div { display: grid; grid-template-columns: 4.6em 1fr; align-items: center; }
 .da-stats .bar { height: .45em; border-radius: .2em; background: rgba(58,36,20,.2); overflow: hidden; }
 .da-stats .bar i { display: block; height: 100%; background: linear-gradient(90deg, #8e1b1b, #c9a24a); }
+.duel-brief .db-card { width: min(34em, 90vw); padding: 1em 1.3em; color: #3a2414; border-radius: .3em; display: grid; gap: .65em;
+  background: linear-gradient(#f3e4bd, #e2cc96); box-shadow: 0 .6em 1.8em rgba(0,0,0,.6), inset 0 0 0 1px #9a7a42; font-size: 1.05em; line-height: 1.35; }
+.duel-brief .db-row { display: grid; grid-template-columns: 4.2em 1fr; align-items: center; gap: .8em; }
+.duel-brief .db-k { text-align: center; color: #5a1410; font-weight: bold; white-space: nowrap; }
+.duel-brief .kc { display: inline-block; min-width: 1.3em; padding: 0 .3em; border-radius: .2em; background: #3a2414; color: #fbefc8; font-family: var(--sc, Georgia); font-size: .9em; text-align: center; }
 .da-hint { text-align: center; margin-top: 1.1em; color: #fbefc8; text-shadow: 0 1px 3px #000; font-size: 1.05em; }
 .da-hint .kc { display: inline-block; min-width: 1.3em; padding: 0 .3em; border-radius: .2em; background: #fbefc8; color: #3a2414; text-shadow: none; font-family: var(--sc, Georgia); text-align: center; }
 /* capture screen: Transbordement panel */
