@@ -366,7 +366,11 @@ export class LivingWorld {
       if (!ok) continue;
       const heading = Math.atan2(pos.b.x - x, -(pos.b.z - z));
       const tier = g.seaZones?.tierAt(x, z) ?? 2;
-      const { charge } = g.combat.spawnConvoy({ faction: c.faction, x, z, heading, treasure: c.treasure, tier, types: this._convoyTypes(c, tier) });
+      // the player came within range before the models were built (map travel, a loaded game, another sea tier at
+      // the spawn point): the convoy appears on a later pass (every 2 s), once they are
+      const types = this._convoyTypes(c, tier);
+      if (!this._convoyReady(c, types)) continue;
+      const { charge } = g.combat.spawnConvoy({ faction: c.faction, x, z, heading, treasure: c.treasure, tier, types });
       this._convoyDraws.delete(c.id);
       charge.convoyId = c.id;
       const to = this._portById(c.to);
@@ -381,8 +385,14 @@ export class LivingWorld {
     const cb = this.game.combat;
     let draw = this._convoyDraws.get(c.id);
     if (!draw || draw.tier !== tier) this._convoyDraws.set(c.id, draw = { tier, types: cb.convoyTypes({ treasure: c.treasure, tier }) });
-    for (const t of [draw.types.type, ...draw.types.guardTypes]) cb.shipReady(t, c.faction);
+    for (const t of [draw.types.type, ...draw.types.guardTypes]) cb.shipReady?.(t, c.faction);
     return draw.types;
+  }
+  _convoyReady(c, types) {
+    const cb = this.game.combat;
+    let ready = true;
+    for (const t of [types.type, ...types.guardTypes]) if (cb.shipReady && !cb.shipReady(t, c.faction)) ready = false;
+    return ready;
   }
   _onLost(ship) {
     if (!ship?.convoyId) return;
@@ -404,6 +414,7 @@ export class LivingWorld {
       const heavy = inf >= INFAMY.heavy;
       if (T < s.hunters[n]) { if (pl && T > s.hunters[n] - 12) this._hunterType(n, heavy); continue; }   // due soon: her model is built in the background
       if (this.hunters(n).length >= (heavy ? 2 : 1)) continue;
+      if (g.combat?.shipReady && !g.combat.shipReady(this._hunterType(n, heavy), n)) continue;   // her model is not built yet: next frame
       if (this._spawnHunter(n, heavy)) s.hunters[n] = T + INFAMY.cooldown;
       else s.hunters[n] = T + 10;
     }

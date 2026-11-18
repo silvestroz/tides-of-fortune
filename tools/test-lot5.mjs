@@ -94,7 +94,7 @@ const r4 = await page.evaluate(() => {
   for (let i = 0; i < 40; i++) lv._updateHunters(2);
   const none = lv.hunters('dutch').length;
   s.reputation.dutch = -55;
-  for (let i = 0; i < 20; i++) lv._updateHunters(2);
+  for (let i = 0; i < 20; i++) { lv._updateHunters(2); g.combat.shipCache({ finish: true }); }   // the hunter appears once her model is built
   const h = lv.hunters('dutch');
   return { none, n: h.length, role: h[0]?.ai?.role, hostile: h[0] ? g.combat.isHostile(h[0], g.player) : false, d: h[0] ? Math.hypot(h[0].position.x - g.player.position.x, h[0].position.z - g.player.position.z) : 0 };
 });
@@ -148,7 +148,7 @@ const r6 = await page.evaluate(() => {
   let px = pos.x + 1500, pz = pos.z;
   for (let a = 0; a < 16 && g.islands.isLand(px, pz, 60); a++) { px = pos.x + Math.cos(a) * 1500; pz = pos.z + Math.sin(a) * 1500; }
   g.player.teleport ? g.player.teleport(px, pz, 0) : (g.player.position.x = px, g.player.position.z = pz);
-  lv._updateConvoys();
+  lv._updateConvoys(); g.combat.shipCache({ finish: true }); lv._updateConvoys();   // the convoy appears once its models are built
   const sh = lv.convoyShips.get(c.id);
   // distance to the route segment: near land the spawn steps along the route to open water (living._updateConvoys)
   const seg = sh ? (() => { const ax = pos.a.x, az = pos.a.z, bx = pos.b.x - ax, bz = pos.b.z - az, L2 = bx * bx + bz * bz || 1;

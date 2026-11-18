@@ -116,8 +116,9 @@ export class PirateLords {
       if (!e || e.defeated || this.alive(l.id) || (e.next && now < e.next)) continue;
       const lp = this._lairPos(e); if (!lp) continue;
       const dist = Math.hypot(lp.x - p.x, lp.z - p.z);
-      if (dist < LORD_TUNING.spawnRange * 1.3) g.combat?.shipReady?.(l.type, 'pirate');   // on the approach: his ship's model is built in the background
-      if (dist > LORD_TUNING.spawnRange) continue;
+      // on the approach: his ship's model is built in the background; he puts to sea once it is ready
+      const ready = dist < LORD_TUNING.spawnRange * 1.3 && (g.combat?.shipReady?.(l.type, 'pirate') ?? true);
+      if (dist > LORD_TUNING.spawnRange || !ready) continue;
       if (this._spawn(l, lp.x, lp.z, 250, 900)) n++;
     }
   }
@@ -144,15 +145,29 @@ export class PirateLords {
     return sh;
   }
 
+  // the avenger to come: the most feared captain whose class fits under the pirate cap of the player's zone + 1
+  // (sea tiers), or a nameless raider; null in guarded waters
+  _avenger() {
+    const g = this.game, s = g.state, p = g.player;
+    const zs = g.seaZones, tier = zs ? zs.tierAt(p.position.x, p.position.z) : 3;
+    if (tier === 1) return null;
+    const top = capFor(tier, 'pirate').maxClass + 1;
+    const l = PIRATE_LORDS.find(x => !s.lords[x.id]?.defeated && !this.alive(x.id) && classOf(x.type) <= top) || null;
+    return { l, type: l ? l.type : 'raider' };
+  }
+  // asks for the avenger's model ahead of time (fortune.js, when the treasure is dug up) -> true once it is built
+  prepareAvenger() {
+    const a = this.game.player ? this._avenger() : null;
+    return !a || (this.game.combat?.shipReady?.(a.type, 'pirate') ?? true);
+  }
   // After a treasure is dug up: the most feared captain still at sea comes to take it back.
   spawnAvenger() {
-    const g = this.game, s = g.state, p = g.player;
+    const g = this.game, p = g.player;
     if (!p || g.mode === 'menu') return null;
-    // sea tiers: the most feared whose class fits under the pirate cap of the player's zone + 1
-    const zs = g.seaZones, tier = zs ? zs.tierAt(p.position.x, p.position.z) : 3;
-    if (tier === 1) { this._avengerDue = 1; return null; }   // the player took refuge in guarded waters: he will wait offshore
-    const top = capFor(tier, 'pirate').maxClass + 1;
-    const l = PIRATE_LORDS.find(x => !s.lords[x.id]?.defeated && !this.alive(x.id) && classOf(x.type) <= top);
+    const av = this._avenger();
+    if (!av) { this._avengerDue = 1; return null; }   // the player took refuge in guarded waters: he will wait offshore
+    if (!this.prepareAvenger()) { this._avengerDue = 1; return null; }   // his model is not built yet: update() asks again (3 s)
+    const l = av.l;
     let sh;
     if (l) sh = this._spawn(l, p.position.x, p.position.z, 1300, 1800, true);
     else {

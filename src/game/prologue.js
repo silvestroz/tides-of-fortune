@@ -61,7 +61,8 @@ export class Prologue {
       if ((p.controller?.sailStep ?? 0) >= 2) o.sailed = true;
       if (this._hPrev == null) this._hPrev = p.heading;
       o.turned = Math.min(PROLOGUE.turn, (o.turned || 0) + Math.abs(wrap(p.heading - this._hPrev))); this._hPrev = p.heading;
-      if (o.sailed && o.turned >= PROLOGUE.turn) { this._spawn(); this._cam = null; this.hints._advance('p-cam', { target: this.target?.name || PROLOGUE.target, looked: false, lookAmt: 0 }); }
+      // the target appears once her model is built (asked for in start(): seconds before the player has made sail and turned)
+      if (o.sailed && o.turned >= PROLOGUE.turn && (g.combat?.shipReady?.(PROLOGUE.type, 'pirate') ?? true)) { this._spawn(); this._cam = null; this.hints._advance('p-cam', { target: this.target?.name || PROLOGUE.target, looked: false, lookAmt: 0 }); }
     } else if (st === 'p-cam') {
       // right-drag orbit or wheel zoom: accumulated (the rig eases its offsets back to 0 by itself)
       const r = g.cameraRig;

@@ -293,7 +293,7 @@ if (process.argv.includes('--browser')) {
     st.missions = []; st.cargo = {};
     // quarry
     const q = offer('portroyal', 'quarry'); c.accept(q);
-    g.player.teleport(q.zone.x + 1800, q.zone.z, 0); step(40);
+    g.player.teleport(q.zone.x + 1800, q.zone.z, 0); step(20); g.combat.shipCache({ finish: true }); step(20);   // she puts to sea once her model is built
     const qs = g.ships.find(s => s.missionId === q.id);
     out.quarry = { spawned: !!qs, name: qs?.name, role: qs?.role, faction: qs?.faction, inZone: qs ? Math.hypot(qs.position.x - q.zone.x, qs.position.z - q.zone.z) <= q.zone.r + 50 : false, captain: qs?._captain?.name };
     if (qs) { qs.lastAttacker = g.player; g.events.emit('ship:struck', { ship: qs }); }
