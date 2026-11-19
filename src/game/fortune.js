@@ -227,6 +227,7 @@ export class Fortune {
     g.events.emit('notify', { text: `The spades strike an iron-bound chest! ${fmtInt(gold)} gold.${extra}`, kind: 'good' });
     // the treasure draws an avenging pirate
     const delay = TREASURE.avengerDelay[0] + r() * (TREASURE.avengerDelay[1] - TREASURE.avengerDelay[0]);
+    g.lords?.prepareAvenger?.();   // his ship's model is built in the background meanwhile
     this._avenger = setTimeout(() => g.lords?.spawnAvenger?.(), delay * 1000 / Math.max(0.2, g.timeScale || 1));
     return true;
   }

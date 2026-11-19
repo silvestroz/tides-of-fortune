@@ -76,6 +76,8 @@ export class PortSystem {
     }
     this._sneakPass = fate === 'sneaked' ? port.id : null;
     this.port = port; this.isOpen = true;
+    // the ships of the squadron may become the flagship here (fleetFlagship): their models are built in the background
+    if (g.player) for (const f of ensureFleet(g.state)) g.combat?.shipReady?.(f.type, g.player.faction);
     const from = g.mode; g.mode = 'port';
     if (from !== 'port') g.events.emit('state:change', { from: from || 'sail', to: 'port' });
     this._prevTimeScale = g.timeScale;

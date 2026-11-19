@@ -42,7 +42,7 @@ import * as THREE from 'three';
 import { FACTIONS } from '../core/constants.js';
 import { isHostile, relation, onPlayerAttack, onPlayerSink, getReputation, HOSTILE_REP } from './factions.js';
 import { AIController } from '../ships/ai.js';
-import { SHIP_SPECS, prepareShipGeometry } from '../ships/shipModel.js';
+import { SHIP_SPECS, prepareShipGeometry, shipGeometryCache } from '../ships/shipModel.js';
 import { pickTrafficType, classOf } from '../data/shipTypes.js';
 import { ZONE_TIERS } from '../data/seaZones.js';   // sea tiers
 import { wearForRole } from '../data/hullWear.js';
@@ -978,6 +978,9 @@ export class CombatSystem {
   }
 
   shipReady(type, faction) { return prepareShipGeometry(type, faction); }
+  // state of the ship geometry cache; { finish: true } builds now what shipReady() queued (scripted tests that call a
+  // spawn path by hand, without the frames in between), { trim: n } keeps n unused geometries (tools/test-spawn-hitch.mjs)
+  shipCache(o) { return shipGeometryCache(o); }
 
   // _spawnRandom(nearPlayer) draws a ship or a convoy of the traffic and spawns it at once
   _spawnRandom(nearPlayer) {

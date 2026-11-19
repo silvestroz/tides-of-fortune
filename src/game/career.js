@@ -23,6 +23,8 @@ import { SHIP_TYPES, classOf } from '../data/shipTypes.js';
 import { ZONE_TIERS, capFor } from '../data/seaZones.js';   // sea tiers: ship of the quarry mission, bounties
 import { a, nationAdj, nationPeople, NBSP, theName } from '../core/i18n.js';
 import { scoreBreakdown } from './retirement.js';   // final score
+
+const ESCORT_TYPE = 'merchantman';   // the ship of an escort commission
 import { MutinyScreen } from './mutiny.js';           // mutiny: duel with the ringleader or give in
 import { Family } from './family.js';                 // married life (game.family)
 import { mutinyOutcome } from '../data/mutiny.js';
@@ -286,14 +288,17 @@ export class Career {
   // ---------------- escort missions (integration) ----------------
   // An accepted escort commission spawns a friendly merchantman that keeps station off the player's quarter.
   // It must be alive and within 900 m when the player enters the destination port; if she sinks the mission fails.
+  // Her model is built in the background from the moment the commission is offered (offerMissions); if it is not
+  // ready yet (accepted at once, game just loaded) she joins a moment later (_updateEscort asks again, twice a second).
   _spawnEscort(m) {
     const g = this.game, p = g.player, c = g.combat;
     if (!p || !c?.spawnAI || (this.escortShip && this.escortShip.alive && !this.escortShip.sinking)) return;
+    if (c.shipReady && !c.shipReady(ESCORT_TYPE, m.nation)) return;
     const f = { x: Math.sin(p.heading), z: -Math.cos(p.heading) };
     let x = p.position.x - f.x * 140 + f.z * 70, z = p.position.z - f.z * 140 - f.x * 70;
     if (g.islands?.isLand?.(x, z, 40)) { x = p.position.x - f.x * 120; z = p.position.z - f.z * 120; }
     const names = ['Good Intent', 'Providence', 'Fair Trader', 'Blessing', 'Marigold'];
-    const e = c.spawnAI({ type: 'merchantman', faction: m.nation, role: 'merchant', x, z, heading: p.heading, sailSetting: 0.5, name: names[m.id.length % names.length], speed: 0 });
+    const e = c.spawnAI({ type: ESCORT_TYPE, faction: m.nation, role: 'merchant', x, z, heading: p.heading, sailSetting: 0.5, name: names[m.id.length % names.length], speed: 0 });
     e.escortOf = p; e._escortMission = m.id; e.ai.fireAtWill = false;
     this.escortShip = e;
     g.events.emit('notify', { text: `The merchantman ${e.name} falls in behind you. Bring her safely to ${m.toName}.`, kind: 'info' });
@@ -471,7 +476,10 @@ export class Career {
       while (i < cands.length - 1 && (x -= cands[i].w) > 0) i++;
       out.push(cands.splice(i, 1)[0].m);
     }
-    return out.filter(m => m.to !== port.id && !s.missions.some(a => a.id === m.id));
+    const offers = out.filter(m => m.to !== port.id && !s.missions.some(a => a.id === m.id));
+    // an escort on offer: the merchantman's model is built in the background while the captain reads
+    if (offers.some(m => m.kind === 'escort')) g.combat?.shipReady?.(ESCORT_TYPE, nation);
+    return offers;
   }
 
   // islands far enough from this port to send the player there (no port on them; islets only for a rescue)
@@ -612,8 +620,10 @@ export class Career {
     }
     if (m.ready || !g.combat?.spawnAI) return;
     const type = SHIP_TYPES[m.type] ? m.type : 'schooner', dist = Math.hypot(z.x - p.x, z.z - p.z);
-    if (dist < Q.spawnRange * 1.3) g.combat.shipReady?.(type, 'pirate');   // on the approach: her model is built in the background
-    if (dist > Q.spawnRange) return;
+    // on the approach: her model is built in the background; she puts to sea once it is ready (the player may
+    // also arrive inside the zone at once: map travel, a loaded game)
+    const ready = dist < Q.spawnRange * 1.3 && (g.combat.shipReady?.(type, 'pirate') ?? true);
+    if (dist > Q.spawnRange || !ready) return;
     let x, zz, ok = false;
     for (let i = 0; i < 24 && !ok; i++) {
       const a = Math.random() * Math.PI * 2, rr = 150 + Math.random() * z.r * 0.8;

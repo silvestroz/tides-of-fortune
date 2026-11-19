@@ -30,7 +30,12 @@
 // Building ahead of time (a ship that appears out of sight must not cost a frame):
 //   prepareShipGeometry(type, faction) -> bool   true once the geometry and skin of that ship are cached; otherwise
 //                         queues their build, which stepShipBuilds(ms?) advances a little per frame
-// getShipStaticParts(type, faction) -> cached raw geometry of a type (moored hulls, land scenes)
+// getShipStaticParts(type, faction) -> cached raw geometry of a type (moored hulls, land scenes): copy what you keep
+// The geometry cache is bounded: the geometry of live models is always kept, and at most GEO_IDLE_MAX others, the
+// least recently used leaving first (their GPU buffers released).
+//   shipGeometryCache({ trim?, finish? }) -> { size, pinned, idle, max, bytes, keys, pending, builds, hits, evictions, types }
+//                         the state of the cache (tools); trim: n = keep at most n geometries without a live model;
+//                         finish: true = the builds asked ahead of time are finished now (scripted tests)
 import * as THREE from 'three';
 import { SHIP_DESIGNS, FACTION_PAINT, FACTION_TRIM } from './art/configs.js';
 import { HullShape } from './art/hullShape.js';
@@ -107,7 +112,14 @@ function lodDistBackM() { return (QUALITY.shipLodDistBackM ?? LOD_DIST_BACK_M) *
 // A build is 30 to 100 ms of work (hull, rig, typed arrays) and the hull skin of a type as much again: written as
 // generators (art/builder.js), run in one go by whoever needs the ship now, or a little per frame by
 // stepShipBuilds() for the ships asked ahead of time with prepareShipGeometry().
+// The cache is bounded (27 types x 5 paints = 135 geometries of 4 to 6 MB each otherwise, over a long session, and
+// as much again on the GPU): an entry counts the live models drawn from it (refs) and is kept as long as there is
+// one; of the others, the GEO_IDLE_MAX most recently used stay (Map order = use order, oldest first), the rest are
+// disposed (trimGeoCache). 16 = a whole traffic population's worth of ships no longer afloat (70 to 90 MB); a ship
+// that left the cache is built again in the background, like a new one (a second or two before she appears).
 const _geoCache = new Map();
+const GEO_IDLE_MAX = 16;
+const _geoStats = { builds: 0, hits: 0, evictions: 0 };
 const _skins = new Map();        // type -> { paint: () => generator, gen, tex } hull planking texture, shared by the nations
 const _jobs = new Map();         // type|faction -> build in hand (prepareSteps), oldest first
 const SAIL_COLOR = '#f4ead6';
@@ -140,9 +152,47 @@ function* typeGeoSteps(type, faction) {
   const hullGeoDist = reindexed(hullGeo, hullGeo.userData.distIndex);
   // sails are only culled out of view at the distant level: a sphere round the whole rig, with room to billow
   rig.sailGeo.boundingSphere.copy(hullGeo.boundingSphere).radius += 4;
-  const res = { H, d, info, rig, hullGeo, hullGeoFar, hullGeoDist, sailGeo: rig.sailGeo, foamGeo: buildFoamGeometry(H) };
+  const res = { H, d, info, rig, hullGeo, hullGeoFar, hullGeoDist, sailGeo: rig.sailGeo, foamGeo: buildFoamGeometry(H), refs: 0 };
   _geoCache.set(type + '|' + faction, res);
+  _geoStats.builds++;
+  trimGeoCache();
   return res;
+}
+
+// marks an entry as just used (last in the Map's order)
+function touchGeo(key) {
+  const res = _geoCache.get(key);
+  if (res) { _geoCache.delete(key); _geoCache.set(key, res); }
+  return res;
+}
+
+// drops the least recently used geometries that no live model draws, down to `max` of them; a geometry a build in
+// hand still waits on (prepareSteps: skin being painted) is as good as in use
+function trimGeoCache(max = GEO_IDLE_MAX) {
+  let idle = 0;
+  for (const [key, res] of _geoCache) if (!res.refs && !_jobs.has(key)) idle++;
+  if (idle <= max) return;
+  for (const [key, res] of _geoCache) {
+    if (res.refs || _jobs.has(key)) continue;
+    _geoCache.delete(key);
+    // the three hull levels share their vertex buffers: disposing all three releases them once
+    for (const g of [res.hullGeo, res.hullGeoFar, res.hullGeoDist, res.sailGeo, res.foamGeo]) g.dispose();
+    _geoStats.evictions++;
+    if (--idle <= max) break;
+  }
+}
+
+export function shipGeometryCache({ trim, finish } = {}) {
+  if (finish) stepShipBuilds(Infinity);
+  if (trim != null) trimGeoCache(Math.max(0, trim));
+  let pinned = 0, bytes = 0;
+  const size = g => { let n = g.index ? g.index.array.byteLength : 0; for (const a of Object.values(g.attributes)) n += a.array.byteLength; return n; };
+  for (const res of _geoCache.values()) {
+    if (res.refs) pinned++;
+    bytes += size(res.hullGeo) + res.hullGeoFar.index.array.byteLength + res.hullGeoDist.index.array.byteLength + size(res.sailGeo) + size(res.foamGeo);
+  }
+  return { size: _geoCache.size, pinned, idle: _geoCache.size - pinned, max: GEO_IDLE_MAX, bytes, keys: [..._geoCache.keys()], pending: [..._jobs.keys()],
+    ..._geoStats, types: Object.fromEntries(Object.keys(SHIP_SPECS).map(t => [t, SHIP_SPECS[t].base || t])) };
 }
 
 // one step of a type's skin painting; true once the texture exists (null without a DOM)
@@ -159,8 +209,8 @@ function getTypeGeo(type, faction) {
     // a build in hand for this ship is finished now (its skin stays with stepShipBuilds or the first model)
     const steps = _jobs.get(key) || typeGeoSteps(type, faction);
     while (!_geoCache.has(key)) steps.next();
-  }
-  return _geoCache.get(key);
+  } else _geoStats.hits++;
+  return touchGeo(key);
 }
 
 // everything a model of this type and nation needs that is slow to make: geometry, then the skin of the type
@@ -176,7 +226,8 @@ function* prepareSteps(type, faction) {
 export function prepareShipGeometry(type, faction = 'english') {
   if (!SHIP_SPECS[type]) type = 'brig';
   const key = type + '|' + faction;
-  if (_geoCache.has(key) && _skins.get(type).tex !== undefined) return true;
+  // asking counts as a use: a ship waiting for the others of her convoy keeps her geometry meanwhile
+  if (touchGeo(key) && _skins.get(type).tex !== undefined) return true;
   if (!_jobs.has(key)) _jobs.set(key, prepareSteps(type, faction));
   return false;
 }
@@ -188,6 +239,7 @@ export function stepShipBuilds(ms = BUILD_MS) {
     let r; do r = job.next(); while (!r.done && performance.now() - t0 < ms);
     if (!r.done) return;
     _jobs.delete(key);
+    trimGeoCache();   // the build no longer holds its geometry
     if (performance.now() - t0 >= ms) return;
   }
 }
@@ -216,6 +268,8 @@ export function buildShipModel(type, opts = {}) {
   const rnd = mulberry32(seed | 0);
   const T = getTypeGeo(type, faction);
   const { H, d, info, rig } = T;
+  T.refs++;   // kept in the geometry cache until model.dispose()
+  let live = true;
 
   const group = new THREE.Group();
   group.name = 'ship:' + type;
@@ -515,6 +569,7 @@ export function buildShipModel(type, opts = {}) {
       flagGeo.dispose(); glowGeo.dispose(); group.userData.staffGeo?.dispose();
       crew.dispose();
       model._duelDeck?.userData.dispose?.();
+      if (live) { live = false; T.refs--; trimGeoCache(); }
     },
   };
   model.update(0, 0, { sailSetting: st.set });

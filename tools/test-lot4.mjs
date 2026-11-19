@@ -76,7 +76,7 @@ const r3 = await page.evaluate(async () => {
   return { site: true, found: g.state.treasure.found, gain: g.state.gold - gold0, pieces: g.state.treasure.pieces };
 });
 ok(r3.site && r3.found === 1 && r3.gain > 3000, `trésor déterré à la touche F (+${r3.gain} pièces)`);
-await page.evaluate(() => { window.__game.lords.spawnAvenger(); });
+await page.evaluate(() => { const g = window.__game; g.lords.prepareAvenger(); g.combat.shipCache({ finish: true }); g.lords.spawnAvenger(); });   // he appears once his model is built
 await tick(3);
 const r3b = await page.evaluate(() => window.__game.ships.filter(s => s.lordId).map(s => ({ id: s.lordId, tgt: s.ai?.target === window.__game.player })));
 ok(r3b.some(s => s.tgt), `pirate vengeur lancé à vos trousses (${r3b.map(s => s.id).join(', ')})`);
