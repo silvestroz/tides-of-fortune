@@ -218,8 +218,9 @@ export class DuelSystem {
     this._armSel = Math.max(0, ARMS.findIndex(a => a.id === wP));
     this._tut = live && o.tutorial !== false && !(g.state?.tutorials?.duel) && !_tutSeen ? { step: -1, t: 0, slow: 0 } : null;
     this._tellE = null;
+    this._briefing = false; this._graceT = 0;
     this._renderHUD(true);
-    if (this._arming) this._showArms(); else this._tutNext(0);
+    if (this._arming) this._showArms(); else this._tutStart();
     g.events.emit('duel:start', { opponent: opp });
     this.promise = new Promise(res => { this._resolve = res; });
     this._sync(0);
@@ -558,6 +559,10 @@ export class DuelSystem {
     this.realT += real;
     if (this._arming) { this._armsInput(); this._sync(0, 0); return; }
     this.introT += real;
+    // first duel: the fight waits on the briefing card (the camera intro plays behind it), then the opponent
+    // holds his first cut for a short grace so the player can find the keys
+    if (this._briefing) { this._briefInput(); this._sync(0, 0); return; }
+    if (this._graceT > 0) { this._graceT -= real; this.sim.aiEnabled = this._graceT <= 0; }
     this._tutUpdate(real);
     if (this._buffer) { this._buffer.t -= real; if (this._buffer.t <= 0) this._buffer = null; }
     this._readInput(real);   // real seconds: holding Y yields after one second at any frame rate
@@ -838,6 +843,7 @@ export class DuelSystem {
     this._bannerEl.classList.remove('on');
     this._armsEl?.classList.remove('on'); this._arming = false;
     this._tutEl?.classList.remove('on'); this._tut = null; this._tutSlow = false;
+    this._briefEl?.classList.remove('on'); this._briefing = false; this._graceT = 0;
     this._finished = false;
   }
 
@@ -888,6 +894,18 @@ export class DuelSystem {
       c.addEventListener('click', () => { this._armSel = +c.dataset.i; this._chooseArms(); });
     }
     root.appendChild(a);
+    // first-duel briefing (before the first exchange): the three things to know, the fight waits for the player
+    const K = (c) => kc(c, 'kc');
+    const br = this._briefEl = document.createElement('div');
+    br.className = 'duel-arms duel-brief';
+    br.innerHTML = `<div class="da-inner"><div class="da-title sc">En garde!</div><div class="db-card">
+      <div class="db-row"><span class="db-k">▲ ◆ ▼</span><span>When he winds up, a sign above his head shows the line of his cut.</span></div>
+      <div class="db-row"><span class="db-k">${K('KeyK')}</span><span>Hold to parry: with ${K('KeyW')} high, ${K('KeyS')} low, nothing for the middle. Raised at the last moment, he staggers.</span></div>
+      <div class="db-row"><span class="db-k">${K('KeyJ')}</span><span>Strike, best right after a parry.</span></div>
+      <div class="db-row"><span class="db-k">${K('Space')}</span><span>Dodge aside. Every dodge costs breath.</span></div>
+      </div><div class="da-hint">Enter or ${K('KeyJ')} when you are ready</div></div>`;
+    br.addEventListener('click', () => this._briefGo());
+    root.appendChild(br);
     this._tutEl = el.querySelector('.dh-tut');
     this._q = s => el.querySelector(s);
   }
@@ -989,7 +1007,7 @@ export class DuelSystem {
     if (this.game.state) this.game.state.duelWeapon = id;
     this._setPlayerBlade(id);
     this._renderHUD(true);
-    this._tutNext(0);
+    this._tutStart();
   }
   _setPlayerBlade(id) {
     const old = this.figP;
@@ -1004,6 +1022,26 @@ export class DuelSystem {
   }
 
   // ------------------------------------------------------------------ first-duel tutorial (contextual hints)
+  // after the weapon choice: on the first duel the briefing card holds the fight; otherwise the hints start now
+  _tutStart() {
+    if (!this._tut || !this._briefEl) { this._tutNext(0); return; }
+    this._briefing = true; this._briefOpenT = this.realT;
+    this.hud.classList.add('arming');
+    this._briefEl.classList.add('on');
+  }
+  _briefInput() {
+    const inp = this.game.input; if (!inp || this.realT - this._briefOpenT < 0.6) return;   // the key that chose the blade must not skip it
+    if (inp.pressed('Enter') || inp.pressed('NumpadEnter') || inp.pressed('KeyJ') || inp.pressed('Space')) this._briefGo();
+  }
+  _briefGo() {
+    if (!this._briefing) return;
+    this._briefing = false;
+    this._briefEl.classList.remove('on'); this.hud.classList.remove('arming');
+    this.introT = Math.max(this.introT, 1);   // the swoop has played behind the card: input is live at once
+    this._graceT = 2.5; this.sim.aiEnabled = false;
+    this._buffer = null;
+    this._tutNext(0);
+  }
   _tutNext(step) {
     const T = this._tut; if (!T || step <= T.step) return;
     T.step = step; T.t = 0;
