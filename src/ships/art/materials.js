@@ -106,7 +106,12 @@ export function makeHullMaterial(skinTex = null, skinRange = null) {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0, envMapIntensity: 0.5 });
   const u = { uHullDmg: { value: 0 }, uSailDmg: { value: 0 }, uDuel: { value: 0 }, uWear: { value: HULL_WEAR.base }, uWood: { value: getWoodTex() }, uSkin: { value: skinTex || greyTex() }, uPiv: pivUniform(),
     uSea: { value: 0 }, uLampA: { value: new THREE.Vector4() }, uLampB: { value: new THREE.Vector4() },
-    uSkinR: { value: new THREE.Vector2(skinRange?.[0] ?? 0, skinRange?.[1] ?? 0) } };
+    uSkinR: { value: new THREE.Vector2(skinRange?.[0] ?? 0, skinRange?.[1] ?? 0) },
+    // local sea surface around the ship (set by shipModel.update from the ship's buoyancy samples); the default is
+    // the flat sea y = 0 (port stages, duel deck, moored hulls)
+    uWP: { value: new THREE.Vector4(0, 0, 0, 1) },   // centre x, z, height there, half-length of the bow/stern samples
+    uWQ: { value: new THREE.Vector4(0, -1, 1, 0) },  // forward x, z, half-beam of the side samples
+    uWH: { value: new THREE.Vector4() } };           // heights at bow, stern, port, starboard
   m.userData.u = u;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u, { uNight: GLOBAL.uNight, uTime: GLOBAL.uTime, uSunView: GLOBAL.uSunView, uSunCol: GLOBAL.uSunCol });
@@ -115,6 +120,14 @@ export function makeHullMaterial(skinTex = null, skinRange = null) {
 ${LAMP_VERT}
 attribute vec4 aSurf; attribute float aBreak; attribute vec2 aPiv;
 uniform float uHullDmg; uniform float uSailDmg; uniform float uDuel; uniform float uSea;
+uniform vec4 uWP; uniform vec4 uWQ; uniform vec4 uWH;
+// sea height under a world point near the ship: parabola through the stern / centre / bow samples along the keel,
+// linear across the beam (the waterline follows the wave the ship sits in, not the mean sea level)
+float seaY(vec2 p) {
+  vec2 d = p - uWP.xy, F = uWQ.xy, R = vec2(-F.y, F.x);
+  float s = clamp(dot(d, F) / uWP.w, -1.3, 1.3), r = clamp(dot(d, R) / uWQ.z, -1.5, 1.5);
+  return uWP.z + 0.5 * (uWH.x - uWH.y) * s + 0.5 * (uWH.x + uWH.y - 2.0 * uWP.z) * s * s + 0.5 * (uWH.w - uWH.z) * r;
+}
 ${PIV_GLSL}
 varying vec4 vSurf; varying vec2 vWUv; varying vec3 vLPos; varying float vWY; varying float vDist; varying float vNY;`)
       .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
@@ -124,7 +137,7 @@ vSurf = aSurf; vWUv = uv; vLPos = position;
 transformed = pivRot(transformed, aPiv, false);
 ${HIDE_GLSL}
 vNY = normal.y;
-{ vec4 wp = modelMatrix * vec4(transformed, 1.0); vWY = wp.y; vDist = length(cameraPosition - wp.xyz);
+{ vec4 wp = modelMatrix * vec4(transformed, 1.0); vWY = wp.y - seaY(wp.xz); vDist = length(cameraPosition - wp.xyz);
   // rigging LOD: ratlines vanish past ~55 m, running rigging past ~120 m (prevents dotted-line aliasing)
   if (aSurf.y > 0.905 && aSurf.y < 0.915 && vDist > 55.0) transformed = vec3(0.0, -60.0, 0.0);
   if (aSurf.y > 0.915 && aSurf.y < 0.925 && vDist > 120.0) transformed = vec3(0.0, -60.0, 0.0);
@@ -283,8 +296,6 @@ metalnessFactor = vSurf.x * (1.0 - burnAmt * 0.9);`)
   float glow = vSurf.z * mix(0.35, 3.2, uNight) * flick * glowK;
   totalEmissiveRadiance += vec3(1.0, 0.6, 0.24) * glow * (0.6 + 0.4 * wt.a);
   totalEmissiveRadiance += vec3(1.0, 0.35, 0.08) * ember * 1.5 * uHullDmg;
-  // bluish reflected sea light on the lower hull skin
-  totalEmissiveRadiance += vec3(0.03, 0.07, 0.1) * isSkin * smoothstep(1.1, 0.1, vWY) * step(-0.05, vWY) * (1.0 - uNight * 0.85) * (1.0 - hole);
   // sea bounce on down-facing surfaces (no flat black underside)
   totalEmissiveRadiance += diffuseColor.rgb * vec3(0.05, 0.12, 0.13) * max(0.0, -vNY) * 2.2 * (1.0 - uNight * 0.8) * step(0.0, vWY);
   // painterly warm bounce fill: keeps paint colours rich in shadow (sea/deck bounce)
@@ -302,7 +313,7 @@ metalnessFactor = vSurf.x * (1.0 - burnAmt * 0.9);`)
   }
 }`);
   };
-  m.customProgramCacheKey = () => 'shipHull_v12';
+  m.customProgramCacheKey = () => 'shipHull_v13';
   const dm = new THREE.MeshDepthMaterial();
   dm.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);
