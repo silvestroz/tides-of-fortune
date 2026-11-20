@@ -18,6 +18,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { T, heightAt, findPath, cellIndex } from './sim.js';
 import { LAND } from '../../data/landbattle.js';
 import { mulberry32 } from '../../core/rng.js';
+import { prepareShipParts, stepShipBuilds } from '../../ships/shipModel.js';
 import { kitMaterials, kitTick, GeoBuilder, PALETTE, house, church, fort, lowWall, longboat, anchoredShips, fountain, pot, sacks,
   vegGeos, scatter, paintGround, clothGeo, flagUV, waveCloth, PuffPool, KM } from '../land/kit.js';
 
@@ -323,6 +324,9 @@ export class LandView {
       let z = shoreZ(x); while (z > -400 && Y(x, z) > -3) z -= 4;
       ancho.push({ type, x, z: z - 12 - r() * 12, rot: Math.PI / 2 + (r() - 0.5) * 0.6 });
     });
+    // their geometry, when the cache doesn't hold it (the player's own ships are afloat, so it mostly does), is built a
+    // slice per frame under the loading screen rather than in one go
+    for (const a of ancho) while (!prepareShipParts(a.type, playerFaction)) { stepShipBuilds(12); await new Promise(res => requestAnimationFrame(() => setTimeout(res, 0))); }
     const hulls = anchoredShips(B, ancho, playerFaction);
     if (hulls) { keep(hulls.geometry); keep(hulls.material); keep(hulls.customDepthMaterial); S.add(hulls); }
     const town = new THREE.Mesh(keep(B.build()), K.paint); town.castShadow = true; town.receiveShadow = true; S.add(town);

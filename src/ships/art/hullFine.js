@@ -9,7 +9,7 @@
 //   fineHead(F, o)                head rails with head timbers, cheeks, grating;  fineLion(F, fp, fs)  figurehead
 //   fineAnchors(F)                catheads with knees, bower anchors (shank, arms, palms, stock, ring)
 //   fineDeck(F, o)*               ladders at the breaks, fife rails and pin rails with coils, galley chimney
-//   fineBoat(F, …)                ship's boat: lofted shell, thwarts, gunwale, oars, chocks
+//   fineBoat(F, …)*               ship's boat: lofted shell, thwarts, gunwale, oars, chocks
 // * = a generator of build steps (see builder.js): called with yield* from buildHullSteps
 // F = { gb, H, d, info, rnd, G, BARREL, c: { oak, oakDark, tar, bottom, gold, trim, paint, iron, glass, ochre } }
 import * as THREE from 'three';
@@ -37,7 +37,9 @@ function* nearSteps(gb, steps) { const p = gb.curLod; gb.curLod = 1; yield* step
 // (cell(i, j) -> [color, surf] or null to skip), winding chosen against `out(p)` (rough outward direction).
 // distJ: column bounds [j0, j1, …] of the same surface in the distant geometry, one quad per row between two bounds
 // (from the corners of the first and last cells of the run, so their colours blend across it).
-function surface(gb, pts, cell, out, ao = 1, distJ = null) {
+// surfaceSteps: the same as a generator (a yield when the build step is due, see builder.js gb.due())
+function surface(gb, pts, cell, out, ao = 1, distJ = null) { const it = surfaceSteps(gb, pts, cell, out, ao, distJ); while (!it.next().done); }
+function* surfaceSteps(gb, pts, cell, out, ao = 1, distJ = null) {
   const NI = pts.length - 1, NJ = pts[0].length - 1;
   const nrm = (i, j) => {
     const a = pts[Math.max(0, i - 1)][j], b = pts[Math.min(NI, i + 1)][j], c = pts[i][Math.max(0, j - 1)], e = pts[i][Math.min(NJ, j + 1)];
@@ -55,6 +57,7 @@ function surface(gb, pts, cell, out, ao = 1, distJ = null) {
     const front = fn.dot(out(pts[i][j])) >= 0;
     if (front) gb.quad(ids[0], ids[1], ids[2], ids[3]); else gb.quad(ids[0], ids[3], ids[2], ids[1]);
     cells[i * NJ + j] = { ids, front };
+    if (j === NJ - 1 && gb.due()) yield;
   }
   if (distJ) for (let i = 0; i < NI; i++) for (let k = 0; k < distJ.length - 1; k++) {
     const a = cells[i * NJ + distJ[k]], b = cells[i * NJ + distJ[k + 1] - 1]; if (!a || !b) continue;
@@ -112,7 +115,7 @@ export function* fineQuarterGalleries(F, { y0, h, zT }) {
     };
     const pts = []; for (let i = 0; i < rows.length; i++) { const r = []; for (let j = 0; j <= NU; j++) r.push(P(j / NU, rows[i][0], rows[i][1])); pts.push(r); }
     const outDir = () => V3(side, 0.15, 0);
-    surface(gb, pts, (i, j) => {
+    yield* surfaceSteps(gb, pts, (i, j) => {
       const kind = rows[i][2];
       if (kind === 'drop') return [i === 3 ? c.trim : c.oakDark, i === 3 ? SURF.paint : SURF.wood];
       if (kind === 'sill') return [c.trim, SURF.paint];
@@ -129,6 +132,7 @@ export function* fineQuarterGalleries(F, { y0, h, zT }) {
       for (const [y, R, col, r] of [[y0, 1.05, c.gold, 0.06], [y0 + h * sill, 1.03, c.gold, 0.045], [y0 + h * (1 - frieze), 1.03, c.gold, 0.045], [y1, 1.1, c.gold, 0.07]]) {
         const p = []; for (let j = 0; j <= NU; j++) p.push(P(j / NU, y, R + 0.02)); p.push(V3(p[NU].x - side * out * 0.6, y, p[NU].z + 0.03));
         gb.rope(p, r, col, SURF.gold, 4);
+        if (gb.due()) yield;
       }
       yield;
       // leaded lattice over the glass: two horizontal leads + one vertical per light
@@ -174,6 +178,7 @@ export function* fineSide(F, { ports, arcTot, wales, so }) {
         const p = ok ? hull(s, y, side, r * 0.55) : null;
         if (p && prev) gb.line(prev, p, r, col, surf, 4);
         prev = p;
+        if (gb.due()) yield;
       }
       yield;
     }
@@ -188,6 +193,7 @@ export function* fineSide(F, { ports, arcTot, wales, so }) {
         const ya = yFen + so(s), yHi = H.yTop(s) - 0.04, p = [];
         for (let k = 0; k <= 4; k++) p.push(hull(s, ya + (yHi - ya) * k / 4, side, 0.07));
         gb.rope(p, 0.065, c.oakDark, SURF.wood, 4);
+        if (gb.due()) yield;
       }
       if (free.length) {   // entry steps: cleats up the side
         const s = free[0], yHi = H.yTop(s) - 0.25, n = Math.floor((yHi - yLo - so(s)) / 0.34);
@@ -212,6 +218,7 @@ export function* fineSide(F, { ports, arcTot, wales, so }) {
         const y = H.yTop(s), p = hull(s, y, side, -0.07), f = H.frame(s, y - 0.1, side);
         const dir = f.n.clone().setY(0.12).normalize(), bx = V3().crossVectors(UP, dir).normalize();
         gb.line(p, p.clone().add(V3(0, 0.34, 0)), 0.03, c.iron, SURF.iron, 4);
+        if (gb.due()) yield;
         gb.add(BARREL, basisMatrix(p.clone().add(V3(0, 0.36, 0)).addScaledVector(dir, -0.38), bx, dir, V3().crossVectors(bx, dir).normalize(), 0.055, 0.95, 0.055), { color: C('#8a6a2c'), surf: SURF.gold });
         gb.line(p.clone().add(V3(0, 0.36, 0)).addScaledVector(dir, -0.38), p.clone().add(V3(0, 0.26, 0)).addScaledVector(dir, -0.7), 0.018, c.iron, SURF.iron, 3);
       }
@@ -341,6 +348,7 @@ export function* fineDeck(F, { dl, zs, deckHalf, breaks }) {
         for (const k of [-1, 1]) gb.line(V3(x + k * 0.34, yl, z0 + faceDir * run), V3(x + k * 0.34, yh + 0.02, z0), 0.055, wood, SURF.wood, 4);
         const n = Math.max(2, Math.round(h / 0.27));
         for (let i = 1; i < n; i++) { const t = i / n; gb.add(G.box, trs(x, yl + h * t, z0 + faceDir * run * (1 - t), 0, 0, 0, 0.66, 0.04, 0.2), { color: pinC, surf: SURF.wood }); }
+        if (gb.due()) yield;
       }
     }
     // fife rail abaft each mast: two bitts, a cross rail, belaying pins, coils of the halliards
@@ -358,6 +366,7 @@ export function* fineDeck(F, { dl, zs, deckHalf, breaks }) {
         const x = -w / 2 + 0.2 + (w - 0.4) * i / (n - 1);
         gb.add(G.cyl6, trs(x, y + 0.8, z, 0, 0, 0, 0.022, 0.34, 0.022), { color: pinC, surf: SURF.wood });
         if (i % 2 === 0) gb.add(COIL, trs(x, y + 0.52, z + 0.1, 0, 0, 0, 0.085, 0.17, 0.08), { color: hemp, surf: SURF.rope });
+        if (gb.due()) yield;
       }
     }
     // pin rails inside the bulwarks under the shrouds, with pins and coils
@@ -372,6 +381,7 @@ export function* fineDeck(F, { dl, zs, deckHalf, breaks }) {
         const q = inb.clone().addScaledVector(f.ds, -len / 2 + 0.15 + (len - 0.3) * i / (n - 1));
         gb.add(G.cyl6, trs(q.x, q.y + 0.02, q.z, 0, 0, 0, 0.02, 0.32, 0.02), { color: pinC, surf: SURF.wood });
         if (i % 2 === 1) gb.add(COIL, basisMatrix(q.clone().add(V3(0, -0.28, 0)).addScaledVector(f.n, -0.07), f.ds, UP, f.n, 0.085, 0.17, 0.08), { color: hemp, surf: SURF.rope });
+        if (gb.due()) yield;
       }
     }
     // galley chimney on the forecastle
@@ -385,7 +395,7 @@ export function* fineDeck(F, { dl, zs, deckHalf, breaks }) {
 }
 
 // ship's boat stowed upright on chocks: lofted shell (outside painted, inside bare wood), thwarts, gunwale, oars
-export function fineBoat(F, y, z, bl, bw) {
+export function* fineBoat(F, y, z, bl, bw) {
   const { gb, G, c } = F;
   const white = C('#e2d3b0'), wood = C('#8a6038'), depth = bw * 0.42, NI = 9, NJ = 8;
   const half = (t) => bw / 2 * Math.pow(Math.sin(Math.min(1, t / 0.5) * Math.PI / 2), 0.7) * (1 - 0.3 * smooth(0.62, 1, t));
@@ -398,8 +408,8 @@ export function fineBoat(F, y, z, bl, bw) {
   const b0 = gb.count;
   const mid = V3(0, y + depth * 0.6, z);
   {
-    surface(gb, grid(0), (i, j) => [j === 0 || j === NJ - 1 ? c.trim : white, SURF.paint], (p) => p.clone().sub(mid).setY(p.y - mid.y - depth * 1.2), (p) => 0.7 + 0.3 * clamp01((p.y - y) / depth));
-    surface(gb, grid(0.05), () => [wood, SURF.wood], (p) => mid.clone().sub(p).setY(1.5), (p) => 0.55 + 0.45 * clamp01((p.y - y) / depth));
+    yield* surfaceSteps(gb, grid(0), (i, j) => [j === 0 || j === NJ - 1 ? c.trim : white, SURF.paint], (p) => p.clone().sub(mid).setY(p.y - mid.y - depth * 1.2), (p) => 0.7 + 0.3 * clamp01((p.y - y) / depth));
+    yield* surfaceSteps(gb, grid(0.05), () => [wood, SURF.wood], (p) => mid.clone().sub(p).setY(1.5), (p) => 0.55 + 0.45 * clamp01((p.y - y) / depth));
     // transom
     const tr = [[], []]; for (let j = 0; j <= NJ; j++) { const p = P(1, -1 + 2 * j / NJ, 0); tr[0].push(p); tr[1].push(V3(p.x, y + depth + 0.16 * bw * Math.pow(0.45 / 0.55, 2), p.z)); }
     surface(gb, tr, () => [white, SURF.paint], () => V3(0, 0, 1));

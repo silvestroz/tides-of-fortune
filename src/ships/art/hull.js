@@ -183,6 +183,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
             ids.push(gb.vertex(p, f.n, u, v, col, surf, 2, aoSide(y, f.n)));
           }
           if (rows > 4 && ids.length % (24 * (rows + 1)) === 0) yield;
+          else if (gb.due()) yield;
         }
         // winding: compute so that geometric normal matches vertex normal
         emitGrid(ids, idxList.length, rows, null);
@@ -242,6 +243,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
       }
       const po = H.point(s, yt, side), pi = innerPt(Math.min(s, 0.999), yt, side);
       cap.push(gb.vertex(po, UP, s * L / 6, 0, oakDark, SURF.wood, 2, 1), gb.vertex(pi, UP, s * L / 6, 0.06, oakDark, SURF.wood, 2, 1));
+      if (gb.due()) yield;
     }
     emitGrid(ids, sList.length, 2, null);
     emitGrid(ids, sList.length, 2, null, distCols(sList), [0, 2]);
@@ -282,6 +284,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
         const ao = 1 - 0.38 * smooth(0.75, 1.0, edge);
         ids.push(gb.vertex(V3(x, y, z), UP, z / 4, x / 1.9, deckC, SURF.deck, 2, ao));
       }
+      if (gb.due()) yield;
     }
     emitGrid(ids, ss.length, NX, UP);
     emitGrid(ids, ss.length, NX, UP, distCols(ss), [0, NX]);
@@ -425,6 +428,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
         const pv = gb.count;
         gb.add(G.box, trs(x, yc, zc + 0.03, -0.1, 0, 0, 0.1, rowH * 0.95, 0.08), { color: gold, surf: SURF.gold });
         gb.distFace(pv);
+        if (gb.due()) yield;
       }
       // horizontal mouldings
       gb.add(G.box, trs(0, yc - rowH / 2, zc + 0.04, -0.1, 0, 0, hwT * 2.15, 0.09, 0.1), { color: gold, surf: SURF.gold });
@@ -434,7 +438,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
         const gz = zc + 0.9, gy = yc - rowH / 2 - 0.05, gw = hwT * 2.0;
         gb.add(G.box, trs(0, gy, gz - 0.42, 0, 0, 0, gw, 0.16, 1.1), { color: oakDark, surf: SURF.wood, worldUV: 'auto', ao: (p, nn) => nn.y < 0 ? 0.55 : 1 });
         const nb = Math.round(gw / 0.25);
-        for (let k = 0; k <= nb; k++) gb.add(BALUSTER, trs(-gw / 2 + gw * k / nb, gy + 0.06, gz + 0.08, 0, 0, 0, 0.1, 0.48, 0.1), { color: gold, surf: SURF.gold, brk: 0.4 + rnd() * 0.6, lod: 1 });
+        for (let k = 0; k <= nb; k++) { gb.add(BALUSTER, trs(-gw / 2 + gw * k / nb, gy + 0.06, gz + 0.08, 0, 0, 0, 0.1, 0.48, 0.1), { color: gold, surf: SURF.gold, brk: 0.4 + rnd() * 0.6, lod: 1 }); if (gb.due()) yield; }
         yield;
         gb.add(G.box, trs(0, gy + 0.56, gz + 0.08, 0, 0, 0, gw, 0.07, 0.1), { color: gold, surf: SURF.gold });
         gb.add(G.box, trs(0, gy + rowH * 0.95, gz - 0.42, 0, 0, 0, gw * 1.02, 0.1, 1.15), { color: gold, surf: SURF.gold });
@@ -456,6 +460,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
       for (let k = 0; k < n; k++) {
         const y = qy0 + (qy1 - qy0) * (k + 0.5) / n; const x = sx * H.hw(1, y) * 0.97, z = zT(y) + 0.05;
         gb.add(k % 2 ? G.sphLo : G.cyl, trs(x, y, z, 0, 0, 0, 0.16 - k * 0.012, k % 2 ? 0.2 : (qy1 - qy0) / n * 0.6, 0.16), { color: gold, surf: SURF.gold });
+        if (gb.due()) yield;
       }
       gb.add(G.tor, trs(sx * H.hw(1, qy1) * 0.85, qy1 + 0.2, zT(qy1) + 0.02, 0, 0, sx > 0 ? -0.6 : Math.PI + 0.6, 0.35, 0.35, 0.6), { color: gold, surf: SURF.gold });
     }
@@ -469,18 +474,21 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
       const g = new THREE.ExtrudeGeometry(shape, { depth: 0.18, bevelEnabled: false, curveSegments: 10 });
       gb.add(g, trs(0, ty - 0.02, zT(ty) - 0.12), { color: trim, surf: SURF.paint, worldUV: 'xy' });
       g.dispose();
+      if (gb.due()) yield;
       // gilded border arc + sun/shell boss
       const arcPts = 14;
       for (let k = 0; k <= arcPts; k++) {
         const t = k / arcPts; const x = -w + 2 * w * t;
         const yy = ty + cr * (1 - Math.pow(2 * t - 1, 2)) * 0.97;
         gb.add(G.sphLo, trs(x, yy, zT(ty) + 0.08, 0, 0, 0, 0.11, 0.11, 0.08), { color: gold, surf: SURF.gold });
+        if (gb.due()) yield;
       }
       const bossY = ty + cr * 0.45;
       gb.add(G.sph, trs(0, bossY, zT(ty) + 0.08, 0, 0, 0, cr * 0.28, cr * 0.28, 0.1), { color: gold, surf: SURF.gold });
       for (let k = 0; k < 9; k++) {
         const a = Math.PI * (k / 8);
         gb.add(G.box, trs(Math.cos(a) * cr * 0.45, bossY + Math.sin(a) * cr * 0.45 * 0.9, zT(ty) + 0.07, 0, 0, a, 0.26 * cr, 0.06, 0.05), { color: gold, surf: SURF.gold });
+        if (gb.due()) yield;
       }
       for (const sx of [-1, 1]) gb.add(G.tor, trs(sx * w * 0.55, ty + cr * 0.32, zT(ty) + 0.08, 0, 0, sx > 0 ? 0.3 : Math.PI - 0.3, cr * 0.22, cr * 0.22, 0.5), { color: gold, surf: SURF.gold });
     }
@@ -499,6 +507,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
       gb.add(G.sphLo, trs(lc.x, lc.y + s * 1.38, lc.z, 0, 0, 0, s * 0.12, s * 0.12, s * 0.12), { color: gold, surf: SURF.gold });
       gb.add(G.cyl6, trs(lc.x, lc.y - s * 0.85, lc.z, 0, 0, 0, s * 0.5, s * 0.12, s * 0.5), { color: gold, surf: SURF.gold });
       info.sternLanterns.push(lc);
+      if (gb.due()) yield;
     }
     info.ensignStaff = V3(0, ty + cr * 0.6, zT(ty) - 0.15);
   }
@@ -545,6 +554,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
   // ---------------- rudder & stern post (hullFine.js), keel
   {
     fineRudder(F, zT);
+    if (gb.due()) yield;
     // keel strip along the bottom
     const kp = [];
     for (let i = 0; i <= 24; i++) { const s = i / 24; kp.push(V3(0, H.yBot(s) - 0.06, H.z(s, H.yBot(s)))); }
@@ -602,6 +612,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
       gb.add(G.sph, trs(0, fp.y + fs * 0.66, fp.z, 0, 0, 0, fs * 0.15, fs * 0.12, fs * 0.15), { color: gold, surf: SURF.gold });
       for (const sx of [-1, 1]) gb.add(G.cyl6, trs(sx * fs * 0.17, fp.y + fs * 0.35, fp.z - fs * 0.05, 0.6, 0, sx * 0.2, fs * 0.04, fs * 0.4, fs * 0.04), { color: C('#e9cfa8'), surf: SURF.paint });
     }
+    if (gb.due()) yield;
     // beakhead platform for the galleon
     if (d.head === 'beak') {
       const bz0 = H.z(0.02, dly), bz1 = tipZ + 0.6;
@@ -628,6 +639,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
     gb.add(G.box, trs(0, y + 0.15, z, 0, 0, 0, w + 0.2, 0.3, l + 0.2), { color: oakDark, surf: SURF.wood, worldUV: 'auto' });
     const n = Math.round(w / 0.22);
     for (let i = 0; i <= n; i++) gb.add(G.box, trs(-w / 2 + w * i / n, y + 0.31, z, 0, 0, 0, 0.05, 0.04, l), { color: C('#7a5230'), surf: SURF.wood });
+    if (gb.due()) yield;
     for (let i = 0; i <= n; i++) gb.add(G.box, trs(0, y + 0.31, z - l / 2 + l * i / n, 0, 0, 0, w, 0.04, 0.05), { color: C('#7a5230'), surf: SURF.wood });
     gb.add(G.box, trs(0, y + 0.28, z, 0, 0, 0, w, 0.02, l), { color: C('#120c08'), surf: SURF.tar });
     yield;
@@ -652,6 +664,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
       const a = (k / 8) * Math.PI * 2;
       gb.add(G.cyl6, trs(0, y + 0.55 + wr * 0.6, z - 0.05, 0, 0, a, 0.025, wr * 2.5, 0.025), { color: C('#7a5230'), surf: SURF.wood });
     }
+    if (gb.due()) yield;
     gb.add(G.cyl, trs(0, y + 0.55 + wr * 0.6, z - 0.08, Math.PI / 2, 0, 0, 0.08, 0.12, 0.08), { color: gold, surf: SURF.gold });
     gb.add(G.box, trs(0, y + 0.5, z - 1.1, 0, 0, 0, 0.5, 1.0, 0.45), { color: oakDark, surf: SURF.wood });
     gb.add(G.sph, trs(0, y + 1.05, z - 1.1, 0, 0, 0, 0.22, 0.14, 0.22), { color: gold, surf: SURF.gold });
@@ -671,6 +684,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
         gb.add(G.cyl, trs(bx, y + 0.4, bz, 0, 0, 0, 0.3, 0.8, 0.3), { color: C('#7b5430'), surf: SURF.wood, worldUV: 'auto', ao: (p) => 0.7 + 0.3 * clamp01((p.y - y) / 0.8) });
         for (const hy of [0.15, 0.65]) gb.add(G.cyl, trs(bx, y + hy, bz, 0, 0, 0, 0.315, 0.05, 0.315), { color: iron, surf: SURF.iron });
       }
+      if (gb.due()) yield;
     }
   }
   void clutter;
@@ -679,7 +693,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
   if (d.boat) {
     const s = d.castles.fc ? d.castles.fc.s + 0.13 : 0.35; const y = dl(s) + 0.45, z = zs(s);
     const bl = Math.min(L * 0.16, 6.5), bw = bl * 0.3;
-    fineBoat(F, y, z, bl, bw);
+    yield* fineBoat(F, y, z, bl, bw);
   }
   gb.defBrk = null;
   yield;
@@ -712,6 +726,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
       const out = 0.55;
       gb.add(G.box, basisMatrix(p.clone().addScaledVector(f.n, out / 2), f.ds, UP, V3().crossVectors(f.ds, UP).normalize(), len, 0.1, out), { color: oakDark, surf: SURF.wood, worldUV: 'auto', ao: (pp, n) => n.y < 0 ? 0.6 : 1 });
       info.channels.push({ s, side, y, mid: p.clone().addScaledVector(f.n, out), len, dir: f.ds.clone() });
+      if (gb.due()) yield;
     }
   }
   yield;
@@ -816,6 +831,7 @@ function* paintSkinSteps({ H, d, sList, arc, arcTot, skinY0, skinY1, bands, wale
     }
     if ((px & 3) === 3) yield;
   }
+  yield;
   ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.NoColorSpace; tex.anisotropy = 8;
