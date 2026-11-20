@@ -40,6 +40,16 @@ export function updateGlobals(t) {
   }
 }
 
+// local sea surface around a ship (uniforms uWP / uWQ / uWH set by shipModel.update from the ship's buoyancy samples)
+// sea height under a world point near the ship: parabola through the stern / centre / bow samples along the keel,
+// linear across the beam (the waterline follows the wave the ship sits in, not the mean sea level)
+export const SEA_GLSL = /* glsl */`
+uniform vec4 uWP; uniform vec4 uWQ; uniform vec4 uWH;
+float seaY(vec2 p) {
+  vec2 d = p - uWP.xy, F = uWQ.xy, R = vec2(-F.y, F.x);
+  float s = clamp(dot(d, F) / uWP.w, -1.3, 1.3), r = clamp(dot(d, R) / uWQ.z, -1.5, 1.5);
+  return uWP.z + 0.5 * (uWH.x - uWH.y) * s + 0.5 * (uWH.x + uWH.y - 2.0 * uWP.z) * s * s + 0.5 * (uWH.w - uWH.z) * r;
+}`;
 export const PIV_GLSL = /* glsl */`
 uniform vec4 uPiv[8];
 vec3 pivRot(vec3 p, vec2 pw, bool isDir) {
@@ -120,14 +130,7 @@ export function makeHullMaterial(skinTex = null, skinRange = null) {
 ${LAMP_VERT}
 attribute vec4 aSurf; attribute float aBreak; attribute vec2 aPiv;
 uniform float uHullDmg; uniform float uSailDmg; uniform float uDuel; uniform float uSea;
-uniform vec4 uWP; uniform vec4 uWQ; uniform vec4 uWH;
-// sea height under a world point near the ship: parabola through the stern / centre / bow samples along the keel,
-// linear across the beam (the waterline follows the wave the ship sits in, not the mean sea level)
-float seaY(vec2 p) {
-  vec2 d = p - uWP.xy, F = uWQ.xy, R = vec2(-F.y, F.x);
-  float s = clamp(dot(d, F) / uWP.w, -1.3, 1.3), r = clamp(dot(d, R) / uWQ.z, -1.5, 1.5);
-  return uWP.z + 0.5 * (uWH.x - uWH.y) * s + 0.5 * (uWH.x + uWH.y - 2.0 * uWP.z) * s * s + 0.5 * (uWH.w - uWH.z) * r;
-}
+${SEA_GLSL}
 ${PIV_GLSL}
 varying vec4 vSurf; varying vec2 vWUv; varying vec3 vLPos; varying float vWY; varying float vDist; varying float vNY;`)
       .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>

@@ -3,7 +3,7 @@
 // makeFoamMaterial() (userData.u: uSpeed, uPath = WAKE_RINGS + 1 local xz points of the wake strip's centre line,
 // written each frame by the ship model from the stern's recent track, so the strip curves behind a turning ship).
 import * as THREE from 'three';
-import { GLOBAL } from './materials.js';
+import { GLOBAL, SEA_GLSL } from './materials.js';
 
 // ---------------------------------------------------------------- flags
 // hoists: [{ pos: Vector3, kind: 0 ensign | 1 pennant | 2 jack, L, H }]
@@ -202,13 +202,18 @@ export function buildFoamGeometry(H) {
 }
 export function makeFoamMaterial() {
   const m = new THREE.MeshBasicMaterial({ color: 0xf2f6f2, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-  const u = { uSpeed: { value: 0 }, uPath: { value: Array.from({ length: WAKE_RINGS + 1 }, (_, i) => new THREE.Vector2(0, i)) } };
+  // uWP / uWQ / uWH: the hull's local sea surface (shipModel shares the hull's uniform objects); uWakeY: sea height
+  // (world) under each wake ring. The skirt and the wake lie on the wave, not on the ship's tilted frame.
+  const u = { uSpeed: { value: 0 }, uPath: { value: Array.from({ length: WAKE_RINGS + 1 }, (_, i) => new THREE.Vector2(0, i)) },
+    uWP: { value: new THREE.Vector4(0, 0, 0, 1) }, uWQ: { value: new THREE.Vector4(0, -1, 1, 0) }, uWH: { value: new THREE.Vector4() },
+    uWakeY: { value: new Float32Array(WAKE_RINGS + 1) } };
   m.userData.u = u;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u, { uTime: GLOBAL.uTime, uNight: GLOBAL.uNight });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
-attribute vec4 aF; varying vec4 vF; varying vec2 vFP; uniform vec2 uPath[${WAKE_RINGS + 1}];`)
+attribute vec4 aF; varying vec4 vF; varying vec2 vFP; uniform vec2 uPath[${WAKE_RINGS + 1}]; uniform float uWakeY[${WAKE_RINGS + 1}];
+${SEA_GLSL}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
 vF = aF; vFP = position.xz;
 if (aF.z > 0.5) {
@@ -218,6 +223,11 @@ if (aF.z > 0.5) {
   float tl = length(tg);
   tg = tl > 1e-4 ? tg / tl : vec2(0.0, 1.0);
   transformed.xz = uPath[i] + vec2(tg.y, -tg.x) * position.x;
+}
+{ // lay the foam on the sea: world height from the local wave (skirt) or the sampled height under the ring (wake)
+  vec4 wq = modelMatrix * vec4(transformed, 1.0);
+  wq.y = aF.z > 0.5 ? uWakeY[int(aF.y * ${WAKE_RINGS}.0 + 0.5)] + 0.06 : seaY(wq.xz) + mix(0.16, 0.04, step(0.5, aF.x));
+  transformed = (inverse(modelMatrix) * wq).xyz;
 }`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
@@ -249,6 +259,6 @@ diffuseColor.a *= clamp(a, 0.0, 0.9);
 diffuseColor.rgb *= mix(1.0, 0.12, uNight) * (0.88 + 0.12 * n);
 #include <alphatest_fragment>`);
   };
-  m.customProgramCacheKey = () => 'shipFoam_v3';
+  m.customProgramCacheKey = () => 'shipFoam_v4';
   return m;
 }
