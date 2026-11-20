@@ -505,6 +505,10 @@ export function buildShipModel(type, opts = {}) {
       const far = inWorld && (st.far ? camD > lodNearM() : camD > lodFarM());
       // sea-only shading (day glass, gilding glints, lantern pools, flag folds): off on port stages and the duel deck
       hu.uSea.value = su.uSea.value = fu.uSea.value = inWorld && !hu.uDuel.value ? 1 : 0;
+      // waterline: the local wave surface from the ship's buoyancy samples (flat y = 0 off the world sea)
+      { const w = hu.uSea.value ? o.water : null;
+        if (w) { hu.uWP.value.set(w[0], w[1], w[2], Math.max(1, w[3])); hu.uWQ.value.set(w[4], w[5], Math.max(0.5, w[6]), 0); hu.uWH.value.set(w[7], w[8], w[9], w[10]); }
+        else { hu.uWP.value.set(0, 0, 0, 1); hu.uWH.value.set(0, 0, 0, 0); } }
       glowGeo.setDrawRange(0, hu.uSea.value ? Infinity : info.sternLanterns.length);   // deck lantern: sea only
       // distant level with its own hysteresis: lighter hull geometry, the same sails, no ensign staff (a tenth of a
       // pixel wide), sails and flags culled against the view like the hull (their animation moves them a few pixels

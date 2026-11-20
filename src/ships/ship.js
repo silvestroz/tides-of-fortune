@@ -237,6 +237,8 @@ export class Ship {
       hst = oc.getHeight(px + ch * bf, pz + sh * bf);
     }
     this._hBow = hb; this._hStern = hs;
+    const w = this._water ||= new Float32Array(11);   // sea surface for the hull shader's waterline
+    w[0] = px; w[1] = pz; w[2] = hc; w[3] = lf; w[4] = sh; w[5] = -ch; w[6] = bf; w[7] = hb; w[8] = hs; w[9] = hp; w[10] = hst;
     const k = this.handling.stiffness, zeta = 0.3;
     const wantHeave = (hc * 2 + hb + hs + hp + hst) / 6;
     // pitch: big ships don't fully follow short waves -> bow slices into crests
@@ -404,7 +406,7 @@ export class Ship {
     m.rotation.set(this.pitch, -this.heading, this.roll, 'YXZ');
     this.model.update(dt, t, {
       sailSetting: this.sailEff, windRel: this.windRel, speed: this.speed, heel: this.heel,
-      luff: this.luff, rudder: this.rudderAngle, teleportSeq: this.teleportSeq || 0,
+      luff: this.luff, rudder: this.rudderAngle, teleportSeq: this.teleportSeq || 0, water: this._water,
       damage: { hull: 1 - this.hull / this.hullMax, sails: 1 - this.sails },
     });
   }
