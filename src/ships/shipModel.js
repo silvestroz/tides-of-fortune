@@ -351,9 +351,9 @@ export function buildShipModel(type, opts = {}) {
   const foam = new THREE.Mesh(T.foamGeo, foamMat);
   // the stern wake strip follows the stern's recent track (world xz points, newest first), re-expressed in the
   // ship's frame each frame: it curves behind a turning ship instead of trailing straight out of the transom
-  const wk = T.foamGeo.userData.wake, wakePath = foamMat.userData.u.uPath.value;
+  const wk = T.foamGeo.userData.wake, wakePath = foamMat.userData.u.uPath.value, wakeY = foamMat.userData.u.uWakeY.value;
   const track = { xs: [], zs: [], seq: -1, step: Math.max(0.75, wk.Lw / 24), cap: 40 };
-  const layWake = (teleportSeq) => {
+  const layWake = (teleportSeq, sea) => {
     const h = -group.rotation.y, ch = Math.cos(h), sh = Math.sin(h);
     const sx = group.position.x - sh * wk.z0, sz = group.position.z + ch * wk.z0;   // stern point (local 0, z0)
     const xs = track.xs, zs = track.zs;
@@ -376,9 +376,10 @@ export function buildShipModel(type, opts = {}) {
       else { wx = px + dx * (u - acc); wz = pz + dz * (u - acc); }
       const ox = wx - group.position.x, oz = wz - group.position.z;
       wakePath[i].set(ox * ch + oz * sh, -ox * sh + oz * ch);
+      wakeY[i] = sea?.getHeight ? sea.getHeight(wx, wz) : 0;
     }
   };
-  const straightWake = () => { for (let i = 0; i <= WAKE_RINGS; i++) wakePath[i].set(0, wk.z0 + i / WAKE_RINGS * wk.Lw); track.xs.length = track.zs.length = 0; };
+  const straightWake = () => { for (let i = 0; i <= WAKE_RINGS; i++) { wakePath[i].set(0, wk.z0 + i / WAKE_RINGS * wk.Lw); wakeY[i] = 0; } track.xs.length = track.zs.length = 0; };
   straightWake();
   foam.renderOrder = 2; foam.castShadow = false; foam.receiveShadow = false;
   group.add(foam);
@@ -452,6 +453,8 @@ export function buildShipModel(type, opts = {}) {
   sailMat.userData.u.uFac.value.set(FAC_SAIL[faction] || '#b3262e');
   sailMat.userData.u.uEmbIdx.value = EMBLEM_INDEX[faction] ?? 0;
   const hu = hullMat.userData.u, su = sailMat.userData.u, fu = flagMat.userData.u;
+  // the foam lies on the same local sea surface as the hull's waterline: share the uniform objects
+  { const fo = foamMat.userData.u; fo.uWP = hu.uWP; fo.uWQ = hu.uWQ; fo.uWH = hu.uWH; }
   // lantern light pools at night: A = centre of the stern lanterns, B = deck lantern (w = reach in m)
   if (info.sternLanterns.length) {
     const c = new THREE.Vector3(); for (const l of info.sternLanterns) c.add(l); c.divideScalar(info.sternLanterns.length);
@@ -517,7 +520,7 @@ export function buildShipModel(type, opts = {}) {
       fu.uStrike.value = st.strike;
       { const sp = Math.abs(o.speed || 0); const fm = foamMat.userData.u.uSpeed; fm.value += (sp - fm.value) * (snap ? 1 : Math.min(1, dt * 1.5)); }
       // the stern wake follows the track at sea (not on a stage, in the duel or in the shipyard: dt 0 there)
-      if (dt > 0 && foam.visible) layWake(o.teleportSeq ?? 0); else if (dt === 0) straightWake();
+      if (dt > 0 && foam.visible) layWake(o.teleportSeq ?? 0, hu.uSea.value ? o.sea : null); else if (dt === 0) straightWake();
       const dmg = damageOverride || o.damage;
       if (dmg) this.setDamage(dmg);
       const cam = typeof window !== 'undefined' ? window.__game?.camera : null;
