@@ -10,7 +10,10 @@
 // the quarter galleries drawn through a few of their stations and rows; the outer face alone of each gunport, stern
 // window and frieze panel, see distFace()).
 // The ship builders are generators (buildHullSteps, buildRigSteps, buildSteps(), paintSkinSteps): each `yield` is a point
-// where the build may be put down until the next frame (shipModel.js stepShipBuilds).
+// where the build may be put down until the next frame (shipModel.js stepShipBuilds). Inside their loops,
+// `if (gb.due()) yield;` puts it down only once the frame's build time is spent (buildClock.end, set by stepShipBuilds;
+// Infinity when a build runs in one go, which never stops there): a frame's share stays near its budget whatever the
+// part being built, without a yield per part. Where the yields fall changes nothing in the geometry.
 import * as THREE from 'three';
 const _bb = new THREE.Box3();
 
@@ -19,6 +22,8 @@ const _c = new THREE.Color();
 const _UPN = new THREE.Vector3(0, 1, 0);
 // a part whose largest side is under DIST_MIN (m) is left out of the distant geometry: about 2 pixels where it is drawn
 const DIST_MIN = 1.5;
+
+export const buildClock = { end: Infinity };
 
 export const SURF = {
   wood:   [0, 0.86, 0, 1],
@@ -43,6 +48,8 @@ export class GeoBuilder {
     this.distTag = []; this.curDist = 0; this.idxDist = [];
   }
   get count() { return this.pos.length / 3; }
+  // true once the frame's build time is spent (see buildClock): `if (gb.due()) yield;`
+  due() { return performance.now() > buildClock.end; }
 
   vertex(p, n, u, v, color, surf, brk = 2, ao = 1) {
     if (!(n.x * n.x + n.y * n.y + n.z * n.z > 1e-10)) n = _UPN;
@@ -144,30 +151,44 @@ export class GeoBuilder {
   // build() as a generator (one typed array or index pass per step); its return value is the geometry
   *buildSteps() {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3)); yield;
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3)); yield;
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2)); yield;
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3)); yield;
-    g.setAttribute('aSurf', new THREE.Float32BufferAttribute(this.surf, 4)); yield;
-    g.setAttribute('aBreak', new THREE.Float32BufferAttribute(this.brk, 1));
-    g.setAttribute('aPiv', new THREE.Float32BufferAttribute(this.piv, 2)); yield;
-    // LOD tags: 0 both geometries, 1 near only (fine detail), 2 far only (coarse stand-ins, e.g. the hull skin)
-    const T = this.lodTag, I = this.idx, near = [], far = [];
+    // the JS arrays are copied into their typed arrays a slice at a time (a hull is several hundred thousand numbers);
+    // the values are those Float32BufferAttribute(array) would hold
+    const self = this;
+    const typed = function* (Ctor, src) {   // Ctor: Float32Array
+      const a = new Ctor(src.length);
+      for (let i = 0; i < src.length; i += 16384) {
+        const e = Math.min(src.length, i + 16384);
+        for (let j = i; j < e; j++) a[j] = src[j];
+        if (self.due()) yield;
+      }
+      return a;
+    };
+    g.setAttribute('position', new THREE.BufferAttribute(yield* typed(Float32Array, this.pos), 3)); yield;
+    g.setAttribute('normal', new THREE.BufferAttribute(yield* typed(Float32Array, this.nor), 3)); yield;
+    g.setAttribute('uv', new THREE.BufferAttribute(yield* typed(Float32Array, this.uv), 2)); yield;
+    g.setAttribute('color', new THREE.BufferAttribute(yield* typed(Float32Array, this.col), 3)); yield;
+    g.setAttribute('aSurf', new THREE.BufferAttribute(yield* typed(Float32Array, this.surf), 4)); yield;
+    g.setAttribute('aBreak', new THREE.BufferAttribute(yield* typed(Float32Array, this.brk), 1));
+    g.setAttribute('aPiv', new THREE.BufferAttribute(yield* typed(Float32Array, this.piv), 2)); yield;
+    // LOD tags: 0 both geometries, 1 near only (fine detail), 2 far only (coarse stand-ins, e.g. the hull skin);
+    // the indices go straight into typed arrays of the full size, cut to length at the end
+    const T = this.lodTag, I = this.idx, big = this.count > 65535, IA = big ? Uint32Array : Uint16Array;
+    const near = new IA(I.length), far = new IA(I.length); let nn = 0, nf = 0;
     for (let i = 0; i < I.length; i += 3) {
       const a = T[I[i]], b = T[I[i + 1]], c = T[I[i + 2]];
-      if (a !== 2 && b !== 2 && c !== 2) near.push(I[i], I[i + 1], I[i + 2]);
-      if (a !== 1 && b !== 1 && c !== 1) far.push(I[i], I[i + 1], I[i + 2]);
-      if (i % 30000 === 29997) yield;
+      if (a !== 2 && b !== 2 && c !== 2) { near[nn++] = I[i]; near[nn++] = I[i + 1]; near[nn++] = I[i + 2]; }
+      if (a !== 1 && b !== 1 && c !== 1) { far[nf++] = I[i]; far[nf++] = I[i + 1]; far[nf++] = I[i + 2]; }
+      if (i % 3000 === 2997 && this.due()) yield;
     }
-    const big = this.count > 65535;
-    g.setIndex(big ? new THREE.Uint32BufferAttribute(near, 1) : new THREE.Uint16BufferAttribute(near, 1)); yield;
-    g.userData.farIndex = big ? new Uint32Array(far) : new Uint16Array(far); yield;
-    const D = this.distTag, dist = this.idxDist.slice();
+    g.setIndex(new THREE.BufferAttribute(near.slice(0, nn), 1)); yield;
+    g.userData.farIndex = far.slice(0, nf); yield;
+    const D = this.distTag, dist = new IA(this.idxDist.length + I.length); dist.set(this.idxDist);
+    let nd = this.idxDist.length;
     for (let i = 0; i < I.length; i += 3) {
-      if (D[I[i]] && D[I[i + 1]] && D[I[i + 2]]) dist.push(I[i], I[i + 1], I[i + 2]);
-      if (i % 60000 === 59997) yield;
+      if (D[I[i]] && D[I[i + 1]] && D[I[i + 2]]) { dist[nd++] = I[i]; dist[nd++] = I[i + 1]; dist[nd++] = I[i + 2]; }
+      if (i % 3000 === 2997 && this.due()) yield;
     }
-    g.userData.distIndex = big ? new Uint32Array(dist) : new Uint16Array(dist); yield;
+    g.userData.distIndex = dist.slice(0, nd); yield;
     g.computeBoundingSphere(); g.computeBoundingBox();
     return g;
   }

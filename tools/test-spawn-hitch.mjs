@@ -14,7 +14,9 @@
 // The render loop is stopped and the test steps the game (game.step(1/30) per tick, a rendered frame every 10th
 // tick and right after a spawn): software rendering presents one or two frames a second, its pace says nothing.
 // Per path: ticks waited for the ship, the longest spawn call (combat.spawnAI / spawnConvoy / game.spawnShip, ms),
-// the longest tick (JS time of step + render) from the trigger to 40 ticks after the spawn, and the median tick.
+// the longest tick (JS time of step + render) from the trigger to 40 ticks after the spawn, the median tick, and the
+// longest single build step run meanwhile (shipGeometryCache().stepMax: one resumption of a build generator by
+// stepShipBuilds, 1.5 ms budget per frame). A table of the paths closes the run.
 // A spawn call made outside a tick (escort accepted) counts as a tick of its own.
 // Then the geometry cache: bound respected, geometry of live ships kept, evicted geometry disposed, a hit for a
 // ship type used again.
@@ -120,6 +122,7 @@ async function run(name, { trigger, found, cleanup, arg: a = {}, timeout = 60000
     await window.__frames(20);
     const M = window.__M; M.frames.length = 0; M.spawns.length = 0; M.on = true;
     await window.__frames(20);
+    g.combat.shipCache?.({ resetSteps: true });   // the longest build step of this path, from the trigger on
   });
   const r = await ev(async ({ trigger, found, timeout }) => {
     const g = window.__game, M = window.__M, t0 = performance.now(), f0 = M.frames.length;
@@ -135,7 +138,7 @@ async function run(name, { trigger, found, cleanup, arg: a = {}, timeout = 60000
     const spawns = M.spawns.filter(s => s.at >= f0);
     const spawnMs = spawns.length ? Math.max(...spawns.map(s => s.ms)) : 0;
     return { ok: !!ok, waitFrames: fs - f0, waitMs: Math.round(performance.now() - t0), max: Math.max(spawnMs, ...win), median: sorted[sorted.length >> 1],
-      spawnMs, spawnCalls: spawns.length, ships: g.ships.filter(s => s !== g.player).map(s => `${s.type}|${s.faction}`) };
+      spawnMs, spawnCalls: spawns.length, stepMax: g.combat.shipCache?.().stepMax ?? 0, ships: g.ships.filter(s => s !== g.player).map(s => `${s.type}|${s.faction}`) };
   }, { trigger: trigger.toString(), found: found.toString(), timeout });
   if (cleanup) await ev(({ cleanup }) => (0, eval)(`(${cleanup})`)(window.__game, window.__arg), { cleanup: cleanup.toString() });
   return { name, ...r };
@@ -148,7 +151,7 @@ async function path(name, a, spec) {
   const r = await run(name, spec);
   rows.push(r);
   const over = r.max - r.median;
-  console.log(`${name.padEnd(22)} ${r.ok ? '' : 'NO SPAWN  '}wait ${String(r.waitFrames).padStart(4)} fr · spawn call ${r.spawnMs.toFixed(1).padStart(6)} ms · longest tick ${r.max.toFixed(1).padStart(6)} ms (median ${r.median.toFixed(1)}, +${over.toFixed(1)})  ${r.ships.join(', ')}`);
+  console.log(`${name.padEnd(22)} ${r.ok ? '' : 'NO SPAWN  '}wait ${String(r.waitFrames).padStart(4)} fr · spawn call ${r.spawnMs.toFixed(1).padStart(6)} ms · longest tick ${r.max.toFixed(1).padStart(6)} ms (median ${r.median.toFixed(1)}, +${over.toFixed(1)}) · build step ${r.stepMax.toFixed(1)} ms  ${r.ships.join(', ')}`);
   return r;
 }
 
@@ -258,6 +261,9 @@ await path('traffic (reference)', {}, {
   timeout: 90000,
 });
 
+console.log('\npath                     longest tick   median   longest build step (ms)');
+for (const r of rows) console.log(`${r.name.padEnd(24)} ${r.max.toFixed(1).padStart(12)} ${r.median.toFixed(1).padStart(8)} ${r.stepMax.toFixed(1).padStart(10)}`);
+{ const w = rows.reduce((a, r) => r.stepMax > a.stepMax ? r : a, rows[0]); console.log(`longest build step of all paths: ${w.stepMax.toFixed(1)} ms (${w.name})`); }
 console.log('');
 check('every path spawns its ship', rows.every(r => r.ok), rows.filter(r => !r.ok).map(r => r.name).join(', '));
 const worst = rows.filter(r => !/reference/.test(r.name));
@@ -278,10 +284,11 @@ if (setup.cacheApi) {
     // more ship kinds than the bound: all asked ahead of time, built a little per step (no rendering here)
     const want = []; for (const t of types) for (const n of nations) if (want.length < s0.max + 12 && !s0.keys.includes(`${t}|${n}`)) want.push([t, n]);
     for (const [t, n] of want) cb.shipReady(t, n);
-    let over = 0, frames = 0, long = 0;
+    let over = 0, overAt = '', frames = 0, long = 0;
+    cb.shipCache({ resetSteps: true });
     while (cb.shipCache().pending.length && frames < 60000) {
       const t = performance.now(); g.step(1 / 30); long = Math.max(long, performance.now() - t);
-      const s = cb.shipCache(); over = Math.max(over, s.idle - s.max);
+      const s = cb.shipCache(); if (s.idle - s.max > over) { over = s.idle - s.max; overAt = `${s.pending[0] || '-'} in hand${s.keys.includes(s.pending[0]) ? ', its geometry cached' : ''}`; }
       if (++frames % 40 === 0) await new Promise(r => setTimeout(r, 0));
     }
     const s1 = cb.shipCache();
@@ -302,11 +309,11 @@ if (setup.cacheApi) {
     const h1 = cb.shipCache();
     g.removeShip(a); g.removeShip(b);
     const h2 = cb.shipCache();
-    return { max: s0.max, pinned0: s0.pinned, size0: s0.size, asked: want.length, over, frames, long, size1: s1.size, idle1: s1.idle, pinned1: s1.pinned, mb: s1.bytes / 1048576, evicted: s1.evictions - s0.evictions, kept, freed,
-      builds: h1.builds - h0.builds, hits: h1.hits - h0.hits, stays: h2.keys.includes('galleon|dutch'), pinnedEnd: h2.pinned, sizeEnd: h2.size };
+    return { max: s0.max, pinned0: s0.pinned, size0: s0.size, asked: want.length, over, overAt, frames, long, size1: s1.size, idle1: s1.idle, pinned1: s1.pinned, mb: s1.bytes / 1048576, evicted: s1.evictions - s0.evictions, kept, freed,
+      builds: h1.builds - h0.builds, hits: h1.hits - h0.hits, stays: h2.keys.includes('galleon|dutch'), pinnedEnd: h2.pinned, sizeEnd: h2.size, stepMax: s1.stepMax };
   });
   check(`cache: never more than its bound (${c.max}) of unused geometries while ${c.asked} more ship kinds are built`, c.over <= 0 && c.idle1 === c.max && c.evicted === c.asked + c.size0 - c.pinned0 - c.max,
-    `size ${c.size0} → ${c.size1} (${c.pinned1} in use), ${c.evicted} evicted, ${c.mb.toFixed(1)} MB, ${c.frames} steps, longest ${c.long.toFixed(1)} ms`);
+    `size ${c.size0} → ${c.size1} (${c.pinned1} in use), ${c.evicted} evicted, ${c.mb.toFixed(1)} MB, ${c.frames} steps, longest ${c.long.toFixed(1)} ms, longest build step ${(c.stepMax ?? 0).toFixed(1)} ms${c.over > 0 ? `; ${c.over} over the bound (${c.overAt})` : ''}`);
   check('cache: the geometry of a live ship survives a full trim, undisposed', c.kept);
   check('cache: once the ship is gone a trim drops and disposes it', c.freed);
   check('cache: a type used again is built once, then hit', c.builds === 1 && c.hits === 1 && c.stays, `${c.builds} build, ${c.hits} hit`);

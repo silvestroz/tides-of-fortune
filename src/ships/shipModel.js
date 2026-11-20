@@ -31,15 +31,17 @@
 //   prepareShipGeometry(type, faction) -> bool   true once the geometry and skin of that ship are cached; otherwise
 //                         queues their build, which stepShipBuilds(ms?) advances a little per frame
 // getShipStaticParts(type, faction) -> cached raw geometry of a type (moored hulls, land scenes): copy what you keep
+//   prepareShipParts(type, faction) -> bool   the same ahead of time for it (geometry only, no skin)
 // The geometry cache is bounded: the geometry of live models is always kept, and at most GEO_IDLE_MAX others, the
 // least recently used leaving first (their GPU buffers released).
-//   shipGeometryCache({ trim?, finish? }) -> { size, pinned, idle, max, bytes, keys, pending, builds, hits, evictions, types }
-//                         the state of the cache (tools); trim: n = keep at most n geometries without a live model;
-//                         finish: true = the builds asked ahead of time are finished now (scripted tests)
+//   shipGeometryCache({ trim?, finish?, resetSteps? }) -> { size, pinned, idle, max, bytes, keys, pending, builds, hits,
+//                         evictions, stepMax, types }   the state of the cache (tools); trim: n = keep at most n geometries
+//                         without a live model; finish: true = the builds asked ahead of time are finished now (scripted
+//                         tests); stepMax = longest single build step run by stepShipBuilds (ms), reset by resetSteps
 import * as THREE from 'three';
 import { SHIP_DESIGNS, FACTION_PAINT, FACTION_TRIM } from './art/configs.js';
 import { HullShape } from './art/hullShape.js';
-import { GeoBuilder } from './art/builder.js';
+import { GeoBuilder, buildClock } from './art/builder.js';
 import { buildHullSteps } from './art/hull.js';
 import { buildRigSteps } from './art/rig.js';
 import { makeHullMaterial, makeSailMaterial, makeFlagMaterial, updateGlobals, GLOBAL } from './art/materials.js';
@@ -119,7 +121,7 @@ function lodDistBackM() { return (QUALITY.shipLodDistBackM ?? LOD_DIST_BACK_M) *
 // that left the cache is built again in the background, like a new one (a second or two before she appears).
 const _geoCache = new Map();
 const GEO_IDLE_MAX = 16;
-const _geoStats = { builds: 0, hits: 0, evictions: 0 };
+const _geoStats = { builds: 0, hits: 0, evictions: 0, stepMax: 0 };
 const _skins = new Map();        // type -> { paint: () => generator, gen, tex } hull planking texture, shared by the nations
 const _jobs = new Map();         // type|faction -> build in hand (prepareSteps), oldest first
 const SAIL_COLOR = '#f4ead6';
@@ -139,6 +141,7 @@ function* typeGeoSteps(type, faction) {
   const rig = yield* buildRigSteps(gb, H, d, info, mulberry32(type.length * 31 + 7), SAIL_COLOR);
   yield;
   const hullGeo = yield* gb.buildSteps();
+  yield;
   // far LOD = same vertex buffers, index without fine detail and with a coarse skin (art/builder.js tags);
   // distant LOD = same vertex buffers again, index of what still shows a kilometre away
   const reindexed = (geo, index) => {
@@ -150,9 +153,12 @@ function* typeGeoSteps(type, faction) {
   };
   const hullGeoFar = reindexed(hullGeo, hullGeo.userData.farIndex);
   const hullGeoDist = reindexed(hullGeo, hullGeo.userData.distIndex);
+  yield;
   // sails are only culled out of view at the distant level: a sphere round the whole rig, with room to billow
   rig.sailGeo.boundingSphere.copy(hullGeo.boundingSphere).radius += 4;
-  const res = { H, d, info, rig, hullGeo, hullGeoFar, hullGeoDist, sailGeo: rig.sailGeo, foamGeo: buildFoamGeometry(H), refs: 0 };
+  const foamGeo = buildFoamGeometry(H);
+  yield;
+  const res = { H, d, info, rig, hullGeo, hullGeoFar, hullGeoDist, sailGeo: rig.sailGeo, foamGeo, refs: 0 };
   _geoCache.set(type + '|' + faction, res);
   _geoStats.builds++;
   trimGeoCache();
@@ -182,7 +188,7 @@ function trimGeoCache(max = GEO_IDLE_MAX) {
   }
 }
 
-export function shipGeometryCache({ trim, finish } = {}) {
+export function shipGeometryCache({ trim, finish, resetSteps } = {}) {
   if (finish) stepShipBuilds(Infinity);
   if (trim != null) trimGeoCache(Math.max(0, trim));
   let pinned = 0, bytes = 0;
@@ -191,8 +197,10 @@ export function shipGeometryCache({ trim, finish } = {}) {
     if (res.refs) pinned++;
     bytes += size(res.hullGeo) + res.hullGeoFar.index.array.byteLength + res.hullGeoDist.index.array.byteLength + size(res.sailGeo) + size(res.foamGeo);
   }
-  return { size: _geoCache.size, pinned, idle: _geoCache.size - pinned, max: GEO_IDLE_MAX, bytes, keys: [..._geoCache.keys()], pending: [..._jobs.keys()],
+  const out = { size: _geoCache.size, pinned, idle: _geoCache.size - pinned, max: GEO_IDLE_MAX, bytes, keys: [..._geoCache.keys()], pending: [..._jobs.keys()],
     ..._geoStats, types: Object.fromEntries(Object.keys(SHIP_SPECS).map(t => [t, SHIP_SPECS[t].base || t])) };
+  if (resetSteps) _geoStats.stepMax = 0;
+  return out;
 }
 
 // one step of a type's skin painting; true once the texture exists (null without a DOM)
@@ -232,16 +240,34 @@ export function prepareShipGeometry(type, faction = 'english') {
   return false;
 }
 
+// prepareShipParts(type, faction) -> true once getShipStaticParts(type, faction) finds its geometry ready; otherwise its
+// build (geometry only: moored hulls and land scenes never use the skin) is queued for stepShipBuilds()
+export function prepareShipParts(type, faction = 'english') {
+  if (!SHIP_SPECS[type]) type = 'brig';
+  const key = type + '|' + faction;
+  if (touchGeo(key)) return true;
+  if (!_jobs.has(key)) _jobs.set(key, typeGeoSteps(type, faction));
+  return false;
+}
+
 // stepShipBuilds(ms?) advances the queued builds for at most `ms` (once per frame, src/core/game.js)
 export function stepShipBuilds(ms = BUILD_MS) {
+  if (!_jobs.size) return;
   const t0 = performance.now();
-  for (const [key, job] of _jobs) {
-    let r; do r = job.next(); while (!r.done && performance.now() - t0 < ms);
-    if (!r.done) return;
-    _jobs.delete(key);
-    trimGeoCache();   // the build no longer holds its geometry
-    if (performance.now() - t0 >= ms) return;
-  }
+  buildClock.end = t0 + ms;   // the builders' loops put the build down once it is spent (art/builder.js gb.due())
+  try {
+    for (const [key, job] of _jobs) {
+      let r, t = performance.now();
+      do {   // the longest single step is kept for the tools (shipGeometryCache().stepMax)
+        r = job.next();
+        const t1 = performance.now(); if (t1 - t > _geoStats.stepMax) _geoStats.stepMax = t1 - t; t = t1;
+      } while (!r.done && t - t0 < ms);
+      if (!r.done) return;
+      _jobs.delete(key);
+      trimGeoCache();   // the build no longer holds its geometry
+      if (performance.now() - t0 >= ms) return;
+    }
+  } finally { buildClock.end = Infinity; }
 }
 
 // crew placement spots per type (local positions on decks)

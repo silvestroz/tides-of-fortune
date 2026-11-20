@@ -146,6 +146,7 @@ export function* buildRigSteps(gb, H, d, info, rnd, sailColor) {
       sparTube(at(y0 - 1), at(yLT), r, r * 0.82, mastC, 8);
       // wooldings (rope bands) on lower mast
       for (let k = 1; k < 6; k++) { const p = at(y0 + (yLT - y0) * k / 6.5); gb.add(G.cylC, trs(p.x, p.y, p.z, m.rake, 0, 0, r * 1.06, 0.18, r * 1.06), { color: black, surf: SURF.rope }); }
+      if (gb.due()) yield;
       // top (platform)
       const tp = at(yLT - 0.9);
       const tw = Math.max(1.6, B * 0.38), tl = tw * 0.75;
@@ -162,11 +163,13 @@ export function* buildRigSteps(gb, H, d, info, rnd, sailColor) {
         gb.line(V3(-tw / 2, tp.y + 0.7, tp.z - tl * 0.3), V3(tw / 2, tp.y + 0.7, tp.z - tl * 0.3), 0.04, sparDark, SURF.wood, 3);
       }
       tops.push(tp.clone().add(V3(0, 1.2, 0)));
+      if (gb.due()) yield;
       // cap
       const cp = at(yLT); gb.add(G.box, trs(cp.x, cp.y, cp.z - r * 0.9, m.rake, 0, 0, r * 2.4, 0.3, r * 4.2), { color: black, surf: SURF.wood });
       // topmast
       sparTube(at(yLT - 2.2).add(V3(0, 0, -r * 1.7)), at(yTT).add(V3(0, 0, -r * 1.7)), r * 0.65, r * 0.52, mastC, 8, brkUp);
       const ofsT = -r * 1.7;
+      if (gb.due()) yield;
       const ct = at(yTT - 0.6).add(V3(0, 0, ofsT));
       gb.add(G.box, trs(ct.x, ct.y, ct.z, m.rake, 0, 0, tw * 0.55, 0.1, 0.5), { color: spar, surf: SURF.wood, brk: brkUp });
       gb.add(G.box, trs(ct.x, ct.y, ct.z, m.rake, 0, 0, 0.18, 0.1, tl * 0.55), { color: spar, surf: SURF.wood, brk: brkUp });
@@ -245,6 +248,7 @@ export function* buildRigSteps(gb, H, d, info, rnd, sailColor) {
         gb.curPiv = [2 * i, 1];
         gb.line(arm, to, 0.028, hemp, SURF.run, 3, 1, y.brk, [-1, 0]);
         gb.curPiv = [-1, 0];
+        if (gb.due()) yield;
       }
       // spanker (gaff + boom) on the aftermost square mast
       if (m.spanker) gaffRig(M, y0 + Hm * 0.36, false, 2);
@@ -391,6 +395,7 @@ export function* buildRigSteps(gb, H, d, info, rnd, sailColor) {
           gb.line(p.clone().add(V3(0, 0.05, 0)), q, 0.024, iron, SURF.iron, 3);
           bot.push(p.clone().add(V3(0, 0.72, 0)));
         }
+        if (gb.due()) yield;
         topP.push(head.clone().add(V3(side * (tw ? Math.min(0.5, tw * 0.12) : 0.15), 0, (t - 0.5) * 0.6)));
       }
       for (let k = 0; k < n; k++) gb.line(bot[k], topP[k], 0.045, tarRope, SURF.rope, 3);
@@ -404,6 +409,7 @@ export function* buildRigSteps(gb, H, d, info, rnd, sailColor) {
           const a = bot[k].clone().lerp(topP[k], t), b = bot[k + 1].clone().lerp(topP[k + 1], t);
           gb.line(a, b, 0.016, tarRope, SURF.ratline, 3, 1, 0.55 + 0.45 * ((j * 7 + k * 3) % 11) / 11);
         }
+        if (gb.due()) yield;
       }
       yield;
       // topmast shrouds from the top's edge to the topmast head, + backstays to the channel

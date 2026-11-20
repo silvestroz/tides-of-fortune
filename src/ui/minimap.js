@@ -59,7 +59,7 @@ export class Minimap {
     this._dpr = Math.min(2, devicePixelRatio || 1);
     const s = Math.max(64, Math.round(Math.min(r.width, r.height) * this._dpr));
     if (s !== this._size) {
-      this._size = s; this.canvas.width = this.canvas.height = s;
+      this._size = s; this.canvas.width = this.canvas.height = s; this._font = null;   // a new size resets the context
       this._bg = this._makeBackground(s);
     }
     return s;
@@ -149,6 +149,11 @@ export class Minimap {
     const g = this.game, p = g.player;
     const s = this._ensureSize(); if (!s) return;
     const ctx = this.canvas.getContext('2d');
+    // the wind label's font is set once and kept in the context's state (set outside save/restore): assigning a font
+    // to a canvas in the page brings the page's styles up to date first, and after a HUD change (a banner) that was
+    // a restyle of the whole HUD inside the frame, ten times a second it is the same string
+    const font = `italic ${Math.max(Math.round(12 * this._dpr), Math.round(s / 19))}px 'Spectral', Georgia, serif`;
+    if (this._font !== font) { ctx.font = this._font = font; }
     const R = s / 2, k = R / this.range;
     const cx = p?.position?.x ?? 0, cz = p?.position?.z ?? 0;
     const W = (x, z) => [R + (x - cx) * k, R + (z - cz) * k];
@@ -200,7 +205,7 @@ export class Minimap {
     for (const off of [-s / 70, s / 70]) { ctx.beginPath(); ctx.moveTo(off, L * 0.6); ctx.bezierCurveTo(off + s / 80, L * 0.2, off - s / 80, -L * 0.1, off, -L * 0.45); ctx.stroke(); }
     ctx.beginPath(); ctx.moveTo(0, -L * 0.85); ctx.lineTo(-s / 36, -L * 0.35); ctx.lineTo(s / 36, -L * 0.35); ctx.closePath(); ctx.fill();
     ctx.restore();
-    ctx.font = `italic ${Math.max(Math.round(12 * this._dpr), Math.round(s / 19))}px 'Spectral', Georgia, serif`; ctx.fillStyle = 'rgba(31,74,90,0.95)'; ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(31,74,90,0.95)'; ctx.textAlign = 'center';   // font: set above
     ctx.fillText(`${Math.round(ws * 1.944)} kn`, ax, ay + L * 0.95);
 
     // small printed compass rose (lower-left)

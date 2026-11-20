@@ -149,7 +149,8 @@ export class Toasts {
       this.banner.innerHTML = `<div class="b-inner tof-parch"><i class="b-orn l"></i><span class="b-ico">${TOAST_ICONS[b.topic] || TOAST_ICONS.major}</span>
         <div class="b-txt"><div class="b-head">${esc(head)}</div>${rest.length ? `<div class="b-sub">${esc(rest.join(' '))}</div>` : ''}</div><i class="b-orn r"></i></div>`;
       this.banner.className = `banner on ${b.tone}`;
-      requestAnimationFrame(() => this.hudEl?.style.setProperty('--bh', `${this.banner.offsetHeight || 0}px`));   // the prompts step under it
+      // the prompts step under it (--bh on the prompts themselves: on #hud it restyled the whole HUD, see hud.css)
+      requestAnimationFrame(() => { const h = `${this.banner.offsetHeight || 0}px`; for (const p of this.hudEl?.querySelectorAll('.prompt') || []) p.style.setProperty('--bh', h); });
       this.game.audio?.play?.('ui:page');
     }
   }
