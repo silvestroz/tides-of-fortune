@@ -73,12 +73,15 @@ void main() {
   float hugW = mix( 2.2, 1.0, smoothstep( 0.0, L, d ) );
   float hug = exp( -pow( max( a - hb * 0.85, 0.0 ) / hugW, 2.0 ) ) * step( hb * 0.55, a ) * alongHull;
   float bow = ( bowSide * onHull * 1.2 + stem * 1.4 + hug * 0.7 ) * ( 0.55 + 0.65 * n2 ) * smoothstep( 0.15, 0.6, sp ) * fadeArm;
-  // waterline collar: lapping foam around the whole hull footprint, even at rest; thicker at the bow
-  float collarW = 1.6 + 1.2 * exp( -d / ( L * 0.3 ) ) + 1.5 * sp;
+  // waterline collar: lapping foam around the hull footprint, even at rest; thicker at the bow. Kept narrow and broken:
+  // the footprint is the design waterline, and when the ship sits in a trough or on a crest the real waterline moves
+  // in or out of it, so a wide solid collar showed as a flat pale slab detached from the hull (the ship's own foam
+  // skirt follows the wave and carries the contact line)
+  float collarW = 0.7 + 0.6 * exp( -d / ( L * 0.3 ) ) + 0.6 * sp;
   float collar = exp( -pow( max( a - hb * 0.82, 0.0 ) / collarW, 2.0 ) ) * step( hb * 0.5, a ) * alongHull
-               + exp( -pow( ( d - L ) / 2.5, 2.0 ) ) * step( a, hb * 1.0 ) * 1.4;
-  collar *= ( 0.5 + 0.7 * vnoise( vec2( d * 0.8 + uTime * 0.7, lat * 2.0 ) ) ) * step( age, 1.5 );
-  bow += collar * ( 0.85 + 0.5 * sp );
+               + exp( -pow( ( d - L ) / 1.6, 2.0 ) ) * step( a, hb * 1.0 ) * 0.6;
+  collar *= smoothstep( 0.35, 0.8, vnoise( vec2( d * 0.8 + uTime * 0.7, lat * 2.0 ) ) ) * step( age, 1.5 );
+  bow += collar * ( 0.45 + 0.35 * sp );
 
   // --- churned centre trail behind the stern: wide-ish, streaky, slowly widening
   float ds = d - L;

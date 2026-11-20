@@ -406,7 +406,7 @@ export class Ship {
     m.rotation.set(this.pitch, -this.heading, this.roll, 'YXZ');
     this.model.update(dt, t, {
       sailSetting: this.sailEff, windRel: this.windRel, speed: this.speed, heel: this.heel,
-      luff: this.luff, rudder: this.rudderAngle, teleportSeq: this.teleportSeq || 0, water: this._water,
+      luff: this.luff, rudder: this.rudderAngle, teleportSeq: this.teleportSeq || 0, water: this._water, sea: this.game.ocean,
       damage: { hull: 1 - this.hull / this.hullMax, sails: 1 - this.sails },
     });
   }
