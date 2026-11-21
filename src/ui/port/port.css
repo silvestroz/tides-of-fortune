@@ -417,6 +417,51 @@
 .fl-b:hover:not(:disabled) { background: rgba(255,240,200,0.95); box-shadow: inset 0 0 0 1px #c9a24a, 0 0 0.5em rgba(255,200,90,0.5); }
 .fl-b:disabled { opacity: 0.32; cursor: default; }
 .fl-x p.small { margin: 0.3em 0 0; font-size: 0.8em; }
+/* squadron ship in the slipway's specs panel (fl-pick): name line, link back to the flagship */
+.oncale.fl-on > b { color: #fbf1d6; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oncale.fl-on > b i { color: inherit; }
+.port-layer .lnk { all: unset; cursor: pointer; font-style: italic; color: var(--blood); text-decoration: underline; text-underline-offset: 0.2em; }
+.port-layer .lnk:focus-visible { outline: 2px solid var(--blood); outline-offset: 2px; }
+/* Compare: the whole squadron side by side, the label column pinned while the ships scroll sideways */
+.card.fleet h3 .fl-n { margin-left: auto; }
+.port-layer .card.fleet h3 .fl-cmpb { min-width: 0; padding: 0.2em 0.7em; font-size: max(0.72em, 12.5px); letter-spacing: 0.05em; }
+.port-layer .card.fleet h3 .fl-cmpb.on { box-shadow: inset 0 0 0 2px #8e1b1b; }
+.fl-cmpbox { margin: 0.2em 0 0.5em; }
+.fl-cmpscroll { overflow-x: auto; overscroll-behavior-x: contain; border-radius: 0.2em; background: rgba(255,250,232,0.45); box-shadow: inset 0 0 0 1px rgba(70,42,14,0.25); scrollbar-color: rgba(90,60,30,0.55) transparent; }
+.fl-cmp { border-collapse: separate; border-spacing: 0; font-size: max(0.88em, 12.5px); min-width: 100%; }
+.fl-cmp th, .fl-cmp td { padding: 0.2em 0.5em; text-align: center; white-space: nowrap; border-bottom: 1px dotted rgba(70,42,14,0.3); }
+.fl-cmp tbody th { position: sticky; left: 0; z-index: 1; text-align: left; font-weight: normal; font-style: italic; color: var(--ink-soft); background: #eadbb4; box-shadow: 1px 0 0 rgba(70,42,14,0.3); }
+.fl-cmp thead th { vertical-align: bottom; font-weight: normal; border-bottom: 1.5px solid rgba(42,28,16,0.55); min-width: 4.6em; max-width: 7.5em; }
+.fl-cmp thead th.corner { position: sticky; left: 0; z-index: 2; background: #eadbb4; min-width: 0; }
+.fl-cmp .fl-cn { display: block; font-family: var(--sc); font-size: 1.02em; color: var(--ink); white-space: normal; line-height: 1.05; }
+.fl-cmp button.fl-cn { all: unset; display: block; cursor: pointer; font-family: var(--sc); font-size: 1.02em; color: var(--ink); white-space: normal; line-height: 1.05; }
+.fl-cmp button.fl-cn:hover { color: var(--blood); }
+.fl-cmp button.fl-cn:focus-visible { outline: 2px solid var(--blood); outline-offset: 1px; }
+.fl-cmp thead em { display: block; font-size: max(0.8em, 11px); color: var(--ink-faded); white-space: normal; }
+.fl-cmp thead em svg { width: 1em; height: 1em; vertical-align: -0.12em; }
+.fl-cmp td { font-family: var(--sc); font-variant-numeric: tabular-nums; color: var(--ink); }
+.fl-cmp td[class*="flag"], .fl-cmp thead th.flag { background: rgba(142,27,27,0.07); }
+.fl-cmp thead th.flag .fl-cn { color: var(--blood); }
+.fl-cmp thead th.sel { box-shadow: inset 0 -0.22em 0 #8e1b1b; }
+.fl-cmp td.best { background: linear-gradient(180deg, rgba(246,220,142,0.95), rgba(214,170,80,0.75)); color: #3a2408; box-shadow: inset 0 0 0 1px rgba(110,79,26,0.55); }
+.fl-cmp td.dn { color: var(--blood); }
+.fl-cmp tr[data-k="type"] td { font-family: var(--txt); font-style: italic; font-size: 0.9em; color: var(--ink-soft); white-space: normal; }
+.fl-cmpbox p.small { margin: 0.25em 0 0; }
+.fl-cmpbox .best-k { font-family: var(--sc); font-weight: normal; font-style: normal; padding: 0 0.3em; border-radius: 0.15em; background: linear-gradient(180deg, rgba(246,220,142,0.95), rgba(214,170,80,0.75)); color: #3a2408; }
+/* Flagship, first click: the swap preview */
+.fl-prev { margin-top: 0.45em; padding: 0.35em 0.55em 0.4em; border-radius: 0.2em; background: rgba(255,250,232,0.55); box-shadow: inset 0 0 0 1px rgba(142,27,27,0.4); }
+.fl-prev .fp-h { font-family: var(--sc); color: var(--ink); }
+.fl-prev .fp-h em { display: block; font-family: var(--txt); font-size: max(0.8em, 12px); color: var(--ink-faded); }
+.fp-ds { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.6em, 1fr)); gap: 0.15em 0.6em; margin: 0.3em 0 0.25em; }
+.fp-d { display: flex; align-items: baseline; gap: 0.3em; font-size: max(0.88em, 12.5px); border-bottom: 1px dotted rgba(70,42,14,0.3); }
+.fp-d > span { font-style: italic; color: var(--ink-soft); margin-right: auto; }
+.fp-d b { font-family: var(--sc); font-weight: normal; color: var(--ink); white-space: nowrap; }
+.fp-d em { font-family: var(--sc); font-style: normal; font-size: 0.92em; }
+.fp-d.up em { color: #2f5d2a; } .fp-d.dn em { color: var(--blood); } .fp-d.eq b { color: var(--ink-faded); }
+.fp-l { list-style: none; margin: 0; padding: 0; font-size: max(0.88em, 12.5px); color: var(--ink-soft); }
+.fp-l li { display: flex; align-items: flex-start; gap: 0.4em; padding: 0.08em 0; }
+.fp-l li svg { width: 1.3em; height: 1.3em; flex: none; color: var(--ink-soft); }
+.fp-l li.dn span { color: var(--blood); }
 
 /* “sell all” : the hold count is a button */
 .mrow .hvall { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: center; line-height: 1.05; padding: 1px 6px; border-radius: 3px; }
