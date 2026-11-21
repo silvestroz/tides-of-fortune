@@ -8,7 +8,7 @@
 //   locked(port, tab) -> reason string | null   (hostile ports bar the governor/shipyard/market)
 //   buy/sell/hire/standRound/repair/upgrade/buyShip/buyMarque  game actions used by the UI
 //   colours (shipyard card, src/data/shipColours.js): paintCost(sel) · repaint(sel) · hoistInfo() · hoistBlack() ·
-//   pardonInfo() · pardon()   (hoist: pirate havens only; pardon: a port of the captain's nation or of a nation at
+//   pardonInfo() · pardon()   (hoist: in any port; pardon: a port of the captain's nation or of a nation at
 //   peace with it). Emits 'player:flag' { flag, faction } when the flag changes.
 // Events: emits 'port:leave', 'state:change', 'notify', 'port:arrest' {port}; listens 'port:enter'.
 import { PortScreen } from '../../ui/port/portScreen.js';
@@ -323,7 +323,7 @@ export class PortSystem {
     const g = this.game, st = g.state, old = g.player, price = this.shipPrice(type);
     if (!old || st.gold < price) return;
     st.gold -= price;
-    st.paint = null;   // a new hull from the yard wears the nation's colours (the old paint goes with the old hull)
+    // st.paint is kept: the yard paints a new hull in the captain's present colours
     const C = old.controller?.constructor;
     const np = g.spawnShip({ type, faction: old.faction, isPlayer: true, x: old.position.x, z: old.position.z, heading: old.heading, name: old.name, sailSetting: 0 });
     np.crew = Math.min(np.crewMax, old.crew);
@@ -417,12 +417,11 @@ export class PortSystem {
     this._say(`The painters work through the day. ${theName(p.name, true)} wears her new colours.`, 'good');
     return true;
   }
-  // Flag: hoisting the black (a pirate haven) and the pardon that brings the captain back under national colours.
+  // Flag: hoisting the black (in any port) and the pardon that brings the captain back under national colours.
   hoistInfo() {
     const g = this.game, st = g.state, port = this.port;
     const why = st.flag === 'pirate' ? 'You already sail under the black.'
       : g.hud?.hints?.prologue?.active ? 'Finish your first voyage before you think of turning pirate.'
-      : !port?.haven ? 'Only the Brethren of the Coast sew and hoist the black, in a pirate haven.'
       : (st.missions || []).some(m => m.status === 'active') ? 'You still serve the Crown: carry out or let lapse the missions under way first.'
       : null;
     return { ok: !why, why, nation: st.nationality || 'english', own: FLAG.hoistRepOwn, other: FLAG.hoistRepOther, letters: Object.keys(st.letters || {}).filter(n => st.letters[n]) };

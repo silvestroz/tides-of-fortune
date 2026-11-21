@@ -54,7 +54,7 @@ await ev(() => { __game.state.gold = 20000; __game.ports.screen.render(); });
 // 1. the card
 const card = await ev(() => { const c = document.querySelector('.card.colours'); return c && { presets: c.querySelectorAll('.pt-pre').length, sw: c.querySelectorAll('.pt-sw').length, cloth: c.querySelectorAll('.pt-cl').length, black: !!c.querySelector('[data-act="pt-black"]'), blackDisabled: c.querySelector('[data-act="pt-black"]')?.disabled, why: c.querySelector('.pt-why')?.textContent || '' }; });
 check('Colours card: schemes, pigments, cloths, flag', card && card.presets === 5 && card.sw > 20 && card.cloth === 3 && card.black, JSON.stringify(card));
-check('hoisting the black refused outside a pirate haven', card?.blackDisabled && /haven/.test(card.why), card?.why);
+check('the black can be hoisted in any port (here a nation port)', card && card.blackDisabled === false && !/haven/.test(card.why), card?.why);
 const p0 = await modelPaint('player');
 check('flagship wears her nation’s colours (English red)', p0?.on === 1 && lc(p0.hull) === '#b8302a', JSON.stringify(p0));
 
@@ -168,6 +168,15 @@ const fl = await ev(async () => { const g = __game, S = await import('/src/game/
   g.state.flag = 'nation'; delete g.state.flagSince; g.player.faction = 'english'; S.saveGame(g, 'test'); S.loadGame(g);
   return { a, b: { flag: g.state.flag, faction: g.player.faction } }; });
 check('save/load restores the flag', fl.a.flag === 'pirate' && fl.a.faction === 'pirate' && fl.b.flag === 'nation' && fl.b.faction === 'english', JSON.stringify(fl));
+// a new hull from the yard is painted in the captain's present colours, and the slipway shows her in them
+const nb = await ev(() => { const g = __game, S = g.ports; g.ports.enter(__t.home, 'shipyard'); g.state.gold = 50000;
+  g.state.paint = { hull: '#3f7a62', trim: '#d0a640', sails: 'tanned' }; const before = JSON.stringify(g.state.paint);
+  const t = g.player.type === 'frigate' ? 'brig' : 'frigate'; g.ports.screen.sel = t; g.ports.screen.render();
+  const quay = g.ports.screen._yardShip().paint; S.buyShip(t); g.ports.leave();
+  return { t, type: g.player.type, before, after: JSON.stringify(g.state.paint), quay: !!quay }; });
+await frames(4);
+const np = await modelPaint('player');
+check('bought ship keeps the present paint (slipway preview and new hull)', nb.type === nb.t && nb.before === nb.after && nb.quay && lc(np?.hull) === '#3f7a62', JSON.stringify({ nb, np }));
 
 check('zero console errors', errors.length === 0, errors.slice(0, 5).join(' | '));
 log(`${passes} PASS, ${fails} FAIL`);

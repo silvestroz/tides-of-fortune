@@ -125,7 +125,7 @@ export class PortScreen {
     const f = this.fleetSel != null ? st.fleet?.[this.fleetSel] : null, nat = st.nationality || 'english';   // paint: each ship her own colours
     if (f) return { type: f.type, faction: pl?.faction, name: f.name, damage: { hull: 1 - (f.hull ?? 1), sails: 1 - (f.sails ?? 1) }, wear: HULL_WEAR.base, paint: paintLook(paintOf(f.paint, nat)) };
     const sel = this.sel && SHIP_SPECS[this.sel] ? this.sel : pl?.type;
-    if (!pl || sel !== pl.type) return { type: sel || 'brig', faction: pl?.faction, name: '', damage: { hull: 0, sails: 0 }, wear: HULL_WEAR.yardNew, paint: paintLook(defaultPaint(nat)) };
+    if (!pl || sel !== pl.type) return { type: sel || 'brig', faction: pl?.faction, name: '', damage: { hull: 0, sails: 0 }, wear: HULL_WEAR.yardNew, paint: paintLook(pl ? playerPaint(st, pl.faction) : defaultPaint(nat)) };   // a new hull is painted in your colours
     return { type: pl.type, faction: pl.faction, name: pl.name, damage: { hull: 1 - pl.hull / pl.hullMax, sails: 1 - pl.sails }, wear: playerWear(st), paint: paintLook(this.paintSel ? paintOf(this.paintSel, nat) : playerPaint(st, pl.faction)) };
   }
   _syncYard() {
@@ -418,10 +418,9 @@ export class PortScreen {
         ${this.fleetSel != null && st.fleet?.[this.fleetSel] ? this._fleetSpecs(this.fleetSel) : `
         ${sel !== pl?.type && this.fleetSel == null ? `<div class="oncale"><b>On the slipway</b><span>A new ${TYPE_NAMES[sel].toLowerCase()}, at the quay for a look · <span class="kc">⚓</span> your ship</span></div>` : ''}
         <div class="shiprow"><div class="shipview">${SHIP_SIL(sel)}</div>
-        <div class="specs">${(() => { const o = SHIP_SPECS[pl?.type] || spec, own = sel === pl?.type;
+        <div class="specs">${(() => { const own = sel === pl?.type, fe = this._flagEff(), o = fe || shipStats(sel), n = own && fe ? fe : shipStats(sel);   // your ship as she is (refits counted); a new hull bare, against her
           const d = (a, b, inv) => own || a === b ? '' : `<em class="${(a > b) !== !!inv ? 'up' : 'dn'}">${a > b ? '+' : '−'}${String(+Math.abs(a - b).toFixed(1))}</em>`;
-          const kn = x => Math.round(x * 1.944);
-          return `<div class="cls"><span>Class</span><b title="Power class (guns and hull): in guarded waters, pirates stay a match for you; in perilous seas, nothing holds them back">${CLASS_NAMES[classOf(sel) - 1]}${own || classOf(sel) === classOf(pl?.type) ? '' : `<em class="${classOf(sel) > classOf(pl?.type) ? 'up' : 'dn'}">${classOf(sel) > classOf(pl?.type) ? '+' : '−'}${Math.abs(classOf(sel) - classOf(pl?.type))}</em>`}</b></div>` + [['Guns', spec.guns, o.guns], ['Hull', spec.hull, o.hull], ['Crew', spec.crewMax, o.crewMax], ['Hold', CARGO_CAPACITY[sel], CARGO_CAPACITY[pl?.type] ?? CARGO_CAPACITY[sel]], ['Speed', kn(spec.maxSpeed), kn(o.maxSpeed), ' knots'], ['Draught', spec.navDraft ?? spec.draft, o.navDraft ?? o.draft, ' m', true]]
+          return `<div class="cls"><span>Class</span><b title="Power class (guns and hull): in guarded waters, pirates stay a match for you; in perilous seas, nothing holds them back">${CLASS_NAMES[classOf(sel) - 1]}${own || classOf(sel) === classOf(pl?.type) ? '' : `<em class="${classOf(sel) > classOf(pl?.type) ? 'up' : 'dn'}">${classOf(sel) > classOf(pl?.type) ? '+' : '−'}${Math.abs(classOf(sel) - classOf(pl?.type))}</em>`}</b></div>` + [['Guns', n.guns, o.guns], ['Hull', n.hullMax, o.hullMax], ['Crew', n.crewMax, o.crewMax], ['Hold', n.hold, o.hold], ['Speed', n.speed, o.speed, ' knots'], ['Draught', n.draught, o.draught, ' m', true]]
             .map(([l, a, b, u, inv]) => `<div><span>${l}</span><b>${String(a)}${u || ''}${d(a, b, inv)}</b></div>`).join('')
             + `<div><span>Rig</span><b>${{ square: 'square', 'fore-aft': 'fore-and-aft', mixed: 'mixed' }[SHIP_TYPES[sel]?.rig] || '—'}</b></div>`; })()}</div></div>
         ${sel === pl?.type ? `<div class="own-note">${(s => s[0].toUpperCase() + s.slice(1))(yourShip(sel))}, taken in part exchange for ${coin}${fmt(trade)}.</div>`
