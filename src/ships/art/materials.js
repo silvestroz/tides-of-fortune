@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { getWoodTex, getCanvasTex, getEmblemTex } from './textures.js';
 import { HULL_WEAR } from '../../data/hullWear.js';
+import { PAINT_TAG } from './builder.js';   // the player's own paint (tagged vertices)
 
 export const GLOBAL = {
   uTime: { value: 0 },
@@ -121,7 +122,10 @@ export function makeHullMaterial(skinTex = null, skinRange = null) {
     // the flat sea y = 0 (port stages, duel deck, moored hulls)
     uWP: { value: new THREE.Vector4(0, 0, 0, 1) },   // centre x, z, height there, half-length of the bow/stern samples
     uWQ: { value: new THREE.Vector4(0, -1, 1, 0) },  // forward x, z, half-beam of the side samples
-    uWH: { value: new THREE.Vector4() } };           // heights at bow, stern, port, starboard
+    uWH: { value: new THREE.Vector4() },             // heights at bow, stern, port, starboard
+    // the player's own paint (ShipModel.setPaint): vertices tagged PAINT_TAG (builder.js) take the new colour times
+    // what they were baked with (shade, ambient occlusion) relative to the faction's colour (uPaint*0 = baked)
+    uPaintOn: { value: 0 }, uPaint0: { value: new THREE.Color() }, uTrim0: { value: new THREE.Color() }, uPaint1: { value: new THREE.Color() }, uTrim1: { value: new THREE.Color() } };
   m.userData.u = u;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u, { uNight: GLOBAL.uNight, uTime: GLOBAL.uTime, uSunView: GLOBAL.uSunView, uSunCol: GLOBAL.uSunCol });
@@ -151,11 +155,19 @@ ${LAMP_VERT_MAIN}`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform sampler2D uWood; uniform sampler2D uSkin; uniform float uHullDmg; uniform float uNight; uniform float uTime; uniform vec2 uSkinR; uniform float uWear;
+uniform float uPaintOn; uniform vec3 uPaint0; uniform vec3 uTrim0; uniform vec3 uPaint1; uniform vec3 uTrim1;
 uniform float uSea; uniform vec3 uSunView; uniform vec3 uSunCol;
 ${LAMP_FRAG}
 varying vec4 vSurf; varying vec2 vWUv; varying vec3 vLPos; varying float vWY; varying float vDist; varying float vNY;
 ${BUMP_FN}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
+// the player's own paint: band (grain tag ${PAINT_TAG.hull}) and trim (${PAINT_TAG.trim}) repainted, baked shade kept
+if (uPaintOn > 0.5) {
+  float tH = 1.0 - step(0.0007, abs(vSurf.w - ${PAINT_TAG.hull.toFixed(3)})), tT = 1.0 - step(0.0007, abs(vSurf.w - ${PAINT_TAG.trim.toFixed(3)}));
+  vec3 L3 = vec3(0.2126, 0.7152, 0.0722);
+  if (tH > 0.5) diffuseColor.rgb = uPaint1 * dot(diffuseColor.rgb, L3) / max(1e-5, dot(uPaint0, L3));
+  if (tT > 0.5) diffuseColor.rgb = uTrim1 * dot(diffuseColor.rgb, L3) / max(1e-5, dot(uTrim0, L3));
+}
 // outer hull skin (v >= 20): own UVs into the per-design skin texture; wood detail sampled in local metres
 float isSkin = step(15.0, vWUv.y);
 vec2 skUv = vec2(vWUv.x, vWUv.y - 20.0);
@@ -316,7 +328,7 @@ metalnessFactor = vSurf.x * (1.0 - burnAmt * 0.9);`)
   }
 }`);
   };
-  m.customProgramCacheKey = () => 'shipHull_v13';
+  m.customProgramCacheKey = () => 'shipHull_v14';
   const dm = new THREE.MeshDepthMaterial();
   dm.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);

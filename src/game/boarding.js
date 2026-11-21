@@ -439,7 +439,8 @@ export class Boarding {
     const g = this.game, st = g.state, E = ESCAPE_SHIP, T = SHIP_TYPES[E.type];
     const fleet = ensureFleet(st);
     if (old && fleet.length < FLEET.max) fleet.push({ type: st.shipType || p.type, name: p.name, hull: Math.max(0.05, Math.min(1, old.hull)),
-      sails: Math.max(0, Math.min(1, old.sails)), from: p.faction, own: true, crew: Math.max(0, crew - T.crew), upgrades: { ...NO_UPGRADES(), ...(st.upgrades || {}) }, cargo: {} });
+      sails: Math.max(0, Math.min(1, old.sails)), from: p.faction, own: true, crew: Math.max(0, crew - T.crew), upgrades: { ...NO_UPGRADES(), ...(st.upgrades || {}) }, cargo: {}, ...(st.paint ? { paint: { ...st.paint } } : {}) });
+    st.paint = null;   // the lugger wears the nation's colours (src/data/shipColours.js)
     const taken = new Set([p.name, ...fleet.map(f => f.name)]);
     const pool = E.names.filter(n => !taken.has(n)), name = pool[Math.floor(Math.random() * pool.length)] || E.names[0];
     const x = at?.harborPoint ? at.harborPoint.x : at?.x ?? p.position.x, z = at?.harborPoint ? at.harborPoint.z : at?.z ?? p.position.z;

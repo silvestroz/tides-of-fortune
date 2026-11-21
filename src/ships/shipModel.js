@@ -19,6 +19,9 @@
 //   strikeFlag()          lowers the ensign (surrender); setFlag() re-hoists
 //   setDuelMode(bool)     carved/gilded duel set dressing on (hides ship's boat, hatches, barrels)
 //   setSailColor(hex)     re-tint canvas (e.g. black sails for a pirate flagship)
+//   setPaint({ hull, trim, sails } | null)   the player's own colours (hex): paint band and trim recoloured in the hull
+//                         shader (art/builder.js PAINT_TAG), sail cloth re-tinted; null = as built (the faction's).
+//                         Nothing cached depends on it (geometry and skin stay per type|faction). model.paint = current
 //   update() also accepts: luff 0..1 (from ship.js), rudder -1..1 (turns the rudder blade? — visual only, small)
 //                         teleportSeq (ship.teleportSeq: a change restarts the stern wake's track)
 //   Draw calls per ship: hull+spars+rigging (1), sails (1), flags (1), ensign staff (1), waterline foam (1),
@@ -290,6 +293,7 @@ export function buildShipModel(type, opts = {}) {
   if (!SHIP_SPECS[type]) type = 'brig';
   const spec = SHIP_SPECS[type];
   let faction = opts.faction || 'english';
+  const geoFaction = faction;   // the colours baked into the geometry (setPaint recolours relative to them)
   const seed = opts.seed ?? Math.floor(Math.random() * 1e9);
   const rnd = mulberry32(seed | 0);
   const T = getTypeGeo(type, faction);
@@ -585,6 +589,15 @@ export function buildShipModel(type, opts = {}) {
     },
     strikeFlag() { st.strikeTarget = 1; },
     setSailColor(hex) { su.uColor.value.set(hex); },
+    paint: null,
+    setPaint(p) {
+      if (!p) { hu.uPaintOn.value = 0; su.uColor.value.set(SAIL_COLOR); model.paint = null; return; }
+      hu.uPaint0.value.set(FACTION_PAINT[geoFaction] || FACTION_PAINT.english); hu.uTrim0.value.set(FACTION_TRIM[geoFaction] || FACTION_TRIM.english);
+      hu.uPaint1.value.set(p.hull || FACTION_PAINT[geoFaction] || FACTION_PAINT.english); hu.uTrim1.value.set(p.trim || FACTION_TRIM[geoFaction] || FACTION_TRIM.english);
+      hu.uPaintOn.value = 1;
+      su.uColor.value.set(p.sails || SAIL_COLOR);
+      model.paint = { hull: p.hull, trim: p.trim, sails: p.sails || SAIL_COLOR };
+    },
     // close-up deck dressing for the sword duel: hides boat/hatches/clutter, adds carved & gilded set dressing
     setDuelMode(on = true) {
       hu.uDuel.value = on ? 1 : 0;
@@ -605,6 +618,7 @@ export function buildShipModel(type, opts = {}) {
       if (live) { live = false; T.refs--; trimGeoCache(); }
     },
   };
+  if (opts.paint) model.setPaint(opts.paint);
   model.update(0, 0, { sailSetting: st.set });
   return model;
 }

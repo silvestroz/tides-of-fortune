@@ -335,6 +335,7 @@ export class Career {
 
   promote(nation) {
     const g = this.game, s = g.state, r = this.rankOf(nation);
+    if (s.flag === 'pirate') return null;   // no commission for a captain under the black
     if (r.next && r.merit >= r.need && r.rep >= r.minRep) {
       s.rank[nation] = r.idx + 1;
       const acres = LAND_GRANT[r.idx + 1], at = g.ports?.isOpen ? g.ports.port : null;
@@ -385,6 +386,7 @@ export class Career {
   offerMissions(port) {
     const g = this.game, s = g.state, nation = port?.faction;
     if (!port || port.haven || !NATIONS.includes(nation)) return [];
+    if (s.flag === 'pirate') return [];   // under the black: no governor employs a pirate (src/data/shipColours.js)
     const M = MISSIONS, today = this._dateNum(s.date);
     const r = mulberry32(today * 131 + port.id.length * 977 + port.name.charCodeAt(0));
     const pick = a => a[Math.floor(r() * a.length)], range = ([a, b]) => a + Math.round(r() * (b - a));
