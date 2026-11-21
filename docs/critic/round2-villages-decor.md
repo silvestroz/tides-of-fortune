@@ -6,7 +6,7 @@ Captures fraîches (rendu logiciel, `?quality=high`, 1366 × 768), branche final
 
 ## Verdict : FAIL de peu (deux retouches)
 
-| Axe | Ronde 1 | Ronde 2 | Pirates! |
+| Axe | Ronde 1 | Ronde 2 | Réf. |
 |---|---|---|---|
 | Silhouette et lisibilité à distance | 5 | 7 | 6 |
 | Matières et détail de près | 6 | 7 | 5 |

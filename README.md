@@ -19,17 +19,16 @@ https://github.com/user-attachments/assets/08863135-3381-42e2-ba97-17952717541b
 Did you ever dream of becoming a pirate? I did. A symbol of adventure, freedom, sunshine and a distant age,
 piracy brings a world full of stories that never stops fascinating.
 
-As a big fan of 2000s games, I played *Sid Meier's Pirates!*, a game whose very complete world captivated a great
-many captains. Time has passed and its graphics have stayed in their era. So why not give this kind of game a new
-lease of life, drawing on the latest advances in AI?
+As a big fan of 2000s games, I spent many hours in open-world pirate games, whose very complete worlds captivated
+a great many captains. Time has passed and their graphics have stayed in their era. So why not give this kind of
+game a new lease of life, drawing on the latest advances in AI?
 
 The project has two goals:
 
 1. bring this kind of game back with fresh graphics and a complete, playable world;
 2. adopt a light technical architecture, so that as many people as possible can play it.
 
-*Tides of Fortune* is an original game: no name, image, music, text or interface is taken from *Pirates!* or from
-any other game.
+*Tides of Fortune* is an original game: no name, image, music, text or interface is taken from any other game.
 
 ## How it plays
 
@@ -276,8 +275,8 @@ The scripted tests (`node tools/test-*.mjs`) and screenshot tools use Playwright
 - [three.js](https://threejs.org) for 3D rendering, [Vite](https://vite.dev) for the build, the Web Audio API for
   sound.
 
-*Tides of Fortune* is an independent project. It is not affiliated with or endorsed by the creators or publishers
-of *Sid Meier's Pirates!*; all trademarks belong to their respective owners.
+*Tides of Fortune* is an independent project, not affiliated with or endorsed by any other game's creators or
+publishers; all trademarks belong to their respective owners.
 
 ## Licence
 

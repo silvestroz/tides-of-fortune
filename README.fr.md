@@ -19,9 +19,9 @@ https://github.com/user-attachments/assets/08863135-3381-42e2-ba97-17952717541b
 Avez-vous rêvé de devenir un pirate ? Moi oui. Symbole d'aventure, de liberté, de soleil et d'une époque lointaine,
 le milieu de la piraterie apporte un univers riche en histoires qui fascine.
 
-En tant que grand fan de jeux des années 2000, j'ai notamment joué à *Sid Meier's Pirates!*, un jeu qui a fasciné
-de nombreux capitaines dans cet univers très complet. Le temps est passé et les graphismes sont restés dans leur
-époque, alors pourquoi ne pas donner un nouvel élan à ce genre de jeu en s'appuyant sur les dernières avancées de
+En tant que grand fan de jeux des années 2000, j'ai passé de longues heures dans des jeux de pirates en monde
+ouvert, qui ont fasciné de nombreux capitaines par leur univers très complet. Le temps est passé et les graphismes
+sont restés dans leur époque, alors pourquoi ne pas donner un nouvel élan à ce genre de jeu en s'appuyant sur les dernières avancées de
 l'IA ?
 
 L'objectif du projet est double :
@@ -29,8 +29,7 @@ L'objectif du projet est double :
 1. donner un nouveau souffle aux graphismes de ce genre de jeu, avec un univers complet et jouable ;
 2. adopter une architecture technique légère qui permette de le rendre accessible au plus grand nombre.
 
-*Tides of Fortune* est un jeu original : aucun nom, visuel, musique, texte ou interface n'est repris de *Pirates!*
-ni d'un autre jeu.
+*Tides of Fortune* est un jeu original : aucun nom, visuel, musique, texte ou interface n'est repris d'un autre jeu.
 
 ## Fil conducteur
 
@@ -288,8 +287,8 @@ Les tests scénarisés (`node tools/test-*.mjs`) et les outils de capture utilis
 - [three.js](https://threejs.org) pour le rendu 3D, [Vite](https://vite.dev) pour la construction, la Web Audio API
   pour le son.
 
-*Tides of Fortune* est un projet indépendant. Il n'est ni affilié aux créateurs ou aux éditeurs de *Sid Meier's
-Pirates!*, ni approuvé par eux ; toutes les marques appartiennent à leurs propriétaires respectifs.
+*Tides of Fortune* est un projet indépendant, ni affilié aux créateurs ou aux éditeurs d'un autre jeu, ni approuvé
+par eux ; toutes les marques appartiennent à leurs propriétaires respectifs.
 
 ## Licence
 

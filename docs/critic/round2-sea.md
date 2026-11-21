@@ -3,9 +3,9 @@
 Shots judged (fresh, SwiftShader, shots/critic2/), each compared to the matching shots/critic1/ image:
 ocean_15, ocean_183, sky_192, sky_storm, ships, ships_close, sailing_p4 (--play 4), combat, combat_sink. No console errors surfaced by the shot tool.
 HUD is now hidden in showcase shots and slimmer in gameplay (round-1 cross-issue #7 fixed, #5 mostly fixed).
-Pirates! (2004) reference = the round-1 from-memory description (unchanged).
+the reference reference = the round-1 from-memory description (unchanged).
 
-## Verdicts and scores (ours / Pirates!, delta vs round-1 ours)
+## Verdicts and scores (ours / ref., delta vs round-1 ours)
 | Axis | Ocean | Sky/post | Ships | Sailing/cam | Combat |
 |---|---|---|---|---|---|
 | Materials/texture | 8/5 (=) | 8/5 (=) | 8/6 (+1) | 7/6 (=) | 7/6 (+1) |
@@ -17,7 +17,7 @@ Pirates! (2004) reference = the round-1 from-memory description (unchanged).
 | Art-direction coherence | 8/7 (=) | 8/6 (=) | 7/8 (+1) | 8/7 (+1) | 7/8 (+1) |
 | Technical artefacts (higher=cleaner) | 7/7 (=) | 8/7 (+1) | 7/8 (+3) | 6/8 (+1) | 6/8 (+1) |
 
-- OCEAN: FAIL (very close). Beats Pirates! on look; still not clean at ship contact, and mid-range water is streaky.
+- OCEAN: FAIL (very close). Beats the reference on look; still not clean at ship contact, and mid-range water is streaky.
 - SKY/POST: FAIL (close). Storm is now a clear win; sunset sea lacks a glitter path.
 - SHIPS: FAIL (much closer). Rigging noise is gone - biggest single improvement. Hulls still read slightly thin/hovering and faction colour is only on flags.
 - SAILING/CAMERA: FAIL (close). Framing is now good (ship smaller, lower-third, enemy frigate and horizon visible, speed 8.8 kn). Hull still looks perched on the water.

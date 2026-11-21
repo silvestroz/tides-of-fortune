@@ -4,7 +4,7 @@ Shots judged (fresh, all 1600x900 unless noted): shots/critic1/isl_17.png, isl_a
 hud_default.png, hud_menu.png, hud_captain.png, hud_1366.png (1366x768). All fresh captures succeeded; no builder-shot fallback.
 I did not capture the browser console; the shot tool printed no errors.
 
-## Pirates! (2004) from memory, written before viewing
+## the reference from memory, written before viewing
 - Port approach: ship seen from behind-above, small town on a green hillside: ~10-20 chunky hand-textured colonial
   houses with terracotta roofs, a white-walled fort with cannons, church spire, a wooden pier. Whole town is visibly
   dense and readable at once, saturated, warm sun. Hills are rounded with painted grass/dirt texture, palms are
@@ -18,8 +18,8 @@ I did not capture the browser console; the shot tool printed no errors.
 - HUD / MENUS: **FAIL** (crafted and arguably better in menu and captain sheet, but the sailing HUD is too heavy,
   and there are state/bug problems visible).
 
-## Scores (1-10; ours / Pirates!)
-| Axis | Islands ours | Pirates! | HUD/Menus ours | Pirates! |
+## Scores (1-10; ours / ref.)
+| Axis | Islands ours | Ref. | HUD/Menus ours | Ref. |
 |---|---|---|---|---|
 | Materials/texturing | 6 | 6 | 8 | 6 |
 | Lighting/atmosphere | 7 (day) / 5 (night) | 6 | 7 | 5 |
@@ -32,9 +32,9 @@ I did not capture the browser console; the shot tool printed no errors.
 | Technical artefacts | 5 | 7 | 5 | 7 |
 
 ## Blind comparison
-Aerial (isl_aerial): ours wins. Turquoise shelf, sand rim, surf dots and painted cloud shadow beat the 2004 look. Weakness:
+Aerial (isl_aerial): ours wins. Turquoise shelf, sand rim, surf dots and painted cloud shadow beat the reference look. Weakness:
 the whole island is one uniform green carpet, no cleared fields, no visible town (a few red pixels at the south coast), no roads.
-Port approach (isl_17): Pirates! wins. Our town is a row of white/blue/orange boxes with no windows, doors, chimneys, or
+Port approach (isl_17): the reference wins. Our town is a row of white/blue/orange boxes with no windows, doors, chimneys, or
 trim, scattered with big gaps. The church is a plain white slab. The fort is a flat grey untextured wall. The trees are
 big smooth blobs of uniform green with hard flat shading; they read as low-poly, which the Art Bible explicitly forbids.
 The mountain is smooth, with a plasticky painted shader and no rock or cliff variation. Beach (isl_beach): ours is
@@ -44,8 +44,8 @@ Night (isl_21): moon and water glitter are strong, but the island and ships are 
 the town is represented by blown-out white-orange orbs that look like floating light bulbs, not windows or lanterns.
 
 HUD: default screen, 7 persistent elements (ledger, 3-line log, minimap, target card, condition, two gun panels, compass,
-prompt). Pirates! shows far less. Parchment skin is coherent and handsome, but it covers about 20% of the frame. The
-menu and Articles of Command sheet are better than anything in Pirates!.
+prompt). the reference shows far less. Parchment skin is coherent and handsome, but it covers about 20% of the frame. The
+menu and Articles of Command sheet are better than anything in the reference.
 
 ## Bugs seen in shots
 1. Floating brown planks (long flat brown boards hovering on the water at right, in hud_default/hud_menu/hud_1366, behind
@@ -104,4 +104,4 @@ menu and Articles of Command sheet are better than anything in Pirates!.
 
 ## WIN condition status
 Not met. Ours loses clearly on towns, trees, night, and HUD density; wins on aerial coastline, water colour, menu quality,
-and parchment-UI craft. Fix towns and trees first; that is where the average player would pick Pirates! blind.
+and parchment-UI craft. Fix towns and trees first; that is where the average player would pick the reference blind.

@@ -15,7 +15,7 @@ l'infiltration ; équipage des navires). Rendu logiciel 1600×900 = vérité ter
 - Comparaison à l'aveugle : 18 paires avant/après copiées en A/B tirés au sort, clé lue après le jugement.
 
 ## Étalon (écrit de mémoire, avant de regarder nos images)
-Pirates! (2004) : caricature assumée (têtes ~1/5,5 du corps, mentons, nez et sourcils exagérés, grosses mains), lisible
+La référence : caricature assumée (têtes ~1/5,5 du corps, mentons, nez et sourcils exagérés, grosses mains), lisible
 à 20 m. Modèles bas poly (~2–4 k triangles pour un duelliste, < 1 k pour la foule) ; tout le détail est peint dans la
 texture (rides, barbe, ombre sous le chapeau, plis, broderies), éclairage simple, pas de contour. Duel sur le pont : caméra
 de profil, deux capitaines au centre, équipage qui lève le poing ou brandit des armes en arrière-plan ; animations amples
@@ -30,7 +30,7 @@ personnages lisibles par la couleur ; équipage quasi invisible en mer.
 L'après gagne toutes les paires à l'aveugle : nettement au port (taverne 85/15, gouverneur 80/20), au bal (85/15), au
 duel de taverne (75/25), au jardin (70/30) et à l'atelier ; **de justesse seulement sur le pont** (duel 55/45, coup final
 55/45) et pour l'équipage des navires (55/45). Le travail se voit de près et au port ; à la caméra du duel sur le pont,
-écran-roi des personnages, il ne se voit presque pas. Face à Pirates!, un joueur moyen choisirait encore l'étalon
+écran-roi des personnages, il ne se voit presque pas. Face à la référence, un joueur moyen choisirait encore l'étalon
 (caricature, poses, lisibilité).
 
 | Axe | Avant | Après | Étalon |
@@ -70,7 +70,7 @@ robes en cônes lisses, galet noir du pied sous l'ourlet, lame en règle blanche
    « capsule » noire de l'oreille), le visage ennemi fait ~25 px à l'ombre du tricorne, la foule est en contre-jour :
    ovales bruns. Attendu : les deux visages de 3/4, lisibles, la foule détachée du ciel. Technique : éclairage propre aux
    personnages (lumière de face chaude côté caméra, ~0,6, et liseré froid de contre-jour sur un calque `figures`), tête de
-   la foule ×1,15, azimut de caméra plus de profil (Pirates! filme les deux bretteurs de côté). Même liseré de nuit
+   la foule ×1,15, azimut de caméra plus de profil (la référence filme les deux bretteurs de côté). Même liseré de nuit
    (`line-night` = jour assombri, sans lune). Déplacer l'étiquette « Garde médiane » hors du chapeau.
 2. **Pas de caricature : des mannequins à 7 têtes.** Corps réalistes et identiques, petites mains, jambes en échasses
    blanches, torse court (`line`, `crowd`). Attendu : stylisation « livre d'aventure » cohérente. Technique : échelles
@@ -118,7 +118,7 @@ robes en cônes lisses, galet noir du pied sous l'ourlet, lame en règle blanche
     boucle, parements à 16 segments (LOD), galons biseautés.
 12. **Petits personnages (attaque de ville, infiltration, équipage).** À 15–20 px seule la couleur se lit : capitaine
     = tache rouge dans un anneau, garde = sac jaune, équipage = 3 points (`after3/sneak`, `z_land`, `ships_close`).
-    Attendu : silhouettes-signes. Technique : échelle ×1,3 (Pirates! grossit ses figurines), tricorne large, mousquet en
+    Attendu : silhouettes-signes. Technique : échelle ×1,3 (la référence grossit ses figurines), tricorne large, mousquet en
     diagonale qui casse la colonne, baudriers blancs en X ; capitaine de l'infiltration avec cape et chapeau clairs et un
     rebond de marche ; équipage un peu plus gros, chemises blanches et bonnets rouges, poses de travail (haler).
 

@@ -4,13 +4,13 @@ Captures fraîches (rendu logiciel, `?quality=high`, 1366 × 768), dossier de tr
 `v_cayman_sea` (10 h), `v_cayman_close` (16 h 30), `v_redes_sea` (8 h 30), `v_andros_close` (19 h 12), `v_ponton`
 (feuille du village ouverte, 11 h).
 
-Repère Pirates! (2004), de mémoire : pas de village de pêcheurs ; les petites colonies sont quelques maisons basses
+Repère de référence, de mémoire : pas de village de pêcheurs ; les petites colonies sont quelques maisons basses
 autour d'un fort, vues de la mer comme des taches claires au pied des collines. À battre : silhouette lisible à 200 m,
 vie (fumée, barques), lumière du soir.
 
 ## Verdict : FAIL
 
-| Axe | Nous | Pirates! |
+| Axe | Nous | Réf. |
 |---|---|---|
 | Silhouette et lisibilité à distance | 5 | 6 |
 | Matières et détail de près | 6 | 5 |

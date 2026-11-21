@@ -1,10 +1,10 @@
 # Tides of Fortune — Art Bible & Team Rules
 
-Original game. Genre: open-world pirate/privateer life sim (same genre as Sid Meier's Pirates! 2004).
-**No names, art, UI, music or text from Pirates! or any other game.** Original everything.
+Original game. Genre: open-world pirate/privateer life sim.
+**No names, art, UI, music or text from any other game.** Original everything.
 
 ## Target
-Every screen should beat Sid Meier's Pirates! (2004) side by side, blind. Reference for what we must beat:
+Every screen should beat the genre's reference look side by side, blind. What we must beat:
 bright saturated Caribbean, textured wooden hulls with painted strakes and gilded sterns, billowing cream sails
 with visible seams, Gerstner-ish blue water with sun glitter and white wakes, lush green islands with sand rims,
 palm trees, small colonial towns with forts, strong warm sunlight, cartoonish-but-detailed proportions.

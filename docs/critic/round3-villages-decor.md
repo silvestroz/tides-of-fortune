@@ -6,7 +6,7 @@ Captures fraîches (rendu logiciel, 1366 × 768), branche finale `ui-cta`, dossi
 
 ## Verdict : WIN
 
-| Axe | Ronde 1 | Ronde 2 | Ronde 3 | Pirates! |
+| Axe | Ronde 1 | Ronde 2 | Ronde 3 | Réf. |
 |---|---|---|---|---|
 | Silhouette et lisibilité à distance | 5 | 7 | 8 | 6 |
 | Matières et détail de près | 6 | 7 | 8 | 5 |
@@ -16,7 +16,7 @@ Captures fraîches (rendu logiciel, 1366 × 768), branche finale `ui-cta`, dossi
 | Cohérence avec la direction artistique | 7 | 8 | 8 | 7 |
 | Artefacts techniques | 6 | 7 | 8 | 7 |
 
-Pirates! n'a pas d'escale de ce genre : la comparaison porte sur ses petites colonies vues de la mer. Le village se lit
+La référence n’a pas d'escale de ce genre : la comparaison porte sur ses petites colonies vues de la mer. Le village se lit
 comme un hameau de pêcheurs à 150 m (cases groupées, carbet, ponton et lanterne, pirogues, fumées) ; au soleil couchant
 (`v_swan_close`) les lanternes, la barque amarrée et les rondins de Bois-Flotté composent un vrai tableau.
 

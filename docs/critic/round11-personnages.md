@@ -12,7 +12,7 @@ excusé par le moteur de rendu.
 - Atelier, après : `shots/round11/lab-final/{line,faces,profile,crowd,fists,expr,portraits,line-night,duel}.png`
   (chemins relatifs à `/home/claude/tides-of-fortune/`)
 
-## Étalon : Pirates! (2004), de mémoire (écrit avant de voir nos images)
+## Étalon : la référence, de mémoire (écrit avant de voir nos images)
 Duel : deux bretteurs de profil sur un pont, dans une taverne ou un salon, caméra à mi-distance un peu basse. Modèles
 bas-poly (environ 3 000 à 5 000 triangles), proportions de caricature (grosse tête, menton, mains épaisses), textures
 diffuses peintes à la main avec ombrage cuit, yeux et bouche peints, cheveux en casque texturé. **Animation très vivante**
@@ -55,7 +55,7 @@ choisirait pas l'après 9 fois sur 10 sur ces scènes.
 Progrès réel par rapport à la ronde 8, mais l'étalon reste devant en lisibilité, poses, silhouettes et cohérence, et
 l'après contient un bug bloquant (capitaine invisible dans l'infiltration).
 
-| Axe | Avant (r8) | Après (r11) | Étalon (2004) |
+| Axe | Avant (r8) | Après (r11) | Étalon |
 |---|---|---|---|
 | Matières, textures | 5 | 5 | 6 |
 | Éclairage, modelé | 5 | 6 | 5 |

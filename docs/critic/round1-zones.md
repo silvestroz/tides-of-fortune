@@ -4,13 +4,13 @@ Captures fraîches (rendu logiciel, `?quality=low`, 1366 × 768), dossier de tra
 `map_wide`, `map_fr` (carte M, calque « Eaux et dangers »), `hud` (devant La Havane, frégate espagnole en cible),
 `hud_edge` (bord des eaux gardées), `governor`, `shipyard` (ligne « Classe »), `combat` (étiquettes des navires).
 
-Repère Pirates! (2004), de mémoire : la carte du monde ne montre ni niveau de mer ni danger ; on lit la menace au type
+Repère de référence, de mémoire : la carte du monde ne montre ni niveau de mer ni danger ; on lit la menace au type
 de navire (silhouette, nom du type au-dessus du navire, nombre de canons dans la fiche de la longue-vue). Rien
 n'indique au joueur débutant qu'une zone est trop dure pour lui : il l'apprend en coulant.
 
 ## Verdict : FAIL
 
-| Axe | Nous | Pirates! |
+| Axe | Nous | Réf. |
 |---|---|---|
 | Lisibilité de la menace (fiche cible, étiquettes) | 7 | 6 |
 | Carte : zones et dangers | 6 | 3 |

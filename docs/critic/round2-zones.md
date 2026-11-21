@@ -7,7 +7,7 @@ hostile en cible, message et conseil d'entrée en mers périlleuses émis), `pla
 
 ## Verdict : FAIL (une correction visuelle, une vérification)
 
-| Axe | Ronde 1 | Ronde 2 | Pirates! |
+| Axe | Ronde 1 | Ronde 2 | Réf. |
 |---|---|---|---|
 | Lisibilité de la menace (fiche cible, étiquettes) | 7 | 8 | 6 |
 | Carte : zones et dangers | 6 | 7 | 3 |

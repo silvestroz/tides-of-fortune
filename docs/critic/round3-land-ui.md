@@ -7,8 +7,8 @@ hud_default.png, hud_menu.png (vs shots/critic2/ equivalents). NOT captured in t
 - ISLANDS / TOWNS: **FAIL, close** (town now reads as a town; trees/church/density still short of a clear 9-in-10 win).
 - HUD / MENUS: **WIN on main menu and sailing HUD at 1600x900; 1366 unverified** -> overall FAIL by protocol until 1366 is seen, but I expect it to pass.
 
-## Scores (ours / Pirates!, delta vs round 2)
-| Axis | Islands | Pirates! | delta | HUD/Menus | Pirates! | delta |
+## Scores (ours / ref., delta vs round 2)
+| Axis | Islands | Ref. | delta | HUD/Menus | Ref. | delta |
 |---|---|---|---|---|---|---|
 | Materials | 7.5 | 6 | +0.5 | 8 | 6 | 0 |
 | Lighting | 8 day / 7 night (unverified) | 6 | 0 | 8 | 5 | +1 |
@@ -40,7 +40,7 @@ HUD/Menus:
 4. Fort in hud_default still has no cannons or flag.
 
 ## Blind verdict
-Main menu: ours clearly beats Pirates! (typography, atmosphere, flags); 9 of 10 players pick ours. Sailing HUD: ours ahead on craft, parity on clarity; about 7 of 10 pick ours. Island close-up: ours wins on sky, water, relief; Pirates! still edges chunky readability and town life; about 6 of 10 pick ours. Overall an average player picks ours over Pirates! 2004 for these screens, confidence about 70 percent (lower because aerial, night and 1366 were not re-shot).
+Main menu: ours clearly beats the reference (typography, atmosphere, flags); 9 of 10 players pick ours. Sailing HUD: ours ahead on craft, parity on clarity; about 7 of 10 pick ours. Island close-up: ours wins on sky, water, relief; the reference still edges chunky readability and town life; about 6 of 10 pick ours. Overall an average player picks ours over the reference for these screens, confidence about 70 percent (lower because aerial, night and 1366 were not re-shot).
 
 ## Addendum: hud_1366.png judged (shots/critic3/hud_1366.png)
 Layout holds at 1366x768, nothing overlaps or clips. Log, header and target text are legible (about 11 px); bar percentages and the minimap caption are still small (about 9 px) but readable. HUD/Menus: now PASS (WIN) on all three captured views. Remaining: minimap caption size, log fade unconfirmed, fort has no cannons.

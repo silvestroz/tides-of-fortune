@@ -5,7 +5,7 @@ ships.png, ships_close.png, sailing_p4.png (--play 4), combat.png, combat_sink.p
 Console: shot tool printed no errors for any run. Note: the --shot ocean/sky showcase frames show the sailing HUD, with an empty
 minimap/captain plate (placeholder "—" values) — showcase-only, not scored.
 
-## Pirates! (2004) from memory (written BEFORE viewing our images)
+## the reference from memory (written BEFORE viewing our images)
 - Ocean: saturated cyan/turquoise, soft low swell, sparkly sun glint, white wake foam, lighter turquoise shallows around islands,
   slightly flat shader look, no real reflections, soft pale horizon haze.
 - Sky: bright blue gradient, puffy cartoon cumulus billboards, strong warm sun, orange/pink sunsets; cheerful, dated, little post.
@@ -14,7 +14,7 @@ minimap/captain plate (placeholder "—" values) — showcase-only, not scored.
 - Sailing cam: chase cam behind/above, ship lower-centre, wake behind, ship pitches/rolls on the swell, wind/compass HUD.
 - Combat: puffy grey broadside smoke, muzzle flashes, splashes, splinters, torn sails, damage decals, sinking ship tilts and goes under.
 
-## Scores (1–10, ours / Pirates!)
+## Scores (1–10, ours / ref.)
 | Axis | Ocean | Sky/light/post | Ships | Sailing/cam | Combat VFX |
 |---|---|---|---|---|---|
 | Materials/texture fidelity | 8 / 5 | 8 / 5 | 7 / 6 | 7 / 6 | 6 / 6 |
@@ -27,10 +27,10 @@ minimap/captain plate (placeholder "—" values) — showcase-only, not scored.
 | Technical artefacts (higher=cleaner) | 7 / 7 | 7 / 7 | 4 / 8 | 5 / 8 | 5 / 8 |
 
 ## Verdicts
-- OCEAN: FAIL (close — best system). Beats Pirates! on look, but the horizon/world-edge and ship contact are not clean (see fixes).
-- SKY/LIGHT/POST: FAIL (close). Golden hour and storm are better than Pirates! blind; but ship/rigging aliasing and a few softness issues
+- OCEAN: FAIL (close — best system). Beats the reference on look, but the horizon/world-edge and ship contact are not clean (see fixes).
+- SKY/LIGHT/POST: FAIL (close). Golden hour and storm are better than the reference blind; but ship/rigging aliasing and a few softness issues
   keep "every axis" from holding.
-- SHIPS: FAIL. Close-up stern is gorgeous, but at gameplay distance rigging/ratline noise, floating hulls and sail/hull sizing lose to Pirates!' clean silhouettes.
+- SHIPS: FAIL. Close-up stern is gorgeous, but at gameplay distance rigging/ratline noise, floating hulls and sail/hull sizing lose to the reference's clean silhouettes.
 - SAILING/CAMERA: FAIL. Chase framing is decent; ship hovers above the water and the idle/no-input camera is static (--play 4 frame is good, but ship is too large and clips the HUD zone).
 - COMBAT: FAIL. Smoke is good, but muzzle/hit feedback is small at range, sinking looks like a mast-farm with no hull, and no cinematic composition.
 Average player blind 9/10: oceans and skies yes; ships/combat no.
@@ -54,7 +54,7 @@ parallel streak at left (ocean_15, left of the ship), reads like a UV/trail arte
 
 ### 2. Sky / lighting / post (src/world/sky*, src/core/post.js, src/post/)
 Observed: sky_192 — excellent golden hour; sun disk with bloom, painterly clouds with pink underlight, island rim-lit. This clearly beats
-Pirates!. sky_storm — convincing dark cumulonimbus, lightning bolt, rain streaks, grey-green desaturated fog. Problems: (a) the lightning
+the reference. sky_storm — convincing dark cumulonimbus, lightning bolt, rain streaks, grey-green desaturated fog. Problems: (a) the lightning
 bolt is a thin flat white polyline pasted in sky with no cloud illumination or flash on the scene (storm); (b) at 19.2 the sea mid-ground
 becomes a muddy purple-brown with low contrast; the sun reflection column is weak under the sun disk; (c) post sharpens/aliases thin
 rigging into black dotted noise (see ships); (d) cloud shapes in sky_192 are flat pink blobs with hard-ish edges; (e) clouds at

@@ -6,7 +6,7 @@ Captures : `shots/round8/before/` (scènes du jeu, 1600×900, rendu logiciel) et
 de ville et de l'infiltration, les médaillons des interlocuteurs du port.
 
 ## Étalon (de mémoire, avant de regarder nos images)
-Pirates! (2004) : personnages trapus et caricaturés, grosses têtes et grosses mains, visages expressifs d'un seul tenant
+la référence : personnages trapus et caricaturés, grosses têtes et grosses mains, visages expressifs d'un seul tenant
 (nez, pommettes et menton modelés, bouche animée), vêtements texturés avec plis et relief, femmes du bal reconnaissables
 au premier coup d'œil (corsage, décolleté, coiffure), animations souples sans cassure aux coudes et aux genoux ; portraits
 d'interlocuteurs peints, cohérents avec les modèles.

@@ -5,11 +5,11 @@ hud_1366.png (1366x768). Compared against shots/critic1/ equivalents. hud_captai
 Note: islands shots are now nohud, so round-1 bug 2 (blank HUD in showcase) is fixed by removal.
 
 ## Verdicts
-- ISLANDS / TOWNS / VEGETATION: **FAIL** (big jump; ahead of Pirates! on coast, aerial, night mood; still behind on tree shape, town density/readability, beach ground).
+- ISLANDS / TOWNS / VEGETATION: **FAIL** (big jump; ahead of the reference on coast, aerial, night mood; still behind on tree shape, town density/readability, beach ground).
 - HUD / MENUS: **FAIL, but close** (sailing HUD now restrained and populated; new defects are the fort/pier geometry that the HUD shot frames, and tiny text at 1366).
 
-## Scores (ours / Pirates!, delta vs round 1)
-| Axis | Islands ours | Pirates! | delta | HUD/Menus ours | Pirates! | delta |
+## Scores (ours / ref., delta vs round 1)
+| Axis | Islands ours | Ref. | delta | HUD/Menus ours | Ref. | delta |
 |---|---|---|---|---|---|---|
 | Materials/texturing | 7 | 6 | +1 | 8 | 6 | 0 |
 | Lighting/atmosphere | 8 day / 7 night | 6 | +1 / +2 | 7 | 5 | 0 |
@@ -46,11 +46,11 @@ HUD/Menus:
 8. Menu items: FIXED visibly (left list, dim Continue with hint). Hint still about 8 px. 1366 Articles layout not tested.
 
 ## Blind comparison
-isl_17: Ours now wins on sky, water, mountain relief, fort and church silhouette; Pirates! still wins on town density and chunky readability. Close. Trees at about 20 identical lollipops still read low-poly.
-Aerial: ours wins decisively (cloud haze is heavier than round 1 and slightly washes the frame, but the reef, sand and town fields beat 2004).
-Beach: ours is prettier than Pirates! in water and sky; vegetation edge is jagged and the ground is empty. Pirates! lacks this water, so it is a narrow ours win.
+isl_17: Ours now wins on sky, water, mountain relief, fort and church silhouette; the reference still wins on town density and chunky readability. Close. Trees at about 20 identical lollipops still read low-poly.
+Aerial: ours wins decisively (cloud haze is heavier than round 1 and slightly washes the frame, but the reef, sand and town fields beat the reference).
+Beach: ours is prettier than the reference in water and sky; vegetation edge is jagged and the ground is empty. the reference lacks this water, so it is a narrow ours win.
 Night: ours wins clearly.
-HUD: ours now at parity with Pirates! on density, ahead on craft. The giant brick fort and plank piers in the frame are the worst artefacts left in the whole HUD shot.
+HUD: ours now at parity with the reference on density, ahead on craft. The giant brick fort and plank piers in the frame are the worst artefacts left in the whole HUD shot.
 
 ## Ranked fix list (at most 6)
 1. Fort geometry as seen in hud shots (towns/builder.js): the foreground fort is a pale Lego-brick pile with oversized merlons and a single black cannon box. Use a darker weathered stone texture with mortar lines scaled in metres, merlons 1/3 the current size and evenly spaced, a parapet walk, 3-4 visible cannon barrels with carriages, and a flag. Keep the same asset at distance and close.
