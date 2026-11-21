@@ -206,7 +206,7 @@ void main() {
   // March from this water point toward the sun (shadow) and away from the camera (reflection): a ray leaving the water
   // at elevation e reaches height d*tan(e) after d metres, so hitting the hull footprint at a low height = hull, higher =
   // the sails standing over it. Cheap (6+6 taps, only inside the wake window), and the ship stops floating above the sea.
-  float shipSh = 0.0, reflHull = 0.0, reflSail = 0.0;
+  float shipSh = 0.0, reflHull = 0.0;
   {
     vec2 wuv0 = ( vWorld.xz - uWakeCenter ) / uWakeExtent + 0.5;
     if ( wuv0.x > 0.02 && wuv0.y > 0.02 && wuv0.x < 0.98 && wuv0.y < 0.98 && dist < 900.0 ) {
@@ -224,13 +224,14 @@ void main() {
       vec2 vd = -toCam.xz; float vl = length( vd );
       vd = vl > 1e-3 ? vd / vl : vec2( 0.0, 1.0 );
       float tanE = toCam.y / max( vl, 1.0 );
+      // ripple-broken: the mask is the hull's footprint, so a crisp march draws a box, not the ship
       #ifdef OCEAN_ULTRA
-        vec2 rj = N.xz * mix( 2.6, 1.0, rFar0 );
+        vec2 rj = N.xz * mix( 4.5, 1.6, rFar0 );
       #else
-        vec2 rj = N.xz * mix( 4.0, 1.5, rFar0 );
+        vec2 rj = N.xz * mix( 5.0, 2.0, rFar0 );
       #endif
       // march up to the rig's height; dithered start + continuous weights so the mirrored shape has no stair steps
-      float dMax = min( 30.0 / max( tanE, 0.05 ), 80.0 );
+      float dMax = min( 7.0 / max( tanE, 0.05 ), 80.0 );   // the hull only (the sails' footprint mirrored as a pale box was dropped)
       float dj = hash12( floor( vWorld.xz * 3.0 ) ) ;
       #ifdef OCEAN_ULTRA
         #define REFL_STEPS 18   // ultra: finer march, crisper mirrored hull/sails
@@ -241,11 +242,10 @@ void main() {
         float d = ( float( i ) + dj ) / float( REFL_STEPS ) * dMax;
         float h = d * tanE;
         float m = texture2D( uWakeTex, wuv0 + ( vd * d + rj ) / uWakeExtent ).a;
-        reflHull = max( reflHull, m * ( 1.0 - smoothstep( 3.5, 6.0, h ) ) );
-        reflSail = max( reflSail, m * smoothstep( 4.0, 7.0, h ) * ( 1.0 - smoothstep( 14.0, 30.0, h ) ) );
+        reflHull = max( reflHull, m * ( 1.0 - smoothstep( 1.0, 6.0, h ) ) );   // dark hull, fading as it leaves the waterline
       }
       float rFade = 1.0 - altF * 0.6;
-      reflHull *= rFade; reflSail *= rFade;
+      reflHull *= rFade;
       shipSh *= lightUp;
     }
   }
@@ -303,9 +303,8 @@ void main() {
   // (less flattening re-printed ripple-scale cloud reflections as stripes from the battle camera: keep 0.75)
   refl = mix( refl, mix( uSkyHorizon, uSkyZenith, 0.6 ) * 0.8, altF * 0.75 );
   // mirrored ship: dark wet hull just below the waterline, pale canvas further out (rippled by the surface normal)
-  refl = mix( refl, vec3( 0.06, 0.035, 0.02 ) * ( uAmbient + uLightCol * 0.3 ), reflHull * 0.85 );
-  refl = mix( refl, vec3( 0.8, 0.74, 0.62 ) * ( uAmbient * 0.6 + uLightCol * 0.4 ), reflSail * ( 1.0 - reflHull ) * 0.45 );
-  col = mix( col, refl, max( F, reflHull * 0.3 + reflSail * 0.1 ) );
+  refl = mix( refl, vec3( 0.06, 0.035, 0.02 ) * ( uAmbient + uLightCol * 0.3 ), reflHull * 0.6 );
+  col = mix( col, refl, max( F, reflHull * 0.2 ) );
   col *= 1.0 - shipSh * 0.28;   // shaded water under the ship's shadow (ambient as well, painterly)
 
   // ---- sun / moon specular + glitter ----
