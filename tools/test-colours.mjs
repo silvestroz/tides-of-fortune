@@ -82,14 +82,14 @@ await ev(() => { document.querySelector('.pcol-body').scrollTop = 0; });
 await shot('02-repainted-quay');
 
 // 4. through a flagship swap: each ship keeps her own colours
-await click('[data-act="fl-flag"][data-n="2"]'); await frames(2);
+await click('[data-act="fl-flag"][data-n="2"]'); await frames(2); await click('[data-act="fl-flag"][data-n="2"]'); await frames(2);   // preview, then Confirm
 const sw1 = await ev(() => ({ type: __game.player.type, paint: __game.state.paint, f2: __game.state.fleet[2].paint, f2type: __game.state.fleet[2].type }));
 const ps = await modelPaint('player');
 check('swap: the frigate in the nation’s colours, the brig keeps hers in the squadron', sw1.type === 'frigate' && !sw1.paint && lc(sw1.f2?.hull) === HULL && lc(ps.hull) === '#b8302a', JSON.stringify(sw1) + ' ' + ps.hull);
 await click('.fl-pick[data-n="2"]'); await frames(2);
 const qf = await modelPaint('quay');
 check('the brig picked in the squadron shows her paint at the quay', lc(qf?.hull) === HULL && lc(qf.sails) === '#a8714a', JSON.stringify(qf));
-await click('[data-act="fl-flag"][data-n="2"]'); await frames(2);
+await click('[data-act="fl-flag"][data-n="2"]'); await frames(2); await click('[data-act="fl-flag"][data-n="2"]'); await frames(2);   // preview, then Confirm
 const sw2 = await ev(() => ({ type: __game.player.type, paint: __game.state.paint, f2: __game.state.fleet[2].paint }));
 const pb = await modelPaint('player');
 check('swap back: the brig is flagship again in her colours', sw2.type === 'brig' && lc(sw2.paint?.hull) === HULL && !sw2.f2 && lc(pb.hull) === HULL, JSON.stringify(sw2));
