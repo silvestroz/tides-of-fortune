@@ -28,6 +28,8 @@ import { health, scoreBreakdown } from '../../game/retirement.js';
 import { relation } from '../../combat/factions.js';
 import { ensureFleet, FLEET, crewMaxOf, holdCapOf, holdUsedOf, salePrice, repairCost } from '../../game/fleet.js';   // squadron
 import { provisionDays, fmtDays } from '../resourceBar.js';   // provisions shown in days at sea, as in the resource band
+import { shipStats, flagStats, COMPARE_ROWS, bestOf, flagshipPreview } from '../../game/fleetCompare.js';   // squadron: specs, comparison, swap preview
+import { PAINT, FLAG, playerPaint, paintOf, paintLook, defaultPaint, samePaint, daysUnderBlack } from '../../data/shipColours.js';   // the Colours card
 
 const LOCS = [
   ['market', 'Market', 'Buy and sell'],
@@ -88,7 +90,8 @@ export class PortScreen {
   }
 
   open(port, tab) {
-    this.port = port; this.isOpen = true; this.tab = tab || 'harbour'; this.sel = null; this.fleetSel = null; this.xferSel = null; this._sellArm = null;
+    this.port = port; this.isOpen = true; this.tab = tab || 'harbour'; this.sel = null; this.fleetSel = null; this.xferSel = null; this._sellArm = null; this._flagArm = null;   // _flagArm: flagship swap preview (squadron)
+    this.paintSel = null; this._ensignArm = null;   // Colours card: repaint being previewed, flag change (ensign) armed
     this.el.classList.add('show');
     this.render();
   }
@@ -119,11 +122,11 @@ export class PortScreen {
   // (new, intact), a ship of the squadron (its own damage) or the flagship (its damage, after refit/purchase).
   _yardShip() {
     const g = this.game, pl = g.player, st = g.state;
-    const f = this.fleetSel != null ? st.fleet?.[this.fleetSel] : null;
-    if (f) return { type: f.type, faction: pl?.faction, name: f.name, damage: { hull: 1 - (f.hull ?? 1), sails: 1 - (f.sails ?? 1) }, wear: HULL_WEAR.base };
+    const f = this.fleetSel != null ? st.fleet?.[this.fleetSel] : null, nat = st.nationality || 'english';   // paint: each ship her own colours
+    if (f) return { type: f.type, faction: pl?.faction, name: f.name, damage: { hull: 1 - (f.hull ?? 1), sails: 1 - (f.sails ?? 1) }, wear: HULL_WEAR.base, paint: paintLook(paintOf(f.paint, nat)) };
     const sel = this.sel && SHIP_SPECS[this.sel] ? this.sel : pl?.type;
-    if (!pl || sel !== pl.type) return { type: sel || 'brig', faction: pl?.faction, name: '', damage: { hull: 0, sails: 0 }, wear: HULL_WEAR.yardNew };
-    return { type: pl.type, faction: pl.faction, name: pl.name, damage: { hull: 1 - pl.hull / pl.hullMax, sails: 1 - pl.sails }, wear: playerWear(st) };
+    if (!pl || sel !== pl.type) return { type: sel || 'brig', faction: pl?.faction, name: '', damage: { hull: 0, sails: 0 }, wear: HULL_WEAR.yardNew, paint: paintLook(pl ? playerPaint(st, pl.faction) : defaultPaint(nat)) };   // a new hull is painted in your colours
+    return { type: pl.type, faction: pl.faction, name: pl.name, damage: { hull: 1 - pl.hull / pl.hullMax, sails: 1 - pl.sails }, wear: playerWear(st), paint: paintLook(this.paintSel ? paintOf(this.paintSel, nat) : playerPaint(st, pl.faction)) };
   }
   _syncYard() {
     const S = this.sys.stage, sc = S?.kind === 'shipyard' ? S.cur : null;
@@ -226,6 +229,7 @@ export class PortScreen {
   // the master shipwright speaks of the ship shown at the quay (a new type on the slipway, or one of the squadron)
   _yardLine() {
     const pl = this.game.player, st = this.game.state;
+    if (this.paintSel && this.fleetSel == null && !(this.sel && this.sel !== pl?.type)) return { who: 'The master painter', text: '“Picture her in these colours, captain. Say the word and my men will have her scraped and painted by tomorrow.”' };
     const f = this.fleetSel != null ? st.fleet?.[this.fleetSel] : null;
     if (f) {
       const h = Math.round((f.hull ?? 1) * 100), ty = (TYPE_NAMES[f.type] || 'ship').toLowerCase();
@@ -407,28 +411,83 @@ export class PortScreen {
         <h3>${REFIT_ICONS.shot} Special shot</h3>
         ${[['chain', 'Chain shot', 'Cuts sails and rigging, shorter range'], ['grape', 'Grapeshot', 'Sweeps the decks before boarding, short range']].filter(([k]) => s.ammoLocked(k)).map(([k, n, d]) => `<div class="up"><span class="uico"><svg class="ri" viewBox="0 0 32 32" aria-hidden="true">${AMMO_ART[k]}</svg></span><span class="ut">${n}<em>${d}</em></span><span class="pips"></span><button class="btn sm" data-act="buyammo" data-k="${k}" ${st.gold < s.ammoPrice(k) ? 'disabled' : ''}>${coin}${fmt(s.ammoPrice(k))}</button></div>`).join('')}
       </div>` : ''}
+      ${this._colours()}
       <div class="card">
         <h3>${GLYPH.anchor} Ships on the slipway</h3>
         <div class="shiptabs">${yardTypes(this.port, pl?.type).map(t => `<button class="stype${t === sel && this.fleetSel == null ? ' sel' : ''}${t === pl?.type ? ' own' : ''}" data-ship="${t}">${TYPE_NAMES[t]}</button>`).join('')}</div>
+        ${this.fleetSel != null && st.fleet?.[this.fleetSel] ? this._fleetSpecs(this.fleetSel) : `
         ${sel !== pl?.type && this.fleetSel == null ? `<div class="oncale"><b>On the slipway</b><span>A new ${TYPE_NAMES[sel].toLowerCase()}, at the quay for a look · <span class="kc">⚓</span> your ship</span></div>` : ''}
         <div class="shiprow"><div class="shipview">${SHIP_SIL(sel)}</div>
-        <div class="specs">${(() => { const o = SHIP_SPECS[pl?.type] || spec, own = sel === pl?.type;
+        <div class="specs">${(() => { const own = sel === pl?.type, fe = this._flagEff(), o = fe || shipStats(sel), n = own && fe ? fe : shipStats(sel);   // your ship as she is (refits counted); a new hull bare, against her
           const d = (a, b, inv) => own || a === b ? '' : `<em class="${(a > b) !== !!inv ? 'up' : 'dn'}">${a > b ? '+' : '−'}${String(+Math.abs(a - b).toFixed(1))}</em>`;
-          const kn = x => Math.round(x * 1.944);
-          return `<div class="cls"><span>Class</span><b title="Power class (guns and hull): in guarded waters, pirates stay a match for you; in perilous seas, nothing holds them back">${CLASS_NAMES[classOf(sel) - 1]}${own || classOf(sel) === classOf(pl?.type) ? '' : `<em class="${classOf(sel) > classOf(pl?.type) ? 'up' : 'dn'}">${classOf(sel) > classOf(pl?.type) ? '+' : '−'}${Math.abs(classOf(sel) - classOf(pl?.type))}</em>`}</b></div>` + [['Guns', spec.guns, o.guns], ['Hull', spec.hull, o.hull], ['Crew', spec.crewMax, o.crewMax], ['Hold', CARGO_CAPACITY[sel], CARGO_CAPACITY[pl?.type] ?? CARGO_CAPACITY[sel]], ['Speed', kn(spec.maxSpeed), kn(o.maxSpeed), ' knots'], ['Draught', spec.navDraft ?? spec.draft, o.navDraft ?? o.draft, ' m', true]]
+          return `<div class="cls"><span>Class</span><b title="Power class (guns and hull): in guarded waters, pirates stay a match for you; in perilous seas, nothing holds them back">${CLASS_NAMES[classOf(sel) - 1]}${own || classOf(sel) === classOf(pl?.type) ? '' : `<em class="${classOf(sel) > classOf(pl?.type) ? 'up' : 'dn'}">${classOf(sel) > classOf(pl?.type) ? '+' : '−'}${Math.abs(classOf(sel) - classOf(pl?.type))}</em>`}</b></div>` + [['Guns', n.guns, o.guns], ['Hull', n.hullMax, o.hullMax], ['Crew', n.crewMax, o.crewMax], ['Hold', n.hold, o.hold], ['Speed', n.speed, o.speed, ' knots'], ['Draught', n.draught, o.draught, ' m', true]]
             .map(([l, a, b, u, inv]) => `<div><span>${l}</span><b>${String(a)}${u || ''}${d(a, b, inv)}</b></div>`).join('')
             + `<div><span>Rig</span><b>${{ square: 'square', 'fore-aft': 'fore-and-aft', mixed: 'mixed' }[SHIP_TYPES[sel]?.rig] || '—'}</b></div>`; })()}</div></div>
         ${sel === pl?.type ? `<div class="own-note">${(s => s[0].toUpperCase() + s.slice(1))(yourShip(sel))}, taken in part exchange for ${coin}${fmt(trade)}.</div>`
-          : `<div class="buyship"><span>${coin}${fmt(SHIP_PRICES[sel])} less part exchange ${fmt(trade)}</span><button class="btn seal" data-act="buyship" data-type="${sel}" ${st.gold < price ? 'disabled' : ''}>${price >= 0 ? `Buy · ${fmt(price)}` : `Exchange · +${fmt(-price)}`}</button></div>`}
+          : `<div class="buyship"><span>${coin}${fmt(SHIP_PRICES[sel])} less part exchange ${fmt(trade)}</span><button class="btn seal" data-act="buyship" data-type="${sel}" ${st.gold < price ? 'disabled' : ''}>${price >= 0 ? `Buy · ${fmt(price)}` : `Exchange · +${fmt(-price)}`}</button></div>`}`}
       </div>
       ${this._fleet()}`;
+  }
+
+  // ---------------- colours (2026-11-21; actions: PortSystem.repaint / hoistBlack / pardon, data: src/data/shipColours.js) ----------------
+  // Paint: schemes, band and trim pigments, sail cloth, previewed on the ship at the quay before paying. Flag: the
+  // consequences in full, then a two-step confirm (as the squadron's Sell → Confirm).
+  _colours() {
+    const g = this.game, s = this.sys, st = g.state, pl = g.player;
+    if (!pl) return '';
+    const nat = st.nationality || 'english', cur = playerPaint(st, pl.faction), sel = this.paintSel ? paintOf(this.paintSel, nat) : cur;
+    const cost = s.paintCost(sel), changed = !samePaint(sel, cur), lc = x => String(x).toLowerCase();
+    const uniq = a => [...new Map(a.map(o => [lc(o.hex), o])).values()];
+    const bands = uniq([...PAINT.presets.map(p => ({ hex: p.hull, name: p.name.split(' and ')[0] })), ...PAINT.palette]);
+    const trims = uniq([...PAINT.presets.map(p => ({ hex: p.trim, name: `${p.name.split(' ')[0]} trim` })), ...PAINT.palette]);
+    const sw = (act, o, on) => `<button class="pt-sw${on ? ' on' : ''}" data-act="${act}" data-k="${o.hex}" data-fk="${act}${o.hex.slice(1)}" title="${esc(o.name)}" aria-label="${esc(o.name)}" style="--c:${o.hex}"></button>`;
+    const pre = PAINT.presets.map(p => `<button class="pt-pre${lc(p.hull) === lc(sel.hull) && lc(p.trim) === lc(sel.trim) ? ' on' : ''}" data-act="pt-pre" data-k="${p.id}"><i style="--a:${p.hull};--b:${p.trim}"></i><span>${p.name}</span></button>`).join('');
+    const flag = st.flag === 'pirate', arm = this._ensignArm;
+    let fl;
+    if (!flag) {
+      const h = s.hoistInfo(), N = nationPeople(h.nation);
+      fl = `<p class="ink small">Hoist the black and you sail as a pirate: the warships of every nation hunt you and their ports treat you as one, while the havens of the Brethren of the Coast welcome you. The paint stays as it is.</p>
+        <ul class="pt-cons">
+          <li>Reputation with the ${N}: <b class="dn">−${Math.abs(h.own)}</b>, with every other nation: <b class="dn">−${Math.abs(h.other)}</b></li>
+          <li>The Brethren of the Coast take you in: <b class="pt-gain">+${FLAG.pirateWelcome}</b> with the pirates</li>
+          ${h.letters.length ? `<li>Your letters of marque (${h.letters.map(nationAdj).join(', ')}) are void</li>` : ''}
+          <li>No governor offers you missions, promotions or letters while you fly it</li>
+          <li>Coming back costs a pardon: from ${fmt(FLAG.pardonBase)} gold (more for every day under the black), ${Math.round(FLAG.pardonHours / 24)} days, <b class="dn">−${Math.abs(FLAG.pardonPirateRep)}</b> with the Brethren, in ${/^[aeiou]/i.test(nationAdj(h.nation)) ? 'an' : 'a'} ${nationAdj(h.nation)} port or one of a nation at peace with yours</li>
+        </ul>
+        ${h.ok ? '' : `<p class="ink small pt-why">${h.why}</p>`}
+        <div class="btnrow"><button class="btn${arm === 'black' ? ' seal' : ''}" data-act="pt-black" ${h.ok ? '' : 'disabled'}>${arm === 'black' ? 'Confirm: hoist the black' : 'Hoist the black'}</button></div>`;
+    } else {
+      const r = s.pardonInfo(), d = daysUnderBlack(st);
+      fl = `<p class="ink small">${d ? `${d} ${d === 1 ? 'day' : 'days'} under the black.` : 'The black was hoisted today.'} A governor’s pardon puts you back under the ${nationAdj(r.nation)} colours.</p>
+        <ul class="pt-cons">
+          <li>The pardon: <b>${coin}${fmt(r.cost)}</b>${r.foreign ? ` (a foreign governor asks ${Math.round((FLAG.pardonForeignK - 1) * 100)}% more)` : ''}</li>
+          <li>${r.days} days while the clerks draw up the papers</li>
+          <li>The Brethren do not forgive a turncoat: <b class="dn">−${Math.abs(r.pirateRep)}</b> with the pirates</li>
+          <li>The nations’ grudges stay: an amnesty from their governors is a separate matter</li>
+        </ul>
+        ${r.ok ? '' : `<p class="ink small pt-why">${r.why}</p>`}
+        <div class="btnrow"><button class="btn${arm === 'pardon' ? ' seal' : ''}" data-act="pt-pardon" ${r.ok ? '' : 'disabled'}>${arm === 'pardon' ? `Confirm the pardon · ${fmt(r.cost)}` : `Seek a pardon · ${fmt(r.cost)}`}</button></div>`;
+    }
+    return `<div class="card colours">
+      <h3>${GLYPH.scroll} Colours of the <i>${esc(pl.name)}</i></h3>
+      <div class="pt-presets">${pre}</div>
+      <div class="pt-row"><span>Band</span><div class="pt-sws">${bands.map(o => sw('pt-hull', o, lc(o.hex) === lc(sel.hull))).join('')}</div></div>
+      <div class="pt-row"><span>Trim</span><div class="pt-sws">${trims.map(o => sw('pt-trim', o, lc(o.hex) === lc(sel.trim))).join('')}</div></div>
+      <div class="pt-row"><span>Sails</span><div class="pt-cloth">${Object.entries(PAINT.sails).map(([k, o]) => `<button class="pt-cl${sel.sails === k ? ' on' : ''}" data-act="pt-sails" data-k="${k}" style="--c:${o.hex}"><i></i>${o.name}</button>`).join('')}</div></div>
+      <p class="ink small">${changed ? `${cost.hull ? `Hull and trim ${fmt(cost.hull)}` : ''}${cost.hull && cost.sails ? ' · ' : ''}${cost.sails ? `new cloth ${fmt(cost.sails)}` : ''} · a day’s work for the painters, shown at the quay.` : `Pick a scheme or the pigments: the ship at the quay shows them before you pay.`}</p>
+      <div class="btnrow"><button class="btn seal" data-act="pt-paint" ${changed && st.gold >= cost.total ? '' : 'disabled'}>${changed ? `Repaint · ${fmt(cost.total)}` : 'Her present colours'}</button>${changed ? '<button class="btn" data-act="pt-reset">Keep her colours</button>' : ''}</div>
+      <h4>The flag</h4>
+      <div class="kv"><span>You sail under</span><b><span class="flagmini">${flagSVG(flag ? 'pirate' : nat, { w: 30, h: 20 })}</span>${flag ? 'the black flag' : `the ${nationAdj(nat)} colours`}</b></div>
+      ${fl}
+    </div>`;
   }
 
   // ---------------- squadron (2026-10-22; logic: src/game/fleet.js, actions: PortSystem.fleet*) ----------------
   _fleet() {
     const g = this.game, st = g.state, s = this.sys;
     const fl = ensureFleet(st), rk = s._repairMul();
-    const head = `<h3>${GLYPH.anchor} Your squadron <span class="fl-n">${fl.length} / ${FLEET.max}</span></h3>`;
+    if (!fl.length) this._cmpOpen = false;
+    const head = `<h3>${GLYPH.anchor} Your squadron <span class="fl-n">${fl.length} / ${FLEET.max}</span>${fl.length ? `<button class="btn sm fl-cmpb${this._cmpOpen ? ' on' : ''}" data-act="fl-cmp" aria-expanded="${!!this._cmpOpen}" title="All your ships side by side, refits counted">${this._cmpOpen ? 'Close' : 'Compare'}</button>` : ''}</h3>`;
     if (!fl.length) return `<div class="card fleet">${head}<p class="ink small">No prize at anchor. Keep a ship taken by boarding and she will join your squadron.</p></div>`;
     const rows = fl.map((f, i) => {
       const sel = this.fleetSel === i, h = Math.round(f.hull * 100), sl = Math.round((f.sails ?? 1) * 100);
@@ -445,13 +504,14 @@ export class PortScreen {
         <div class="fl-acts">
           <button class="btn sm${this._sellArm === i ? ' seal' : ''}" data-act="fl-sell" data-n="${i}" title="The yard buys the ship according to her condition, and her cargo at ${Math.round(FLEET.cargoK * 100)}% of the going rate">${this._sellArm === i ? 'Confirm' : 'Sell'} · ${coin}${fmt(total)}</button>
           <button class="btn sm" data-act="fl-repair" data-n="${i}" ${!dmg || (!rc.free && st.gold <= 0) ? 'disabled' : ''}>${!dmg ? 'Sound' : rc.free ? 'Free repairs' : `Repair · ${coin}${fmt(rtot)}`}</button>
-          <button class="btn sm" data-act="fl-flag" data-n="${i}" title="Your current ship joins the squadron with her refits; men and cargo move aboard as far as there is room">Flagship</button>
+          <button class="btn sm${this._flagArm === i ? ' seal' : ''}" data-act="fl-flag" data-n="${i}" title="Your current ship joins the squadron with her refits; men and cargo move aboard as far as there is room">${this._flagArm === i ? 'Confirm' : 'Flagship'}</button>
           <button class="btn sm${this.xferSel === i ? ' on' : ''}" data-act="fl-xfer" data-n="${i}">${this.xferSel === i ? 'Close' : 'Transfer'}</button>
         </div>
+        ${this._flagArm === i ? this._flagPreview(i) : ''}
         ${this.xferSel === i ? this._fleetXfer(i) : ''}
       </div>`;
     }).join('');
-    return `<div class="card fleet">${head}<p class="ink small">Your prizes wait at anchor, guarded by a few men. Choose one to see her at the quay.</p>${rows}</div>`;
+    return `<div class="card fleet">${head}${this._cmpOpen ? this._fleetCompare() : ''}<p class="ink small">Your prizes wait at anchor, guarded by a few men. Choose one to see her at the quay.</p>${rows}</div>`;
   }
   _fleetXfer(i) {
     const g = this.game, st = g.state, pl = g.player, f = st.fleet[i];
@@ -472,6 +532,53 @@ export class PortScreen {
     </div>`;
   }
 
+  // squadron ship picked (fl-pick): the slipway's specs panel shows her, refits counted, against the flagship
+  _flagEff() { const g = this.game; return flagStats(g.player, g.state.upgrades, holdCapacity(g)); }
+  _fleetSpecs(i) {
+    const g = this.game, st = g.state, pl = g.player, f = st.fleet[i];
+    const a = shipStats(f.type, f.upgrades, f), o = this._flagEff();
+    const d = (x, y, inv) => !o || x === y ? '' : `<em class="${(x > y) !== !!inv ? 'up' : 'dn'}">${x > y ? '+' : '−'}${String(+Math.abs(x - y).toFixed(1))}</em>`;
+    const rows = [['Guns', a.guns, o?.guns, '', false, a.gunPower > 1 ? `Heavier guns: blows ×${a.gunPower.toFixed(2)}` : ''], ['Hull', a.hullMax, o?.hullMax], ['Crew', a.crewMax, o?.crewMax], ['Hold', a.hold, o?.hold], ['Speed', a.speed, o?.speed, ' knots'], ['Draught', a.draught, o?.draught, ' m', true]];
+    return `<div class="oncale fl-on"><b><i>${esc(f.name)}</i></b><span>${TYPE_NAMES[f.type]} of your squadron, at the quay · against <i>${esc(pl?.name || 'your ship')}</i></span></div>
+        <div class="shiprow"><div class="shipview">${SHIP_SIL(f.type)}</div>
+        <div class="specs fl-specs" data-fleet="${i}"><div class="cls"><span>Class</span><b title="Power class (guns and hull)">${CLASS_NAMES[a.cls - 1]}${d(a.cls, o?.cls)}</b></div>`
+      + rows.map(([l, x, y, u, inv, t]) => `<div><span>${l}</span><b${t ? ` title="${t}"` : ''}>${String(x)}${u || ''}${d(x, y, inv)}</b></div>`).join('')
+      + `<div><span>Rig</span><b>${a.rig}</b></div><div><span>Refits</span><b>${a.refits || 'none'}${d(a.refits, o?.refits)}</b></div></div></div>
+        <div class="own-note">Her refits counted · <button class="lnk" data-act="fl-pick" data-n="${i}" data-fk="spk">back to your ship</button></div>`;
+  }
+
+  // the whole squadron side by side (Compare): one column per ship, flagship first, best value of each row marked
+  _fleetCompare() {
+    const g = this.game, st = g.state, pl = g.player, fl = st.fleet || [];
+    const fs = this._flagEff(); if (!fs) return '';
+    const cols = [{ ...fs, name: pl.name, flag: true }, ...fl.map((f, i) => ({ ...shipStats(f.type, f.upgrades, f), name: f.name, i }))];
+    const val = (r, c) => r.k === 'cls' ? CLASS_NAMES[c.cls - 1] : r.k === 'refits' && !c.refits ? '—' : `${c[r.k]}${r.unit || ''}`;
+    const head = cols.map(c => `<th scope="col" class="${c.flag ? 'flag' : ''}${c.i != null && this.fleetSel === c.i ? ' sel' : ''}">${c.flag ? `<span class="fl-cn"><i>${esc(c.name)}</i></span><em>${GLYPH.anchor} flagship</em>`
+      : `<button class="fl-cn" data-act="fl-pick" data-n="${c.i}" data-fk="cmp${c.i}" title="See her at the quay"><i>${esc(c.name)}</i></button><em>${TYPE_NAMES[c.type]}</em>`}</th>`).join('');
+    const body = COMPARE_ROWS.map(r => { const best = bestOf(cols, r);
+      return `<tr data-k="${r.k}"><th scope="row">${r.label}</th>${cols.map((c, j) => `<td class="${best.has(j) ? 'best' : ''}${c.flag ? ' flag' : ''}${(r.k === 'hullPct' || r.k === 'sailsPct') && c[r.k] < 70 ? ' dn' : ''}">${val(r, c)}</td>`).join('')}</tr>`; }).join('');
+    const typeRow = `<tr data-k="type"><th scope="row">Type</th>${cols.map(c => `<td class="${c.flag ? 'flag' : ''}">${TYPE_NAMES[c.type]}</td>`).join('')}</tr>`;
+    return `<div class="fl-cmpbox"><div class="fl-cmpscroll"><table class="fl-cmp"><thead><tr><th class="corner"></th>${head}</tr></thead><tbody>${typeRow}${body}</tbody></table></div>
+      <p class="ink small">Refits counted. <b class="best-k">Gilded</b>: the best of the squadron (the shallowest draught).</p></div>`;
+  }
+
+  // Flagship, first click: what the swap would bring, and who and what stays aboard the old ship (Confirm swaps)
+  _flagPreview(i) {
+    const g = this.game, st = g.state, pl = g.player, f = st.fleet[i];
+    const r = flagshipPreview(st, i, this.sys._flag(), this._flagEff()); if (!r || !pl) return '';
+    const v = (k, x) => k === 'cls' ? CLASS_NAMES[x - 1] : String(x);
+    const chips = r.deltas.map(x => { const better = x.d !== 0 && (x.d > 0) !== x.low;
+      return `<span class="fp-d${x.d === 0 ? ' eq' : better ? ' up' : ' dn'}"><span>${x.label}</span><b>${v(x.k, x.a)} → ${v(x.k, x.b)}${x.unit}</b>${x.d === 0 ? '' : `<em>${x.d > 0 ? '+' : '−'}${String(Math.abs(x.d))}</em>`}</span>`; }).join('');
+    const goods = Object.entries(r.left).sort((a, b) => b[1] - a[1]).map(([k, q]) => `${GOODS[k]?.name.toLowerCase() || k} ${fmt(q)}`).join(' · ');
+    const men = r.menLeft > 0 ? `<li class="dn">${GLYPH.crew}<span><b>${r.menLeft}</b> of your ${r.men} men find no berth aboard her (${r.crew} at most) and stay with <i>${esc(pl.name)}</i>.</span></li>`
+      : `<li>${GLYPH.crew}<span>All ${r.men} men go aboard with you.</span></li>`;
+    const hold = r.lotsLeft > 0 ? `<li class="dn">${GLYPH.hold}<span><b>${fmt(r.lotsLeft)}</b> lots stay in the hold of <i>${esc(pl.name)}</i>: ${goods}.</span></li>`
+      : `<li>${GLYPH.hold}<span>Your whole cargo fits in her hold.</span></li>`;
+    const ups = st.upgrades && Object.values(st.upgrades).some(Boolean) ? `<li>${REFIT_ICONS.refits}<span>Your refits stay with <i>${esc(pl.name)}</i>; <i>${esc(f.name)}</i> brings her own.</span></li>` : '';
+    return `<div class="fl-prev"><div class="fp-h">Hoist your flag aboard <i>${esc(f.name)}</i>? <em>Confirm to swap; any other click cancels.</em></div>
+      <div class="fp-ds">${chips}</div><ul class="fp-l">${men}${hold}${ups}</ul></div>`;
+  }
+
   // ---------------- governor ----------------
   _governor() {
     const g = this.game, s = this.sys, p = this.port, st = g.state, c = s.career;
@@ -481,7 +588,7 @@ export class PortScreen {
     }
     const nat = p.faction, r = c.rankOf(nat);
     const offers = c.offerMissions(p);
-    const canPromote = r.next && r.merit >= r.need && r.rep >= r.minRep;
+    const canPromote = r.next && r.merit >= r.need && r.rep >= r.minRep && st.flag !== 'pirate';   // no commission under the black
     const letter = st.letters[nat];
     const lands = c.acres(nat), allLands = c.acres(), nextGrant = r.next ? c.landGrant(r.idx + 1) : 0;
     const ladder = RANKS.slice(1).map((t, i) => `<li class="${i + 1 <= r.idx ? 'done' : i + 1 === r.idx + 1 ? 'next' : ''}"${c.landGrant(i + 1) ? ` title="Grant of ${fmt(c.landGrant(i + 1))} acres"` : ''}><i></i><span>${t}</span><em>${RANK_MERIT[i + 1]}</em></li>`).join('');
@@ -495,7 +602,7 @@ export class PortScreen {
             <div class="kv"><span>Lands granted</span><b>${lands ? fmt(lands) + ' acres' : 'none'}${allLands > lands ? ` · ${fmt(allLands)} in all` : ''}</b></div>
             ${nextGrant ? `<div class="kv"><span>At the rank of ${r.next}</span><b>+${fmt(nextGrant)} acres</b></div>` : ''}
             <div class="kv"><span>Letter of marque</span><b>${letter ? 'obtained' : 'none'}</b></div>
-            <div class="btnrow"><button class="btn" data-act="promote" ${canPromote ? '' : 'disabled'}>${canPromote ? 'Accept the promotion' : `${!r.next ? 'Highest honour' : r.rep < r.minRep ? 'Reputation too low' : r.next + ' · merit ' + r.need}`}</button>
+            <div class="btnrow"><button class="btn" data-act="promote" ${canPromote ? '' : 'disabled'}>${canPromote ? 'Accept the promotion' : `${!r.next ? 'Highest honour' : st.flag === 'pirate' ? 'Not under the black flag' : r.rep < r.minRep ? 'Reputation too low' : r.next + ' · merit ' + r.need}`}</button>
             ${letter || !s.marqueAvailable(nat) ? '' : `<button class="btn" data-act="marque" ${st.gold < s.marqueCost(nat) ? 'disabled' : ''}>Letter of marque · ${fmt(s.marqueCost(nat))}</button>`}</div></div></div>
         ${nations}
       </div>
@@ -634,11 +741,15 @@ export class PortScreen {
   // ---------------- input ----------------
   _click(e) {
     const r = e.target.closest?.('.mrow'); if (r) this.mi = +r.dataset.i;
-    const b = e.target.closest('button'); if (!b || b.disabled) return;
+    const b = e.target.closest('button');
+    if ((!b || b.disabled) && this._flagArm != null) { this._flagArm = null; this.render(); }   // a click elsewhere cancels the swap preview
+    if (!b || b.disabled) return;
     const a = this.game.audio, s = this.sys;
     a?.play?.('ui:select');
     const sellArm = this._sellArm; this._sellArm = null;   // selling a squadron ship takes two clicks
+    const flagArm = this._flagArm; this._flagArm = null;   // so does a flagship swap (preview first)
     if (b.dataset.tab) { if (b.dataset.tab !== this.tab) s.goto(b.dataset.tab); return; }
+    const ensignArm = this._ensignArm; this._ensignArm = null;   // changing the flag takes two clicks (Colours card)
     const g0 = this.game.state.gold;
     if (b.dataset.buy) s.buy(this.port, b.dataset.buy, e.shiftKey ? 10 : 1);
     else if (b.dataset.sell) s.sell(this.port, b.dataset.sell, (e.shiftKey || b.dataset.all) ? 9999 : 1);
@@ -658,7 +769,8 @@ export class PortScreen {
       if (act === 'fl-pick') { this.fleetSel = this.fleetSel === fn ? null : fn; this.sel = null; }
       if (act === 'fl-sell') { if (sellArm === fn) { s.fleetSell(fn); this.fleetSel = this.xferSel = null; } else { this._sellArm = fn; this.fleetSel = fn; this.sel = null; } }
       if (act === 'fl-repair') { s.fleetRepair(fn); this.fleetSel = fn; this.sel = null; }
-      if (act === 'fl-flag') { s.fleetFlagship(fn); this.fleetSel = this.xferSel = this.sel = null; }
+      if (act === 'fl-flag') { if (flagArm === fn) { s.fleetFlagship(fn); this.fleetSel = this.xferSel = this.sel = null; } else { this._flagArm = fn; this.fleetSel = fn; this.sel = null; } }
+      if (act === 'fl-cmp') this._cmpOpen = !this._cmpOpen;
       if (act === 'fl-xfer') { this.xferSel = this.xferSel === fn ? null : fn; this.fleetSel = fn; this.sel = null; }
       if (act === 'fl-mv') { const q = +b.dataset.q * (e.shiftKey && +b.dataset.q === 1 ? 10 : 1); if (b.dataset.k === 'men') s.fleetMen(fn, b.dataset.dir, q); else s.fleetGoods(fn, b.dataset.k, b.dataset.dir, q); }
       if (act === 'promote') s.career.promote(this.port.faction);
@@ -669,6 +781,19 @@ export class PortScreen {
       if (act === 'smuggle') this.game.living?.smuggle(this.port, b.dataset.k);
       if (act === 'diplo') this.game.living?.acceptOffer(this.port, b.dataset.k);
       if (act === 'traveler') this.game.fortune?.buyFromTraveler(this.port, +b.dataset.n);
+      // colours: a scheme / pigment / cloth previews at the quay (on the flagship), Repaint pays; the flag: arm, confirm
+      if (act?.startsWith('pt-')) {
+        const st = this.game.state, k = b.dataset.k, base = this.paintSel || playerPaint(st, this.game.player?.faction);
+        const pick = o => { this.paintSel = { ...base, ...o }; this.fleetSel = this.xferSel = this.sel = null; };
+        if (act === 'pt-pre') { const p = PAINT.presets.find(x => x.id === k); if (p) pick({ hull: p.hull, trim: p.trim }); }
+        if (act === 'pt-hull') pick({ hull: k });
+        if (act === 'pt-trim') pick({ trim: k });
+        if (act === 'pt-sails') pick({ sails: k });
+        if (act === 'pt-reset') this.paintSel = null;
+        if (act === 'pt-paint' && s.repaint(this.paintSel)) this.paintSel = null;
+        if (act === 'pt-black') { if (ensignArm === 'black') s.hoistBlack(); else this._ensignArm = 'black'; }
+        if (act === 'pt-pardon') { if (ensignArm === 'pardon') s.pardon(); else this._ensignArm = 'pardon'; }
+      }
       if (act?.startsWith('home-')) this.game.family?.act(this.port, act);   // married life: visit, gift
       if (act === 'retire') { if (this._retireArm) { this._retireArm = false; return this.game.retirement?.retire('voluntary'); } this._retireArm = true; }
       else this._retireArm = false;
@@ -676,6 +801,7 @@ export class PortScreen {
     this.render();
     // a type picked on the slipway: bring its specs and the purchase line into view (the type grid is long at 1366)
     if (b.dataset.ship) this.frame.querySelector('.buyship, .own-note')?.scrollIntoView?.({ block: 'nearest' });
+    if (b.dataset.act === 'fl-flag' && this._flagArm != null) this.frame.querySelector('.fl-prev')?.scrollIntoView?.({ block: 'nearest' });
     const d = this.game.state.gold - g0;
     if (d) { const pg = this.frame.querySelector('.pcol-foot .pg'); if (pg) { pg.classList.add(d > 0 ? 'gain' : 'loss'); pg.dataset.delta = (d > 0 ? '+' : '−') + fmt(Math.abs(d)); } }
   }

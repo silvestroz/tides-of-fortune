@@ -120,12 +120,12 @@ y = await yard();
 check('repair squadron ship → hull 100 %, shown intact', y.fleet[2].endsWith(':1.00:30') && y.info?.type === 'frigate' && y.info.hull === 0, y.fleet[2] + ' ' + JSON.stringify(y.info));
 // take the frigate as flagship, then back
 const before = await ev(() => ({ type: __game.player.type, name: __game.player.name, ups: { ...__game.state.upgrades }, crew: __game.player.crew }));
-await click('[data-act="fl-flag"][data-n="2"]'); await frames(2);
+await click('[data-act="fl-flag"][data-n="2"]'); await click('[data-act="fl-flag"][data-n="2"]'); await frames(2);   // preview, then Confirm
 y = await yard();
 const after = await ev(() => ({ type: __game.player.type, name: __game.player.name, crew: __game.player.crew, slot: __game.state.fleet[2], ships: __game.ships.filter(s => s.isPlayer).length }));
 check('take as flagship: player and quay change, old flagship joins the squadron', after.type === 'frigate' && after.name === 'Valiente' && y.info?.type === 'frigate' && after.slot.type === before.type && after.slot.name === before.name && after.ships === 1, JSON.stringify(after.slot).slice(0, 160));
 await shot('04-swapped-1366');
-await click('[data-act="fl-flag"][data-n="2"]'); await frames(2);
+await click('[data-act="fl-flag"][data-n="2"]'); await click('[data-act="fl-flag"][data-n="2"]'); await frames(2);
 const back = await ev(() => ({ type: __game.player.type, name: __game.player.name, f2: __game.state.fleet[2].type, ups: { ...__game.state.upgrades } }));
 check('and back again', back.type === before.type && back.name === before.name && back.f2 === 'frigate' && JSON.stringify(back.ups) === JSON.stringify(before.ups), JSON.stringify(back));
 // sell the schooner (two clicks)

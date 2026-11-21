@@ -3,6 +3,8 @@ import assert from 'node:assert';
 import { ensureFleet, salePrice, repairCost, repairShip, sellShip, swapFlagship, transferGoods, transferMen, hullMaxOf, crewMaxOf, holdCapOf, holdUsedOf, FLEET } from '../src/game/fleet.js';
 import { SHIP_PRICES, CARGO_CAPACITY } from '../src/game/economy.js';
 import { bulkOf } from '../src/game/transship.js';
+import { shipStats, flagStats, bestOf, COMPARE_ROWS, flagshipPreview, KNOTS } from '../src/game/fleetCompare.js';
+import { SHIP_SPECS } from '../src/ships/shipModel.js';
 
 let n = 0; const ok = (name, fn) => { fn(); n++; console.log('ok', name); };
 
@@ -104,6 +106,40 @@ ok('swap flagship and back: hull, refits, overflow of men and goods', () => {
   const st3 = { cargo: { rum: 30 }, food: 10, upgrades: {}, fleet: [{ type: 'lugger', name: 'L', hull: 1, cargo: { timber: 20 } }] };
   swapFlagship(st3, 0, { type: 'brig', name: 'B', hull: 1, crew: 40, crewMax: 120 });
   assert.deepEqual(st3.cargo, { timber: 20 }); assert.equal(st3.food, 0); assert.deepEqual(st3.fleet[0].cargo, { rum: 30, food: 10 });
+});
+
+ok('compare: effective stats with refits (= applyUpgrades / holdCapacity), best per row', () => {
+  const u = { guns: 1, hull: 2, hold: 1, sheath: 0, canvas: 2, berths: 1 };
+  const a = shipStats('brig', u, { hull: 0.5, sails: 0.8 });
+  assert.equal(a.hullMax, hullMaxOf('brig', u)); assert.equal(a.crewMax, 132); assert.equal(a.hold, holdCapOf('brig', u));
+  assert.equal(a.speed, Math.round(SHIP_SPECS.brig.maxSpeed * 1.12 * KNOTS)); assert.equal(a.guns, SHIP_SPECS.brig.guns);
+  assert.equal(a.refits, 7); assert.equal(a.hullPct, 50); assert.equal(a.sailsPct, 80); assert.equal(a.draught, SHIP_SPECS.brig.navDraft);
+  assert.equal(shipStats('brig', { gunsLost: 4 }).guns, SHIP_SPECS.brig.guns - 4); assert.equal(shipStats('brig', { gunsLost: 4 }).refits, 0);
+  // the flagship's record is read from the live Ship (applyUpgrades values)
+  const p = { type: 'brig', spec: SHIP_SPECS.brig, guns: 14, hullMax: 145, crewMax: 132, speedMul: 1.12, hull: 72.5, sails: 0.8 };
+  const f = flagStats(p, u, holdCapOf('brig', u));
+  for (const k of ['guns', 'hullMax', 'crewMax', 'hold', 'speed', 'draught', 'refits']) assert.equal(f[k], a[k], k);
+  const cols = [a, shipStats('sloop', {}), shipStats('frigate', {})];
+  assert.deepEqual([...bestOf(cols, 'guns')], [2]); assert.deepEqual([...bestOf(cols, 'draught')], [1]);   // lowest draught wins
+  assert.deepEqual([...bestOf(cols, 'refits')], [0]); assert.deepEqual([...bestOf(cols, 'rig')], []);
+  assert.deepEqual([...bestOf([a, a], 'guns')], []);   // all equal: nothing marked
+  assert.ok(COMPARE_ROWS.length >= 10);
+});
+
+ok('flagship preview = a dry run of swapFlagship (state untouched)', () => {
+  const mk = () => ({ gold: 0, cargo: { sugar: 60, spice: 20 }, food: 20, upgrades: { guns: 1, hull: 1, hold: 0, sheath: 0, canvas: 2, berths: 0 }, ledger: { cost: { sugar: 1800 } },
+    fleet: [{ type: 'sloop', name: 'Furet', hull: 0.8, from: 'french', crew: 5, upgrades: { canvas: 1 } }] });
+  const flag = { type: 'brig', name: 'Merry Wren', faction: 'english', hull: 0.7, sails: 0.9, crew: 110, crewMax: 120 };
+  const st = mk(), snap = JSON.stringify(st);
+  const pv = flagshipPreview(st, 0, flag, shipStats('brig', st.upgrades));
+  assert.equal(JSON.stringify(st), snap); assert.equal(flag.crew, 110);
+  assert.equal(pv.crew, 75); assert.equal(pv.men, 115); assert.equal(pv.menLeft, 40);
+  assert.deepEqual(pv.left, { sugar: 50 }); assert.equal(pv.lotsLeft, 50);
+  const hold = pv.deltas.find(d => d.k === 'hold'); assert.equal(hold.b, holdCapOf('sloop', {})); assert.ok(hold.d < 0);
+  assert.equal(pv.next.speed, Math.round(SHIP_SPECS.sloop.maxSpeed * 1.06 * KNOTS));
+  // the real swap agrees with the preview
+  const st2 = mk(), r = swapFlagship(st2, 0, { ...flag });
+  assert.equal(r.crew, pv.crew); assert.equal(st2.fleet[0].crew, pv.menLeft); assert.deepEqual(r.left, pv.left);
 });
 
 console.log(`fleet OK (${n} groupes)`);

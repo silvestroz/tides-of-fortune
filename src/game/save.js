@@ -1,7 +1,8 @@
 // Save / load to localStorage (all access wrapped in try/catch; works without storage).
 // API:
 //   saveInfo() -> { name, date, gold, port } | null
-//   saveGame(game, reason?) -> bool      serialises game.state + the player ship (type, name, faction, pos, hull, sails, crew)
+//   saveGame(game, reason?) -> bool      serialises game.state + the player ship (type, name, faction, pos, hull, sails, crew);
+//                                        the colours live in game.state (flag, flagSince, paint; fleet[i].paint)
 //   loadGame(game) -> bool               restores state, respawns the player ship (keeps its controller class)
 //   installSaveHooks(game)               autosave on 'port:enter' / 'port:leave', and enables the title menu's
 //                                        "Continue" button by wrapping hud.menu._render (no edit to menu.js) and
@@ -19,7 +20,7 @@ export function saveInfo() {
 export function saveGame(game, reason = 'manual') {
   const p = game.player;
   const data = {
-    v: 1, at: Date.now(),
+    v: 2, at: Date.now(),   // v2 (2026-11-21): state.flag / state.flagSince / state.paint / fleet[i].paint (absent in v1: defaults)
     state: game.state,
     ship: p ? { type: p.type, name: p.name, faction: p.faction, x: p.position.x, z: p.position.z, heading: p.heading, hull: p.hull, sails: p.sails, crew: p.crew } : null,
     timeOfDay: game.sky?.timeOfDay,
@@ -51,11 +52,17 @@ export function loadGame(game) {
   for (const k of Object.keys(game.state)) delete game.state[k];
   Object.assign(game.state, d.state);
   if (game.worldMap) game.worldMap.track = game.state.mapTrack ||= [];   // world map holds a reference to the track array
+  // the colours (src/data/shipColours.js): v1 saves sail under their nation with its paint
+  const st = game.state;
+  if (st.flag !== 'pirate') { st.flag = 'nation'; delete st.flagSince; }
+  if (st.paint && typeof st.paint !== 'object') st.paint = null;
   const sh = d.ship;
   if (sh) {
     let p = game.player;
     const C = p?.controller?.constructor;
-    const np = game.spawnShip({ type: sh.type, faction: sh.faction, isPlayer: true, x: sh.x, z: sh.z, heading: sh.heading, name: sh.name, crew: sh.crew });
+    // the flag decides the faction she sails under (a pirate hull under national colours, or the black)
+    const faction = st.flag === 'pirate' ? 'pirate' : sh.faction === 'pirate' ? (st.nationality || 'english') : sh.faction;
+    const np = game.spawnShip({ type: sh.type, faction, isPlayer: true, x: sh.x, z: sh.z, heading: sh.heading, name: sh.name, crew: sh.crew });
     // re-apply shipyard refits (they live on the ship instance, which is rebuilt here)
     const up = game.state.upgrades || {};
     applyUpgrades(np, up, true);

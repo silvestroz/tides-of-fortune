@@ -356,7 +356,7 @@ function shipyard({ kit: k, port, game }) {
   k.box(7, 0.3, 46, k.mat('#ffffff', { map: k.tiled(k.tex.planks, 2, 12) }), 0, 1.4, -6, dock);
   for (let z = -28; z <= 16; z += 4) for (const x of [-3.3, 3.3]) k.cyl(0.22, 0.25, 3.5, k.mat('#4a3420'), x, 0, z, dock, 8);
   // the ship alongside (2026-10-22: replaceable). S.setShip(type, { faction, name, damage }) swaps the model at the
-  // quay (old one disposed), re-lays the scaffolding and re-frames the camera on its size (lugger → great galleon);
+  // quay (old one disposed; o.paint: its colours, ShipModel.setPaint), re-lays the scaffolding and re-frames the camera on its size (lugger → great galleon);
   // S.setDamage(dmg) repaints holes and scorch; S.setView({ x0, x1, y0, y1 }) = free screen area (fractions) beside
   // the UI column, measured by the port screen. Sails furled from the first frame, no bow jack at the yard.
   const pl = game.player;
@@ -437,7 +437,7 @@ function shipyard({ kit: k, port, game }) {
   };
   S.setShip = (type, o = {}) => {
     const faction = o.faction || pl?.faction || 'english';
-    if (cur.model && type === cur.type && faction === cur.faction && !o.force) { cur.name = o.name ?? cur.name; S.setDamage(o.damage); cur.model.setWear?.(o.wear); return cur.model; }
+    if (cur.model && type === cur.type && faction === cur.faction && !o.force) { cur.name = o.name ?? cur.name; S.setDamage(o.damage); cur.model.setWear?.(o.wear); cur.model.setPaint?.(o.paint || null); return cur.model; }
     let model = null;
     try { model = buildShipModel(type, { faction, seed: 77, name: o.name, sailSetting: 0, jack: false }); } catch (e) { console.warn('shipyard: model', type, e); return cur.model; }
     if (cur.model) { s.remove(cur.model.group); cur.model.dispose?.(); }
@@ -449,12 +449,13 @@ function shipyard({ kit: k, port, game }) {
       else if (q.isInstancedMesh) { q.castShadow = true; q.receiveShadow = true; } });
     S.setDamage(o.damage);
     model.setWear?.(o.wear);   // flagship: its own weathering; a hull on the slipway: fresh paint
+    model.setPaint?.(o.paint || null);   // the ship's own colours (or the shipyard's preview of a repaint)
     model.update?.(0, 0, { sailSetting: 0, windRel: 0.6, speed: 0, damage: cur.dmg });
     layScaffold(model.length || 30, model.deckHeight);
     fit();
     return model;
   };
-  S.shipInfo = () => ({ type: cur.type, faction: cur.faction, name: cur.name, damage: { hull: cur.dmg.hull, sails: cur.dmg.sails }, length: cur.model?.length || 0, look: S.look?.clone(), base: S.base?.clone() });
+  S.shipInfo = () => ({ type: cur.type, faction: cur.faction, name: cur.name, paint: cur.model?.paint || null, damage: { hull: cur.dmg.hull, sails: cur.dmg.sails }, length: cur.model?.length || 0, look: S.look?.clone(), base: S.base?.clone() });
   S.model = () => cur.model;
   // test hook: the silhouette's screen bounds (fractions, view offset included) against the free area
   S.frameCheck = () => {
@@ -485,7 +486,7 @@ function shipyard({ kit: k, port, game }) {
   for (const z of [-12, 0, 10]) k.cyl(0.18, 0.2, 0.6, k.mat('#2a1e14'), 9 - 3.1, 1.85, z, s, 8);
 
   // longer lens (36°), framed by fit(): no wide-angle stretch on the hull, whole ship and dock in frame
-  S.setShip(pl?.type || 'brig', { faction: pl?.faction || 'english', name: pl?.name, damage: pl ? { hull: 1 - pl.hull / pl.hullMax, sails: 1 - pl.sails } : null });
+  S.setShip(pl?.type || 'brig', { faction: pl?.faction || 'english', name: pl?.name, damage: pl ? { hull: 1 - pl.hull / pl.hullMax, sails: 1 - pl.sails } : null, paint: pl?.model?.paint || null });
   if (!S.look) { cam.position.set(37.8, 9.2, 47); S.look = new THREE.Vector3(1, 8.5, -7); }   // model failed: round-6 framing
   return S;
 }

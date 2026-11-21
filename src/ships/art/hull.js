@@ -6,7 +6,7 @@
 // info: { ports:{port:[{pos,dir}],starboard:[..]}, deckHeight, sternLanterns:[Vector3], lights:[Vector3] (deck lantern),
 //         channels:[{s, y, xOut}], bowTip, headZ, ensignStaff, skinRange, skinSteps() -> generator painting the skin texture }
 import * as THREE from 'three';
-import { SURF, trs, basisMatrix } from './builder.js';
+import { SURF, PAINT_TAG, trs, basisMatrix } from './builder.js';
 import { mulberry32, clamp01, smooth } from './noise.js';
 import { BALUSTER, fineRudder, fineQuarterGalleries, fineSternWindow, fineSide, finePortLid, fineGunTackle, fineHead, fineLion, fineAnchors, fineDeck, fineBoat } from './hullFine.js';
 
@@ -56,6 +56,9 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
   const iron = C('#2a2a2c');
   // context of the fine-detail pass (hullFine.js)
   const F = { gb, H, d, info, rnd, G, BARREL, c: { oak, oakDark, tar, bottom, gold, trim, paint, iron, glass, ochre } };
+  // the player's own paint recolours these (builder.js PAINT_TAG, ShipModel.setPaint)
+  const trimDark = trim.clone().multiplyScalar(0.75);
+  gb.paintTag.set(paint, PAINT_TAG.hull); gb.paintTag.set(trim, PAINT_TAG.trim); gb.paintTag.set(trimDark, PAINT_TAG.trim);
 
   yield;
   // ---------------- s sampling (dense near castle breaks & ends)
@@ -538,7 +541,7 @@ export function* buildHullSteps(gb, H, d, colors, rnd = mulberry32(77)) {
         const up = V3().crossVectors(f.n, f.ds).normalize(); if (up.y < 0) up.negate();
         const tt = V3().crossVectors(up, f.n).normalize();
         const fv = gb.count;
-        gb.add(G.box, basisMatrix(p.clone().addScaledVector(f.n, 0.015), tt, up, f.n, pw, 0.42, 0.03), { color: trim.clone().multiplyScalar(0.75), surf: SURF.paint });
+        gb.add(G.box, basisMatrix(p.clone().addScaledVector(f.n, 0.015), tt, up, f.n, pw, 0.42, 0.03), { color: trimDark, surf: SURF.paint });
         gb.distFace(fv);
         for (const [ox, oy, w, h] of [[0, 0.24, pw + 0.08, 0.05], [0, -0.24, pw + 0.08, 0.05], [pw / 2 + 0.02, 0, 0.05, 0.5], [-pw / 2 - 0.02, 0, 0.05, 0.5]]) {
           const c = p.clone().addScaledVector(tt, ox).addScaledVector(up, oy).addScaledVector(f.n, 0.03);

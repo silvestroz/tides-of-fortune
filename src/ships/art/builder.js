@@ -39,6 +39,11 @@ export const SURF = {
   lamp:   [0.1, 0.4, 1.6, 0],
   deck:   [0, 0.9, 0, 1],
 };
+// The player's own paint (ShipModel.setPaint): the faction's paint and trim colours are baked into the vertex colours
+// as for every ship, and their vertices are tagged through the grain channel of SURF.paint (0.45 -> PAINT_TAG.hull /
+// .trim, a difference the eye cannot see) so the hull shader can recolour them. Tagging: gb.paintTag.set(colorObject,
+// tag) — every vertex given that very Color object with SURF.paint gets the tag (hull.js registers paint and trim).
+export const PAINT_TAG = { hull: 0.452, trim: 0.454 };
 
 export class GeoBuilder {
   constructor() {
@@ -46,6 +51,7 @@ export class GeoBuilder {
     this.pos = []; this.nor = []; this.uv = []; this.col = []; this.surf = []; this.brk = []; this.idx = [];
     this.lodTag = []; this.curLod = 0;
     this.distTag = []; this.curDist = 0; this.idxDist = [];
+    this.paintTag = new Map();   // Color -> grain tag (PAINT_TAG)
   }
   get count() { return this.pos.length / 3; }
   // true once the frame's build time is spent (see buildClock): `if (gb.due()) yield;`
@@ -55,7 +61,8 @@ export class GeoBuilder {
     if (!(n.x * n.x + n.y * n.y + n.z * n.z > 1e-10)) n = _UPN;
     this.pos.push(p.x, p.y, p.z); this.nor.push(n.x, n.y, n.z); this.uv.push(u, v);
     this.col.push(color.r * ao, color.g * ao, color.b * ao);
-    this.surf.push(surf[0], surf[1], surf[2], surf[3]); this.brk.push(brk); this.piv.push(this.curPiv[0], this.curPiv[1]);
+    const tag = surf === SURF.paint && this.paintTag.size ? this.paintTag.get(color) : 0;
+    this.surf.push(surf[0], surf[1], surf[2], tag || surf[3]); this.brk.push(brk); this.piv.push(this.curPiv[0], this.curPiv[1]);
     this.lodTag.push(this.curLod); this.distTag.push(this.curDist);
     return this.count - 1;
   }
@@ -73,6 +80,7 @@ export class GeoBuilder {
     const color = o.color instanceof THREE.Color ? o.color : _c.set(o.color ?? 0xffffff);
     const col = color.clone();
     const surf = o.surf || SURF.wood;
+    const tag = this.paintTag.size ? this.paintTag.get(color) : 0; if (tag) this.paintTag.set(col, tag);   // the clone keeps the tag
     const su = o.uvScale ? o.uvScale[0] : 1, sv = o.uvScale ? o.uvScale[1] : 1;
     const ou = o.uvOffset ? o.uvOffset[0] : Math.random() * 4, ov = o.uvOffset ? o.uvOffset[1] : Math.random() * 4;
     // far-LOD tag: explicit o.lod, else small (all sides < 0.7 m, two < 0.35 m) or very thin (two sides < 0.12 m) parts
@@ -99,6 +107,7 @@ export class GeoBuilder {
       const ao = o.ao ? o.ao(_v, _n) : 1;
       this.vertex(_v, _n, u * su + ou, v * sv + ov, col, surf, o.brk ?? this.defBrk ?? 2, ao);
     }
+    if (tag) this.paintTag.delete(col);
     if (g.index) { const I = g.index.array; for (let i = 0; i < I.length; i++) this.idx.push(base + I[i]); }
     else for (let i = 0; i < P.count; i++) this.idx.push(base + i);
     this.curLod = prevLod; this.curDist = prevDist;

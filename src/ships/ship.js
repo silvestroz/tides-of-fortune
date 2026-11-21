@@ -28,6 +28,7 @@
 //   roll > 0 lifts starboard (heel to port); pitch > 0 lifts the bow.
 import * as THREE from 'three';
 import { buildShipModel, SHIP_SPECS } from './shipModel.js';
+import { playerPaint, paintLook } from '../data/shipColours.js';   // the flagship's paint (state.paint)
 import { SHALLOW_DRAFT } from '../data/shipTypes.js';
 import { playerWear } from '../data/hullWear.js';
 import { forwardFromHeading, wrapAngle, HALF_WORLD } from '../core/constants.js';
@@ -86,6 +87,7 @@ export class Ship {
 
     this.model = buildShipModel(this.type, { faction: this.faction, name: this.name, seed: o.seed });
     if (this.isPlayer) this.model.setWear(playerWear(game.state));   // AI ships: by role (combat.spawnAI)
+    if (this.isPlayer) this.model.setPaint(paintLook(playerPaint(game.state, this.faction)));   // the flagship's own colours (shipyard)
     this.length = this.model.length; this.beam = this.model.beam;
     // gameplay draft from the ship table; shallow-draft hulls (≤ SHALLOW_DRAFT) skim reefs and sand bars
     this.draft = this.spec.navDraft ?? this.model.draft ?? this.spec.draft;
