@@ -1,7 +1,8 @@
 // Pure logic of the squadron kept at anchor (state.fleet), no DOM, testable in node: node tools/test-fleet.mjs
 // state.fleet[i] = { type, name, hull (0–1), sails (0–1), from (nation), own? (a former flagship, not a prize),
 //   crew (men aboard), upgrades {guns, hull,
-//   hold, sheath, canvas, berths}, cargo? {good: qty, food?}, costs? {good: price basis} }   (7 ships at most)
+//   hold, sheath, canvas, berths}, cargo? {good: qty, food?}, costs? {good: price basis}, paint? {hull, trim, sails} }
+//   (7 ships at most; paint absent = the nation's colours, src/data/shipColours.js; the flagship's is state.paint)
 // The flagship is the player's Ship; its hold is state.cargo + state.food, its refits state.upgrades, its price basis
 // state.ledger.cost (economy.avgCost). Functions take a `flag` descriptor of the flagship where they need it:
 //   { type, name, faction, hull (0–1), sails, crew, crewMax }   (crew mutated in place by the men transfers)
@@ -14,7 +15,7 @@
 //   repairShip(state, i, repairMul)          pays what the purse allows (partial refit like ports.repair)
 //   sellShip(state, i, { priceOf, flag })    ship + cargo (cargo at FLEET.cargoK × priceOf); men aboard go back to
 //                                            the flagship as far as its berths allow, the others stay ashore
-//   swapFlagship(state, i, flag)  → new flagship record; the old flagship takes slot i with its hull, refits, the men
+//   swapFlagship(state, i, flag)  → new flagship record; the old flagship takes slot i with its hull, refits, paint, the men
 //                                   who do not fit aboard the new one and the goods that exceed the new hold
 //   transferGoods(state, i, good, dir, n, flagCap)   dir 'in' = to the flagship, 'out' = to ship i (both holds capped)
 //   transferMen(state, i, dir, n, flag)              same directions; the flagship keeps FLEET.minFlagCrew men
@@ -153,7 +154,10 @@ export function swapFlagship(st, i, flag) {
     if (Q && b) { L[k] = b * a / Q; if (c) (old.costs ||= {})[k] = b * c / Q; } else delete L[k];
     if (!L[k]) delete L[k];
   }
+  // paint (src/data/shipColours.js): each hull keeps her own colours, absent = the nation's
+  if (st.paint) old.paint = { ...st.paint };
+  st.paint = f.paint ? { ...f.paint } : null;
   st.fleet[i] = old;
   st.upgrades = nu;
-  return { type: f.type, name: f.name, hull: f.hull, sails: f.sails, crew, upgrades: nu, from: f.from, left: { ...old.cargo } };
+  return { type: f.type, name: f.name, hull: f.hull, sails: f.sails, crew, upgrades: nu, from: f.from, paint: st.paint, left: { ...old.cargo } };
 }

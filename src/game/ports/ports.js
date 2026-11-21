@@ -7,6 +7,9 @@
 //   attitude(port) -> { label, cls:'warm'|'fair'|'cold'|'hostile', rep }   rep(nation)
 //   locked(port, tab) -> reason string | null   (hostile ports bar the governor/shipyard/market)
 //   buy/sell/hire/standRound/repair/upgrade/buyShip/buyMarque  game actions used by the UI
+//   colours (shipyard card, src/data/shipColours.js): paintCost(sel) · repaint(sel) · hoistInfo() · hoistBlack() ·
+//   pardonInfo() · pardon()   (hoist: pirate havens only; pardon: a port of the captain's nation or of a nation at
+//   peace with it). Emits 'player:flag' { flag, faction } when the flag changes.
 // Events: emits 'port:leave', 'state:change', 'notify', 'port:arrest' {port}; listens 'port:enter'.
 import { PortScreen } from '../../ui/port/portScreen.js';
 import { isKey } from '../../core/keys.js';
@@ -18,9 +21,10 @@ import { getReputation, changeReputation, relation, HOSTILE_REP } from '../../co
 import { GOODS } from '../../data/world.js';
 import { mulberry32 } from '../../core/rng.js';
 import { wearRefit } from '../../data/hullWear.js';   // a yard repair repaints the hull
-import { shipType, fmtInt, theName, ofName } from '../../core/i18n.js';
+import { shipType, fmtInt, theName, ofName, nationAdj, nationPeople, a } from '../../core/i18n.js';
 import { installSaveHooks, saveGame, applyUpgrades, NO_UPGRADES } from '../save.js';
 import { PortStage } from './stage/stage.js';
+import { PAINT, FLAG, playerPaint, paintOf, paintLook, samePaint, repaintCost, pardonCost, dayNum } from '../../data/shipColours.js';   // the Colours card
 
 export const AMMO_PRICES = { chain: 600, grape: 450 };
 export const PORT_HOURS = 4;   // hours of the sky clock spent coming ashore (was: a whole day)
@@ -148,7 +152,7 @@ export class PortSystem {
         ready = this.stage.show(tab, this.port);   // set compiled (promise), the fade waits for it
         if (!this._frozeSim) { this._prevFrozen = g.frozen; g.frozen = true; this._frozeSim = true; }   // world sim idles behind the stage
       }
-      sc.tab = tab; sc.sel = null; sc.fleetSel = null; sc.xferSel = null; sc.render();
+      sc.tab = tab; sc.sel = null; sc.fleetSel = null; sc.xferSel = null; sc.paintSel = null; sc._flagArm = null; sc.render();
       return ready;
     };
     g.audio?.play?.('ui:page');
@@ -319,6 +323,7 @@ export class PortSystem {
     const g = this.game, st = g.state, old = g.player, price = this.shipPrice(type);
     if (!old || st.gold < price) return;
     st.gold -= price;
+    st.paint = null;   // a new hull from the yard wears the nation's colours (the old paint goes with the old hull)
     const C = old.controller?.constructor;
     const np = g.spawnShip({ type, faction: old.faction, isPlayer: true, x: old.position.x, z: old.position.z, heading: old.heading, name: old.name, sailSetting: 0 });
     np.crew = Math.min(np.crewMax, old.crew);
@@ -372,7 +377,7 @@ export class PortSystem {
   }
   marqueCost(n) { return 800; }
   // a letter of marque is only issued by a governor whose nation is at war (with someone other than the player's flag ally)
-  marqueAvailable(n) { return NATIONS.includes(n) && NATIONS.some(o => o !== n && relation(n, o) < 0) && !this.game.state.letters[n] && this.game.player?.faction !== n; }
+  marqueAvailable(n) { return NATIONS.includes(n) && NATIONS.some(o => o !== n && relation(n, o) < 0) && !this.game.state.letters[n] && this.game.player?.faction !== n && this.game.state.flag !== 'pirate'; }
   buyMarque(n) {
     const st = this.game.state;
     if (!this.marqueAvailable(n) || st.gold < this.marqueCost(n)) return;
@@ -390,6 +395,74 @@ export class PortSystem {
     st.gold -= c;
     changeReputation(this.game, n, Math.max(0, 6 - this.rep(n)), 'amnesty');
     this._say(`Amnesty granted. ${c} gold and an oath, and your name is struck from the register of the hanged.`, 'good');
+  }
+
+  // ---------------- colours (2026-11-21, tuning in src/data/shipColours.js) ----------------
+  // Paint: cosmetic, a day's work for the yard's painters; the hull is scraped and painted afresh (wearRefit).
+  paintCost(sel) {
+    const g = this.game, p = g.player; if (!p || !sel) return { hull: 0, sails: 0, total: 0 };
+    return repaintCost(playerPaint(g.state, p.faction), paintOf(sel, g.state.nationality || 'english'), p.type);
+  }
+  repaint(sel) {
+    const g = this.game, st = g.state, p = g.player;
+    if (!p || !sel) return false;
+    const to = paintOf(sel, st.nationality || 'english'), c = this.paintCost(to);
+    if (samePaint(to, playerPaint(st, p.faction)) || !c.total) return false;
+    if (st.gold < c.total) { this._say('The master painter counts your coins and shakes his head.', 'bad'); return false; }
+    st.gold -= c.total;
+    st.paint = { ...to };
+    p.model?.setPaint(paintLook(to));
+    if (c.hull) p.model?.setWear(wearRefit(st));   // scraped and painted afresh
+    this.career.advanceHours(PAINT.hours);
+    this._say(`The painters work through the day. ${theName(p.name, true)} wears her new colours.`, 'good');
+    return true;
+  }
+  // Flag: hoisting the black (a pirate haven) and the pardon that brings the captain back under national colours.
+  hoistInfo() {
+    const g = this.game, st = g.state, port = this.port;
+    const why = st.flag === 'pirate' ? 'You already sail under the black.'
+      : g.hud?.hints?.prologue?.active ? 'Finish your first voyage before you think of turning pirate.'
+      : !port?.haven ? 'Only the Brethren of the Coast sew and hoist the black, in a pirate haven.'
+      : (st.missions || []).some(m => m.status === 'active') ? 'You still serve the Crown: carry out or let lapse the missions under way first.'
+      : null;
+    return { ok: !why, why, nation: st.nationality || 'english', own: FLAG.hoistRepOwn, other: FLAG.hoistRepOther, letters: Object.keys(st.letters || {}).filter(n => st.letters[n]) };
+  }
+  hoistBlack() {
+    const g = this.game, st = g.state, p = g.player, h = this.hoistInfo();
+    if (!h.ok || !p) return false;
+    for (const n of NATIONS) changeReputation(g, n, n === h.nation ? FLAG.hoistRepOwn : FLAG.hoistRepOther, 'black-flag');
+    const pr = this.rep('pirate'); changeReputation(g, 'pirate', Math.max(pr + FLAG.pirateWelcome, FLAG.pirateFloor) - pr, 'black-flag');
+    for (const n of h.letters) delete st.letters[n];   // a privateer who hoists the black is a pirate: her letters are void
+    st.flag = 'pirate'; st.flagSince = dayNum(st.date);
+    this._setFaction('pirate');
+    this._say('The Jolly Roger climbs to the masthead and the crew roars. Every Crown in these seas will now hunt you.', 'bad');
+    return true;
+  }
+  pardonInfo() {
+    const g = this.game, st = g.state, port = this.port, nat = st.nationality || 'english';
+    const foreign = !!port && port.faction !== nat, cost = pardonCost(st, foreign);
+    const why = st.flag !== 'pirate' ? 'You sail under your own colours.'
+      : !port || port.haven || !NATIONS.includes(port.faction) ? `Only a governor can pardon you: in ${a(nationAdj(nat))} port, or in a port of a nation at peace with yours.`
+      : foreign && relation(nat, port.faction) < 0 ? `The ${nationPeople(port.faction)} are at war with your nation: they will not vouch for you.`
+      : st.gold < cost ? 'Your purse does not cover the pardon.' : null;
+    return { ok: !why, why, cost, foreign, nation: nat, pirateRep: FLAG.pardonPirateRep, days: Math.round(FLAG.pardonHours / 24) };
+  }
+  pardon() {
+    const g = this.game, st = g.state, p = g.player, r = this.pardonInfo();
+    if (!r.ok || !p) return false;
+    st.gold -= r.cost;
+    changeReputation(g, 'pirate', FLAG.pardonPirateRep, 'pardon');
+    st.flag = 'nation'; delete st.flagSince;
+    this._setFaction(r.nation);
+    this.career.advanceHours(FLAG.pardonHours);
+    this._say(`${fmtInt(r.cost)} gold, an oath on the Bible and ${r.days} days of clerks: you sail under the ${nationAdj(r.nation)} colours again.`, 'good');
+    return true;
+  }
+  // the flagship changes colours in place (the paint stays: ShipModel.setFlag repaints ensign, pennants and sail emblem)
+  _setFaction(f) {
+    const g = this.game, p = g.player; if (!p) return;
+    p.faction = f; p.model?.setFlag?.(f);
+    g.events.emit('player:flag', { flag: g.state.flag, faction: f });
   }
 
   save() { return saveGame(this.game, 'manual'); }

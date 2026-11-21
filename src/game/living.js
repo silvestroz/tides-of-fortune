@@ -161,7 +161,7 @@ export class LivingWorld {
   // (state.missions, kind 'envoy', career.js system): the treaty is only signed when the letter is delivered.
   governorOffers(port) {
     const g = this.game, s = g.state, N = port.faction;
-    if (port.haven || !NATIONS.includes(N)) return [];
+    if (port.haven || !NATIONS.includes(N) || s.flag === 'pirate') return [];   // no state letters for a pirate
     const out = [], rep = n => getReputation(g, n), rank = s.rank?.[N] || 0;
     for (const M of NATIONS) {
       if (M === N || this.envoyFor(N, M)) continue;
